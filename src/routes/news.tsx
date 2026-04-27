@@ -27,6 +27,19 @@ const PAGE = {
 
 function News() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "最新消息 News｜小時光書店 Interval Books",
+      en: "News｜Interval Books",
+      ja: "お知らせ｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "活動預告、營業調整與策旅消息。",
+      en: "Event announcements, opening updates, and journey news.",
+      ja: "イベント予告、営業のお知らせ、旅の最新情報。",
+    },
+    ogTitle: PAGE.title,
+  });
   return (
     <PageShell>
       <PageHeader
