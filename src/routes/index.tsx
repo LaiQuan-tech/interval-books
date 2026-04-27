@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageShell } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { UI, SITE_INFO, MAP } from "@/i18n/strings";
 import { events, exhibitions, journeys, news } from "@/data/content";
 import heroImg from "@/assets/hero-mountain.jpg";
