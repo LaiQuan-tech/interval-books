@@ -84,8 +84,13 @@ export const SITE_INFO = {
   } as Localized,
 };
 
-export const CONTACT_EMAIL = "hello@intervalbooks.tw";
+export const CONTACT_EMAIL = "intervalbookstores@gmail.com";
 export const SITE_URL = "https://intervalbooks.tw";
+
+export const CONTACT_PHONES = [
+  { label: "Tel", display: "+886 2 2341 6800", tel: "+886223416800" },
+  { label: "Mobile", display: "+886 917 540 615", tel: "+886917540615" },
+] as const;
 
 export const SOCIAL = {
   instagram: "https://www.instagram.com/intervalbookstw/",
