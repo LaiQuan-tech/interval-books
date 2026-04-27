@@ -5,7 +5,7 @@ import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { UI, SITE_INFO, MAP } from "@/i18n/strings";
 import { events, exhibitions, journeys, news } from "@/data/content";
 import heroImg from "@/assets/hero-mountain.jpg";
-import interiorImg from "@/assets/bookstore-interior.jpg";
+import storefrontImg from "@/assets/storefront.jpg";
 import curatedImg from "@/assets/curated-objects.jpg";
 import exhibitionImg from "@/assets/exhibition-corner.jpg";
 import journeyImg from "@/assets/journey-mist.jpg";
@@ -171,7 +171,7 @@ function Index() {
         {exhibitions.slice(0, 2).map((ex, i) => (
           <article key={ex.id} className="group">
             <div className="aspect-[5/4] overflow-hidden bg-muted">
-              <img src={i === 0 ? interiorImg : exhibitionImg} alt={t(ex.title)} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]" />
+              <img src={i === 0 ? exhibitionImg : storefrontImg} alt={t(ex.title)} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]" />
             </div>
             <p className="eyebrow mt-6">{ex.period}</p>
             <h3 className="display mt-3 text-3xl">{t(ex.title)}</h3>

@@ -4,12 +4,12 @@ import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { exhibitions } from "@/data/content";
-import interiorImg from "@/assets/bookstore-interior.jpg";
+import storefrontImg from "@/assets/storefront.jpg";
 import exhibitionImg from "@/assets/exhibition-corner.jpg";
 
 const IMAGES: Record<string, string> = {
   "soil-and-page": exhibitionImg,
-  "quiet-objects": interiorImg,
+  "quiet-objects": storefrontImg,
 };
 
 export const Route = createFileRoute("/exhibitions")({
