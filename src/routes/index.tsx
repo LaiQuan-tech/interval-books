@@ -8,6 +8,7 @@ import heroImg from "@/assets/hero-mountain.jpg";
 import interiorImg from "@/assets/bookstore-interior.jpg";
 import curatedImg from "@/assets/curated-objects.jpg";
 import exhibitionImg from "@/assets/exhibition-corner.jpg";
+import journeyImg from "@/assets/journey-mist.jpg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -188,7 +189,7 @@ function Index() {
         {journeys.slice(0, 1).map((j) => (
           <article key={j.id} className="grid md:grid-cols-2 gap-12 items-center">
             <div className="aspect-[4/3] overflow-hidden bg-muted">
-              <img src={heroImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
+              <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
             </div>
             <div>
               <p className="eyebrow">{t(j.days)}  ／  {t(j.theme)}</p>
