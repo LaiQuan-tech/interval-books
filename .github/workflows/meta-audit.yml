@@ -47,6 +47,10 @@ jobs:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           # Use head SHA on PRs so links point at the contributor's commit, not the merge commit.
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Optional: set this repo variable to your local clone's absolute path
+          # (e.g. /Users/me/code/interval-books) to enable vscode://file/ links
+          # that open the exact file:line in your local VS Code.
+          LOCAL_WORKSPACE_ROOT: ${{ vars.LOCAL_WORKSPACE_ROOT }}
         run: |
           SUMMARY="$GITHUB_STEP_SUMMARY"
           if [ ! -f reports/meta-audit.json ]; then
@@ -59,6 +63,10 @@ jobs:
           PASSED=$(jq -r '.summary.passed' reports/meta-audit.json)
           ROUTES=$(jq -r '.summary.routesAudited' reports/meta-audit.json)
           BLOB="$REPO_URL/blob/$SHA"
+          # github.dev opens the repo in the web-based VS Code editor (also used by Codespaces).
+          DEV="${REPO_URL/github.com/github.dev}/blob/$SHA"
+          # Strip trailing slash from user-supplied path.
+          LOCAL="${LOCAL_WORKSPACE_ROOT%/}"
 
           if [ "$PASSED" = "true" ]; then
             echo "## ✅ Meta Audit passed" >> "$SUMMARY"
@@ -67,6 +75,12 @@ jobs:
             echo "- Issues: **0**" >> "$SUMMARY"
           else
             echo "## ❌ Meta Audit failed — $TOTAL issue(s)" >> "$SUMMARY"
+            echo "" >> "$SUMMARY"
+            if [ -n "$LOCAL" ]; then
+              echo "_Open links: 🌐 GitHub · 🖥️ github.dev (web VS Code) · 💻 vscode (local, \`$LOCAL\`)_" >> "$SUMMARY"
+            else
+              echo "_Open links: 🌐 GitHub · 🖥️ github.dev (web VS Code). Set repo variable \`LOCAL_WORKSPACE_ROOT\` to also get 💻 \`vscode://\` links for your local clone._" >> "$SUMMARY"
+            fi
             echo "" >> "$SUMMARY"
             echo "### Counts by language" >> "$SUMMARY"
             echo '| Language | Issues |' >> "$SUMMARY"
@@ -79,31 +93,44 @@ jobs:
             jq -r '.summary.issuesByCode | to_entries[] | "| `\(.key)` | \(.value) |"' reports/meta-audit.json >> "$SUMMARY"
             echo "" >> "$SUMMARY"
             echo "### Failing routes" >> "$SUMMARY"
-            echo '| Route | File | First issue | Issues |' >> "$SUMMARY"
-            echo '|-------|------|-------------|--------|' >> "$SUMMARY"
-            jq -r --arg blob "$BLOB" '
+            echo '| Route | File | First issue | Open | Issues |' >> "$SUMMARY"
+            echo '|-------|------|-------------|------|--------|' >> "$SUMMARY"
+            jq -r --arg blob "$BLOB" --arg dev "$DEV" --arg local "$LOCAL" '
               .routes
               | to_entries[]
               | select(.value.ok == false)
               | . as $r
               | ($r.value.issues[0].line // null) as $ln
-              | "| \($r.key) | [`\($r.value.file)`](\($blob)/\($r.value.file)) | " +
-                (if $ln then "[L\($ln)](\($blob)/\($r.value.file)#L\($ln))" else "—" end) +
-                " | \($r.value.issues | length) |"
+              | ($r.value.file) as $f
+              | ($ln // 1) as $L
+              | ([
+                  "[🌐](\($blob)/\($f)#L\($L))",
+                  "[🖥️](\($dev)/\($f)#L\($L))"
+                ] + (if $local != "" then ["[💻](vscode://file/\($local)/\($f):\($L))"] else [] end)
+                | join(" ")) as $links
+              | "| \($r.key) | [`\($f)`](\($blob)/\($f)) | " +
+                (if $ln then "L\($ln)" else "—" end) +
+                " | \($links) | \($r.value.issues | length) |"
             ' reports/meta-audit.json >> "$SUMMARY"
             echo "" >> "$SUMMARY"
             echo "### Findings" >> "$SUMMARY"
-            echo '| Location | Lang | Field | Code | Message |' >> "$SUMMARY"
-            echo '|----------|------|-------|------|---------|' >> "$SUMMARY"
-            jq -r --arg blob "$BLOB" '
+            echo '| Location | Open | Lang | Field | Code | Message |' >> "$SUMMARY"
+            echo '|----------|------|------|-------|------|---------|' >> "$SUMMARY"
+            jq -r --arg blob "$BLOB" --arg dev "$DEV" --arg local "$LOCAL" '
               .findings[]
               | . as $f
               | ($f.line // null) as $ln
+              | ($ln // 1) as $L
               | (if $ln
-                   then "[`\($f.file):\($ln)`](\($blob)/\($f.file)#L\($ln))"
-                   else "[`\($f.file)`](\($blob)/\($f.file))"
+                   then "`\($f.file):\($ln)`"
+                   else "`\($f.file)`"
                  end) as $loc
-              | "| \($loc) | \($f.lang // "-") | \($f.field // "-") | `\($f.code)` | \($f.message | gsub("\\|"; "\\|")) |"
+              | ([
+                  "[🌐](\($blob)/\($f.file)#L\($L))",
+                  "[🖥️](\($dev)/\($f.file)#L\($L))"
+                ] + (if $local != "" then ["[💻](vscode://file/\($local)/\($f.file):\($L))"] else [] end)
+                | join(" ")) as $links
+              | "| \($loc) | \($links) | \($f.lang // "-") | \($f.field // "-") | `\($f.code)` | \($f.message | gsub("\\|"; "\\|")) |"
             ' reports/meta-audit.json >> "$SUMMARY"
             echo "" >> "$SUMMARY"
             echo "📎 Full JSON report attached as **meta-audit-report** artifact." >> "$SUMMARY"
