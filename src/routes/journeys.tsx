@@ -58,7 +58,6 @@ function Journeys() {
     <PageShell>
       <PageHeader
         eyebrow="Journeys  ／  策旅"
-        className="eyebrow text-2xl"
         title={t(PAGE.title)}
         intro={t(PAGE.intro)}
       />
