@@ -68,7 +68,7 @@ function Journeys() {
             <div className="aspect-[4/3] overflow-hidden bg-muted">
               <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
             </div>
-            <p className="eyebrow mt-6">{t(j.days)}  ／  {t(j.theme)}</p>
+            <p className="eyebrow text-2xl mt-6">{t(j.days)}  ／  {t(j.theme)}</p>
             <h3 className="display mt-3 text-2xl leading-snug whitespace-pre-line">{t(j.title)}</h3>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(j.summary)}</p>
             <a
