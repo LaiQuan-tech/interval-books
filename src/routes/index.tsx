@@ -255,9 +255,9 @@ function Index() {
       <div className="container-editorial pb-24 grid gap-10 md:grid-cols-3">
         {news.slice(0, 3).map((n) => (
           <article key={n.id}>
-            <p className="text-xs text-muted-foreground tracking-widest">{n.date}</p>
-            <h3 className="font-serif text-xl mt-3 leading-snug">{t(n.title)}</h3>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{t(n.summary)}</p>
+            <p className="text-muted-foreground tracking-widest text-lg">{n.date}</p>
+            <h3 className="font-serif text-xl mt-3 leading-snug whitespace-pre-line">{t(n.title)}</h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">{t(n.summary)}</p>
           </article>
         ))}
       </div>
