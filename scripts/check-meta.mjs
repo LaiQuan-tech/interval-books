@@ -1,159 +1,189 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
- * Automated meta-tag audit for ZH / EN / JA.
+ * Static meta-tag audit for ZH / EN / JA — no browser required.
  *
- * 1. Boots the dev server (or reuses one at $PREVIEW_URL).
- * 2. Loads each route in a headless browser (Playwright via Chromium).
- * 3. For each language, sets localStorage("interval-books-lang") and reloads.
- * 4. Asserts <title>, meta[name=description], og:title, og:description,
- *    twitter:title, twitter:description are present, non-empty, and language-
- *    appropriate. Verifies og:image / twitter:image do NOT leak between routes.
+ * Parses every src/routes/*.tsx file, finds the useDocumentMeta({...}) call,
+ * and asserts:
+ *   - title and description are objects with non-empty zh / en / ja
+ *   - each language string passes a script heuristic (CJK for zh/ja, latin for en)
+ *   - if ogTitle / ogDescription are provided they have all 3 langs too
  *
- * Usage:
- *   bun scripts/check-meta.mjs                # auto-boots `bun run dev`
- *   PREVIEW_URL=http://localhost:5173 bun scripts/check-meta.mjs
+ * Then loads src/i18n/strings.ts content data and verifies every Localized
+ * field across events, exhibitions, news, journeys, curated, collaborations
+ * has all three languages populated, so language switching never falls back
+ * silently to zh.
  */
-import { spawn } from "node:child_process";
-import { setTimeout as sleep } from "node:timers/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { parse } from "@babel/parser";
+import _traverse from "@babel/traverse";
+const traverse = _traverse.default ?? _traverse;
 
-const ROUTES = [
-  { path: "/",            expectImage: true  },
-  { path: "/about",       expectImage: true  },
-  { path: "/visit",       expectImage: false },
-  { path: "/events",      expectImage: false },
-  { path: "/exhibitions", expectImage: false },
-  { path: "/journeys",    expectImage: true  },
-  { path: "/curated",     expectImage: false },
-  { path: "/news",        expectImage: false },
-  { path: "/contact",     expectImage: false },
-  { path: "/curation",    expectImage: false },
-  { path: "/privacy",     expectImage: false },
-];
-
+const ROUTES_DIR = "src/routes";
 const LANGS = ["zh", "en", "ja"];
-
-// Minimal language heuristics — each (lang, content) pair must contain at least
-// one character from this set, otherwise the tag is likely wrong-language.
-const LANG_PATTERNS = {
+const PATTERNS = {
   zh: /[\u4e00-\u9fff]/,
-  ja: /[\u3040-\u30ff\u4e00-\u9fff]/, // hiragana/katakana/kanji
+  ja: /[\u3040-\u30ff\u4e00-\u9fff]/,
   en: /[A-Za-z]/,
 };
 
-let serverProc;
-async function ensureServer() {
-  if (process.env.PREVIEW_URL) return process.env.PREVIEW_URL;
-  serverProc = spawn("bun", ["run", "dev"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PORT: "5173" },
+const failures = [];
+const fail = (file, msg) => failures.push(`${file}: ${msg}`);
+
+function getStringValue(node) {
+  if (!node) return null;
+  if (node.type === "StringLiteral") return node.value;
+  if (node.type === "TemplateLiteral" && node.expressions.length === 0)
+    return node.quasis.map((q) => q.value.cooked).join("");
+  return null;
+}
+
+function checkLocalizedObject(file, label, objNode) {
+  if (!objNode || objNode.type !== "ObjectExpression") {
+    fail(file, `${label}: not an object literal (cannot statically verify)`);
+    return;
+  }
+  const found = {};
+  for (const prop of objNode.properties) {
+    if (prop.type !== "ObjectProperty") continue;
+    const key = prop.key.name ?? prop.key.value;
+    if (!LANGS.includes(key)) continue;
+    const val = getStringValue(prop.value);
+    if (val === null) {
+      fail(file, `${label}.${key}: not a static string`);
+      continue;
+    }
+    if (!val.trim()) fail(file, `${label}.${key}: empty`);
+    if (!PATTERNS[key].test(val)) fail(file, `${label}.${key}: not in ${key} → "${val.slice(0, 50)}"`);
+    found[key] = val;
+  }
+  for (const l of LANGS) if (!(l in found)) fail(file, `${label}: missing ${l}`);
+}
+
+async function auditRoute(file) {
+  const src = await readFile(file, "utf8");
+  if (!src.includes("useDocumentMeta")) {
+    fail(file, "no useDocumentMeta() call");
+    return;
+  }
+  const ast = parse(src, { sourceType: "module", plugins: ["typescript", "jsx"] });
+
+  // Resolve identifier references (e.g. `description: PAGE.intro`) to their literal objects
+  const topObjects = new Map();
+  traverse(ast, {
+    VariableDeclarator(path) {
+      if (path.node.id.type === "Identifier" && path.node.init?.type === "ObjectExpression") {
+        topObjects.set(path.node.id.name, path.node.init);
+      }
+    },
   });
-  let url = "";
-  await new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("dev server timeout")), 60000);
-    serverProc.stdout.on("data", (b) => {
-      const s = b.toString();
-      const m = s.match(/https?:\/\/localhost:\d+/);
-      if (m && !url) { url = m[0]; clearTimeout(t); resolve(); }
-    });
-    serverProc.stderr.on("data", (b) => process.stderr.write(b));
+
+  function resolveObject(node) {
+    if (!node) return null;
+    if (node.type === "ObjectExpression") return node;
+    if (node.type === "MemberExpression" && node.object.type === "Identifier") {
+      const root = topObjects.get(node.object.name);
+      if (!root) return null;
+      const key = node.property.name ?? node.property.value;
+      const prop = root.properties.find(
+        (p) => p.type === "ObjectProperty" && (p.key.name ?? p.key.value) === key,
+      );
+      return prop?.value?.type === "ObjectExpression" ? prop.value : null;
+    }
+    if (node.type === "Identifier") return topObjects.get(node.name) ?? null;
+    return null;
+  }
+
+  let called = false;
+  traverse(ast, {
+    CallExpression(path) {
+      if (path.node.callee.type !== "Identifier" || path.node.callee.name !== "useDocumentMeta") return;
+      called = true;
+      const arg = path.node.arguments[0];
+      if (!arg || arg.type !== "ObjectExpression") {
+        fail(file, "useDocumentMeta argument is not an object literal");
+        return;
+      }
+      const required = ["title", "description"];
+      const optional = ["ogTitle", "ogDescription"];
+      for (const key of [...required, ...optional]) {
+        const prop = arg.properties.find(
+          (p) => p.type === "ObjectProperty" && (p.key.name ?? p.key.value) === key,
+        );
+        if (!prop) {
+          if (required.includes(key)) fail(file, `missing ${key}`);
+          continue;
+        }
+        const obj = resolveObject(prop.value);
+        if (!obj) {
+          fail(file, `${key}: cannot resolve to object literal`);
+          continue;
+        }
+        checkLocalizedObject(file, key, obj);
+      }
+    },
   });
-  await sleep(1500);
-  return url;
+  if (!called) fail(file, "useDocumentMeta not invoked in route");
+}
+
+async function auditContent() {
+  const file = "src/data/content.ts";
+  const src = await readFile(file, "utf8");
+  const ast = parse(src, { sourceType: "module", plugins: ["typescript"] });
+
+  // Walk every ObjectExpression; if it has any of {zh,en,ja} as keys, require all three with non-empty strings/arrays
+  traverse(ast, {
+    ObjectExpression(path) {
+      const keys = path.node.properties
+        .filter((p) => p.type === "ObjectProperty")
+        .map((p) => p.key.name ?? p.key.value);
+      const hasAny = LANGS.some((l) => keys.includes(l));
+      if (!hasAny) return;
+      for (const l of LANGS) {
+        const prop = path.node.properties.find(
+          (p) => p.type === "ObjectProperty" && (p.key.name ?? p.key.value) === l,
+        );
+        if (!prop) {
+          fail(file, `${path.node.loc.start.line}: localized object missing ${l}`);
+          continue;
+        }
+        const v = prop.value;
+        if (v.type === "StringLiteral" || v.type === "TemplateLiteral") {
+          const s = getStringValue(v);
+          if (!s || !s.trim()) fail(file, `${path.node.loc.start.line}: ${l} is empty`);
+          else if (!PATTERNS[l].test(s)) fail(file, `${path.node.loc.start.line}: ${l} not in language → "${s.slice(0, 40)}"`);
+        } else if (v.type === "ArrayExpression") {
+          if (v.elements.length === 0) fail(file, `${path.node.loc.start.line}: ${l} array empty`);
+        }
+      }
+    },
+  });
 }
 
 async function main() {
-  const { chromium } = await import("playwright");
-  const baseUrl = await ensureServer();
-  console.log(`→ Auditing ${baseUrl}\n`);
+  const files = (await readdir(ROUTES_DIR))
+    .filter((f) => f.endsWith(".tsx") && f !== "__root.tsx")
+    .map((f) => join(ROUTES_DIR, f));
 
-  const browser = await chromium.launch();
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+  console.log(`→ Auditing ${files.length} routes + content data\n`);
 
-  const failures = [];
-
-  // Seed localStorage on first load
-  await page.goto(baseUrl + "/");
-
-  for (const lang of LANGS) {
-    await page.evaluate((l) => localStorage.setItem("interval-books-lang", l), lang);
-
-    for (const { path, expectImage } of ROUTES) {
-      // Navigate fresh so we observe both SSR + post-hydration state
-      await page.goto(baseUrl + path, { waitUntil: "networkidle" });
-      // Wait a tick for useDocumentMeta effect to run
-      await page.waitForTimeout(150);
-
-      const meta = await page.evaluate(() => {
-        const get = (sel) =>
-          document.head.querySelector(sel)?.getAttribute("content") ?? null;
-        return {
-          title: document.title,
-          description: get('meta[name="description"]'),
-          ogTitle: get('meta[property="og:title"]'),
-          ogDescription: get('meta[property="og:description"]'),
-          twitterTitle: get('meta[name="twitter:title"]'),
-          twitterDescription: get('meta[name="twitter:description"]'),
-          ogImage: get('meta[property="og:image"]'),
-          twitterImage: get('meta[name="twitter:image"]'),
-          htmlLang: document.documentElement.lang,
-        };
-      });
-
-      const fail = (msg) => failures.push({ lang, path, msg, meta });
-
-      // Required tags present + non-empty
-      for (const k of ["title", "description", "ogTitle", "ogDescription", "twitterTitle", "twitterDescription"]) {
-        if (!meta[k] || !meta[k].trim()) fail(`missing ${k}`);
-      }
-
-      // Language heuristic
-      const pat = LANG_PATTERNS[lang];
-      for (const k of ["title", "description"]) {
-        if (meta[k] && !pat.test(meta[k])) fail(`${k} not in ${lang}: "${meta[k].slice(0, 60)}"`);
-      }
-
-      // og:title/description should mirror title/description language
-      if (meta.ogTitle && meta.ogDescription && meta.title && meta.description) {
-        // ogTitle vs twitterTitle must match
-        if (meta.ogTitle !== meta.twitterTitle) fail(`og:title ≠ twitter:title`);
-        if (meta.ogDescription !== meta.twitterDescription) fail(`og:desc ≠ twitter:desc`);
-      }
-
-      // og:image leakage
-      if (expectImage) {
-        if (!meta.ogImage) fail(`expected og:image but none set`);
-        if (meta.ogImage !== meta.twitterImage) fail(`og:image ≠ twitter:image`);
-      } else {
-        if (meta.ogImage) fail(`stale og:image leaked: ${meta.ogImage}`);
-        if (meta.twitterImage) fail(`stale twitter:image leaked: ${meta.twitterImage}`);
-      }
-
-      // html lang attribute reflects current language
-      const expectedHtmlLang = lang === "zh" ? "zh-Hant" : lang;
-      if (meta.htmlLang !== expectedHtmlLang) fail(`<html lang> = "${meta.htmlLang}", expected "${expectedHtmlLang}"`);
-
-      const status = failures.some((f) => f.lang === lang && f.path === path) ? "✗" : "✓";
-      console.log(`  ${status} [${lang}] ${path.padEnd(14)} → ${meta.title?.slice(0, 50) ?? "(no title)"}`);
-    }
-    console.log("");
+  for (const f of files) {
+    const before = failures.length;
+    await auditRoute(f);
+    console.log(`  ${failures.length === before ? "✓" : "✗"} ${f}`);
   }
 
-  await browser.close();
-  if (serverProc) serverProc.kill();
+  console.log("\n→ Auditing src/data/content.ts");
+  const before = failures.length;
+  await auditContent();
+  console.log(`  ${failures.length === before ? "✓" : "✗"} content.ts`);
 
   if (failures.length) {
-    console.error(`\n✗ ${failures.length} failure(s):\n`);
-    for (const f of failures) {
-      console.error(`  [${f.lang}] ${f.path}: ${f.msg}`);
-    }
+    console.error(`\n✗ ${failures.length} issue(s):\n`);
+    for (const f of failures) console.error(`  • ${f}`);
     process.exit(1);
   }
-  console.log(`\n✓ All ${ROUTES.length * LANGS.length} (route × lang) combinations passed.`);
+  console.log(`\n✓ All routes have complete zh/en/ja meta and all content fields are localized.`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  if (serverProc) serverProc.kill();
-  process.exit(1);
-});
+main().catch((e) => { console.error(e); process.exit(1); });
