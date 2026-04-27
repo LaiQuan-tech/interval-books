@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { UI, CONTACT_EMAIL } from "@/i18n/strings";
 import { journeys } from "@/data/content";
 import journeyImg from "@/assets/journey-mist.jpg";
