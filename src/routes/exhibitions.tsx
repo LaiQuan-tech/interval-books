@@ -8,8 +8,8 @@ import interiorImg from "@/assets/bookstore-interior.jpg";
 import exhibitionImg from "@/assets/exhibition-corner.jpg";
 
 const IMAGES: Record<string, string> = {
-  "soil-and-page": interiorImg,
-  "quiet-objects": exhibitionImg,
+  "soil-and-page": exhibitionImg,
+  "quiet-objects": interiorImg,
 };
 
 export const Route = createFileRoute("/exhibitions")({
