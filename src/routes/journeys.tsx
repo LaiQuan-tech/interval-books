@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { UI, CONTACT_EMAIL } from "@/i18n/strings";
 import { journeys } from "@/data/content";
 import journeyImg from "@/assets/journey-mist.jpg";
@@ -39,6 +40,20 @@ const PAGE = {
 
 function Journeys() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "策旅 Journeys｜小時光書店 Interval Books",
+      en: "Journeys｜Interval Books",
+      ja: "旅｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "由書與土地共同寫成的深度旅程。每一趟策旅皆有獨立網站，本頁為彙整導流。",
+      en: "Slow journeys co-written by books and the land. Each trip has its own site; this page gathers the threads.",
+      ja: "本と土地が共に綴る、深い旅。各旅には専用サイトがあります。このページはその目次です。",
+    },
+    ogTitle: PAGE.title,
+    ogImage: journeyImg,
+  });
   return (
     <PageShell>
       <PageHeader

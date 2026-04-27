@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { UI, SITE_INFO, MAP, SOCIAL } from "@/i18n/strings";
 
 export const Route = createFileRoute("/visit")({
@@ -97,6 +98,19 @@ const INSIDE = {
 
 function Visit() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "來店資訊 Visit｜小時光書店 Interval Books",
+      en: "Visit｜Interval Books",
+      ja: "ご来店｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "華山文創園區．紅磚六合院 西7-3館。週一至週日 11:00–19:00。捷運忠孝新生站步行 3 分鐘。",
+      en: "Huashan 1914 Creative Park, Red Brick Courtyard, West 7-3. Open daily 11:00–19:00. 3 min walk from MRT Zhongxiao Xinsheng.",
+      ja: "華山1914文化創意産業園區 紅煉瓦六合院 西7-3館。月〜日 11:00–19:00。MRT 忠孝新生駅から徒歩3分。",
+    },
+    ogTitle: PAGE.title,
+  });
   const [busOpen, setBusOpen] = useState(false);
 
   // pick array by current lang

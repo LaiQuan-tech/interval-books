@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { UI, CONTACT_EMAIL, SOCIAL } from "@/i18n/strings";
 import { curatedThemes } from "@/data/content";
 import curatedImg from "@/assets/curated-objects.jpg";
@@ -29,6 +30,20 @@ const PAGE = {
 
 function Curated() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "主理人的選品 Curated｜小時光書店 Interval Books",
+      en: "Curated｜Interval Books",
+      ja: "店主の選品｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "三個主題櫥窗：地方風土、器物與陶、茶與日常。展示型呈現，請至店或來信詢問。",
+      en: "Three themed windows — place, vessels and clay, tea and daily life. A display, not a shop. Visit us or write to enquire.",
+      ja: "三つのテーマの窓辺：土地の風土、器と陶、茶と日常。展示としてのご紹介です。店頭またはメールでお問い合わせください。",
+    },
+    ogTitle: PAGE.title,
+    ogImage: curatedImg,
+  });
   return (
     <PageShell>
       <PageHeader

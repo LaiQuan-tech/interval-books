@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { CONTACT_EMAIL } from "@/i18n/strings";
 import { collaborations } from "@/data/content";
 
@@ -36,6 +37,19 @@ const PAGE = {
 
 function Curation() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "策展與合作 Curation｜小時光書店 Interval Books",
+      en: "Curation & Collaboration｜Interval Books",
+      ja: "キュレーションと協働｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "療癒藝術節、空間策展、書店展售與品牌共創——以低調而精緻的方式，與夥伴共創。",
+      en: "Healing arts festivals, spatial curation, in-store exhibitions, and quiet brand collaborations — co-created with care.",
+      ja: "ヒーリング・アートフェス、空間キュレーション、店内展示、ブランド共創。静かで丁寧な協働を。",
+    },
+    ogTitle: PAGE.title,
+  });
   return (
     <PageShell>
       <PageHeader
