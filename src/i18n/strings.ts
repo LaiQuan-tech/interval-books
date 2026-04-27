@@ -92,10 +92,12 @@ export const CONTACT_PHONES = [
   { label: "Mobile", display: "+886 917 540 615", tel: "+886917540615" },
 ] as const;
 
+// 社群連結：若值為空字串，Footer 會自動隱藏該項。
+// 之後拿到正式網址時，直接填入下方字串即可（或改由環境變數注入）。
 export const SOCIAL = {
   instagram: "https://www.instagram.com/intervalbookstw/",
-  facebook: "https://example.com", // 待替換
-  line: "https://example.com", // 待替換
+  facebook: "", // TODO: 填入正式 Facebook 粉絲頁網址
+  line: "",     // TODO: 填入正式 LINE 官方帳號連結（例如 https://lin.ee/xxxxxx）
 };
 
 export const MAP = {
