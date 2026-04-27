@@ -65,7 +65,7 @@ function Journeys() {
       <section className="container-editorial pb-24 grid gap-12 md:grid-cols-3">
         {journeys.map((j) => (
           <article key={j.id} className="flex flex-col">
-            <div className="aspect-[4/5] overflow-hidden bg-muted">
+            <div className="aspect-[4/3] overflow-hidden bg-muted">
               <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
             </div>
             <p className="eyebrow mt-6">{t(j.days)}  ／  {t(j.theme)}</p>
