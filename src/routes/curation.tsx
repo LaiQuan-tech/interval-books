@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { CONTACT_EMAIL } from "@/i18n/strings";
 import { collaborations } from "@/data/content";
 
