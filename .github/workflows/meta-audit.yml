@@ -47,10 +47,15 @@ jobs:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           # Use head SHA on PRs so links point at the contributor's commit, not the merge commit.
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          # Optional: set this repo variable to your local clone's absolute path
-          # (e.g. /Users/me/code/interval-books) to enable vscode://file/ links
-          # that open the exact file:line in your local VS Code.
+          REPO_NAME: ${{ github.event.repository.name }}
+          # Optional: pin a single absolute path for vscode://file/ links.
+          # If unset, the summary emits multiple candidate vscode:// links built
+          # from common clone locations — only the one that exists on your
+          # machine will succeed when clicked.
           LOCAL_WORKSPACE_ROOT: ${{ vars.LOCAL_WORKSPACE_ROOT }}
+          # Optional: extra candidate roots, newline- or comma-separated.
+          # e.g. "/Volumes/Work/repos\n/Users/me/clients"
+          LOCAL_WORKSPACE_CANDIDATES: ${{ vars.LOCAL_WORKSPACE_CANDIDATES }}
         run: |
           SUMMARY="$GITHUB_STEP_SUMMARY"
           if [ ! -f reports/meta-audit.json ]; then
@@ -63,10 +68,44 @@ jobs:
           PASSED=$(jq -r '.summary.passed' reports/meta-audit.json)
           ROUTES=$(jq -r '.summary.routesAudited' reports/meta-audit.json)
           BLOB="$REPO_URL/blob/$SHA"
-          # github.dev opens the repo in the web-based VS Code editor (also used by Codespaces).
           DEV="${REPO_URL/github.com/github.dev}/blob/$SHA"
-          # Strip trailing slash from user-supplied path.
-          LOCAL="${LOCAL_WORKSPACE_ROOT%/}"
+
+          # ---------- Build candidate workspace roots ----------
+          # If the user pinned LOCAL_WORKSPACE_ROOT, use it as the single root.
+          # Otherwise, generate likely roots from REPO_NAME × common parents.
+          ROOTS_JSON=""
+          if [ -n "$LOCAL_WORKSPACE_ROOT" ]; then
+            ROOTS_JSON=$(jq -cn --arg r "${LOCAL_WORKSPACE_ROOT%/}" '[$r]')
+          else
+            # Common parent directories where developers clone repos.
+            # ~ is left literal — vscode:// resolves it on macOS/Linux when the
+            # OS forwards the URL through the shell; for safety we also emit
+            # /Users/$USER and /home/$USER style guesses below at runtime.
+            PARENTS=(
+              "~/code" "~/Code" "~/dev" "~/Dev" "~/Developer"
+              "~/projects" "~/Projects" "~/repos" "~/Repos"
+              "~/work" "~/Work" "~/src" "~/git" "~/github"
+              "~/Documents/code" "~/Documents/projects" "~/Documents/GitHub"
+              "~"
+              # Windows (Git Bash / WSL style — vscode:// accepts forward slashes)
+              "/c/Users/$USER/code" "/c/Users/$USER/source/repos"
+              "C:/Users/$USER/code" "C:/Users/$USER/source/repos"
+            )
+            # Build JSON array of "<parent>/<repo>"
+            CANDIDATES=()
+            for p in "${PARENTS[@]}"; do
+              CANDIDATES+=("${p%/}/$REPO_NAME")
+            done
+            # Append any user-supplied extra candidates (split on newline or comma)
+            if [ -n "$LOCAL_WORKSPACE_CANDIDATES" ]; then
+              while IFS= read -r line; do
+                [ -n "$line" ] && CANDIDATES+=("${line%/}/$REPO_NAME")
+              done < <(printf '%s' "$LOCAL_WORKSPACE_CANDIDATES" | tr ',' '\n')
+            fi
+            ROOTS_JSON=$(printf '%s\n' "${CANDIDATES[@]}" | jq -R . | jq -s .)
+          fi
+
+          ROOT_COUNT=$(echo "$ROOTS_JSON" | jq 'length')
 
           if [ "$PASSED" = "true" ]; then
             echo "## ✅ Meta Audit passed" >> "$SUMMARY"
@@ -76,10 +115,10 @@ jobs:
           else
             echo "## ❌ Meta Audit failed — $TOTAL issue(s)" >> "$SUMMARY"
             echo "" >> "$SUMMARY"
-            if [ -n "$LOCAL" ]; then
-              echo "_Open links: 🌐 GitHub · 🖥️ github.dev (web VS Code) · 💻 vscode (local, \`$LOCAL\`)_" >> "$SUMMARY"
+            if [ -n "$LOCAL_WORKSPACE_ROOT" ]; then
+              echo "_Open links: 🌐 GitHub · 🖥️ github.dev · 💻 vscode (local: \`$LOCAL_WORKSPACE_ROOT\`)_" >> "$SUMMARY"
             else
-              echo "_Open links: 🌐 GitHub · 🖥️ github.dev (web VS Code). Set repo variable \`LOCAL_WORKSPACE_ROOT\` to also get 💻 \`vscode://\` links for your local clone._" >> "$SUMMARY"
+              echo "_Open links: 🌐 GitHub · 🖥️ github.dev · 💻¹…💻ⁿ vscode (trying $ROOT_COUNT common clone locations — only the one that exists on your machine will open). Pin one path via repo variable \`LOCAL_WORKSPACE_ROOT\`._" >> "$SUMMARY"
             fi
             echo "" >> "$SUMMARY"
             echo "### Counts by language" >> "$SUMMARY"
@@ -95,7 +134,13 @@ jobs:
             echo "### Failing routes" >> "$SUMMARY"
             echo '| Route | File | First issue | Open | Issues |' >> "$SUMMARY"
             echo '|-------|------|-------------|------|--------|' >> "$SUMMARY"
-            jq -r --arg blob "$BLOB" --arg dev "$DEV" --arg local "$LOCAL" '
+            jq -r --arg blob "$BLOB" --arg dev "$DEV" --argjson roots "$ROOTS_JSON" '
+              def vscode_links($file; $line):
+                if ($roots | length) == 1
+                  then ["[💻](vscode://file/\($roots[0])/\($file):\($line))"]
+                  else [ range(0; $roots | length) as $i
+                         | "[💻\($i+1)](vscode://file/\($roots[$i])/\($file):\($line))" ]
+                end;
               .routes
               | to_entries[]
               | select(.value.ok == false)
@@ -103,11 +148,10 @@ jobs:
               | ($r.value.issues[0].line // null) as $ln
               | ($r.value.file) as $f
               | ($ln // 1) as $L
-              | ([
-                  "[🌐](\($blob)/\($f)#L\($L))",
-                  "[🖥️](\($dev)/\($f)#L\($L))"
-                ] + (if $local != "" then ["[💻](vscode://file/\($local)/\($f):\($L))"] else [] end)
-                | join(" ")) as $links
+              | ([ "[🌐](\($blob)/\($f)#L\($L))",
+                   "[🖥️](\($dev)/\($f)#L\($L))" ]
+                 + vscode_links($f; $L)
+                 | join(" ")) as $links
               | "| \($r.key) | [`\($f)`](\($blob)/\($f)) | " +
                 (if $ln then "L\($ln)" else "—" end) +
                 " | \($links) | \($r.value.issues | length) |"
@@ -116,23 +160,33 @@ jobs:
             echo "### Findings" >> "$SUMMARY"
             echo '| Location | Open | Lang | Field | Code | Message |' >> "$SUMMARY"
             echo '|----------|------|------|-------|------|---------|' >> "$SUMMARY"
-            jq -r --arg blob "$BLOB" --arg dev "$DEV" --arg local "$LOCAL" '
+            jq -r --arg blob "$BLOB" --arg dev "$DEV" --argjson roots "$ROOTS_JSON" '
+              def vscode_links($file; $line):
+                if ($roots | length) == 1
+                  then ["[💻](vscode://file/\($roots[0])/\($file):\($line))"]
+                  else [ range(0; $roots | length) as $i
+                         | "[💻\($i+1)](vscode://file/\($roots[$i])/\($file):\($line))" ]
+                end;
               .findings[]
               | . as $f
               | ($f.line // null) as $ln
               | ($ln // 1) as $L
-              | (if $ln
-                   then "`\($f.file):\($ln)`"
-                   else "`\($f.file)`"
-                 end) as $loc
-              | ([
-                  "[🌐](\($blob)/\($f.file)#L\($L))",
-                  "[🖥️](\($dev)/\($f.file)#L\($L))"
-                ] + (if $local != "" then ["[💻](vscode://file/\($local)/\($f.file):\($L))"] else [] end)
-                | join(" ")) as $links
+              | (if $ln then "`\($f.file):\($ln)`" else "`\($f.file)`" end) as $loc
+              | ([ "[🌐](\($blob)/\($f.file)#L\($L))",
+                   "[🖥️](\($dev)/\($f.file)#L\($L))" ]
+                 + vscode_links($f.file; $L)
+                 | join(" ")) as $links
               | "| \($loc) | \($links) | \($f.lang // "-") | \($f.field // "-") | `\($f.code)` | \($f.message | gsub("\\|"; "\\|")) |"
             ' reports/meta-audit.json >> "$SUMMARY"
             echo "" >> "$SUMMARY"
+            if [ -z "$LOCAL_WORKSPACE_ROOT" ]; then
+              echo "<details><summary>vscode candidate roots tried (in order)</summary>" >> "$SUMMARY"
+              echo "" >> "$SUMMARY"
+              echo "$ROOTS_JSON" | jq -r '.[] | "- `" + . + "`"' >> "$SUMMARY"
+              echo "" >> "$SUMMARY"
+              echo "</details>" >> "$SUMMARY"
+              echo "" >> "$SUMMARY"
+            fi
             echo "📎 Full JSON report attached as **meta-audit-report** artifact." >> "$SUMMARY"
           fi
 
