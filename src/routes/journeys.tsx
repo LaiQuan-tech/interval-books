@@ -1,68 +1,88 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
-import { journeys, CONTACT_EMAIL } from "@/data/site";
-import { CurationForm } from "./curation";
+import { useT } from "@/i18n/LanguageContext";
+import { UI, CONTACT_EMAIL } from "@/i18n/strings";
+import { journeys } from "@/data/content";
 import journeyImg from "@/assets/journey-mist.jpg";
 
 export const Route = createFileRoute("/journeys")({
   head: () => ({
     meta: [
-      { title: "策旅｜小時光書店" },
-      { name: "description", content: "從書頁走入山徑與海岸——以風土為主題的深度策旅。" },
-      { property: "og:title", content: "策旅｜小時光書店" },
-      { property: "og:description", content: "深度風土主題策旅。" },
+      { title: "策旅 Journeys｜小時光書店 Interval Books" },
+      { name: "description", content: "由書與土地共同寫成的深度旅程。每一趟策旅皆有獨立網站，本頁為彙整導流。" },
+      { property: "og:title", content: "策旅 Journeys｜小時光書店" },
+      { property: "og:description", content: "由書與土地共同寫成的深度旅程。" },
       { property: "og:image", content: journeyImg },
     ],
   }),
   component: Journeys,
 });
 
+const PAGE = {
+  title: {
+    zh: "讓土地，成為書的延伸",
+    en: "Let the land be the book's extension",
+    ja: "土地を、本の延長に",
+  },
+  intro: {
+    zh: "每一趟策旅皆有獨立網站，本頁僅做彙整導流。請點選感興趣的旅程，前往該旅程的專屬頁面。",
+    en: "Each journey has its own dedicated site. Choose one to read further.",
+    ja: "各「旅」には専用サイトがあります。気になる旅へお進みください。",
+  },
+  collab: { zh: "策旅合作共創", en: "Journey co-creation", ja: "旅の共創" },
+  collabBody: {
+    zh: "若您是地方夥伴、職人、旅宿或品牌，歡迎與我們共創一段屬於風土的策旅。請以 Email 聯繫。",
+    en: "If you're a local partner, maker, hotel, or brand, we'd love to co-create a journey rooted in place. Reach us by email.",
+    ja: "地域のパートナー、作り手、宿、ブランドの方へ。風土に根ざした旅をともに育てましょう。メールでご連絡ください。",
+  },
+};
+
 function Journeys() {
+  const t = useT();
   return (
     <PageShell>
       <PageHeader
         eyebrow="Journeys  ／  策旅"
-        title="從書頁，走入風土"
-        intro="每一趟策旅都有獨立的網站。本頁為彙整與導流，讓你看見小時光走出店外的另一種樣貌。"
+        title={t(PAGE.title)}
+        intro={t(PAGE.intro)}
       />
 
-      <section className="container-editorial pb-24 grid gap-12 md:grid-cols-2 lg:grid-cols-3">
+      <section className="container-editorial pb-24 grid gap-12 md:grid-cols-3">
         {journeys.map((j) => (
-          <article key={j.title} className="flex flex-col">
+          <article key={j.id} className="flex flex-col">
             <div className="aspect-[4/5] overflow-hidden bg-muted">
-              <img src={journeyImg} alt={j.title} loading="lazy" className="h-full w-full object-cover" />
+              <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
             </div>
-            <p className="eyebrow mt-6">{j.days}  ／  {j.theme}</p>
-            <h3 className="display mt-3 text-2xl leading-snug">{j.title}</h3>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground flex-1">{j.blurb}</p>
+            <p className="eyebrow mt-6">{t(j.days)}  ／  {t(j.theme)}</p>
+            <h3 className="display mt-3 text-2xl leading-snug">{t(j.title)}</h3>
+            <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(j.summary)}</p>
             <a
-              href={j.url}
+              href={j.externalUrl}
               target="_blank"
               rel="noreferrer"
               className="mt-6 inline-block self-start text-xs tracking-widest text-clay hover-underline"
             >
-              前往旅程網站  →
+              {t(UI.buttons.toJourney)}  →
             </a>
           </article>
         ))}
       </section>
 
       <section className="container-editorial pb-32">
-        <div className="border-t border-border pt-16 grid lg:grid-cols-2 gap-12">
+        <div className="border-t border-border pt-16 grid md:grid-cols-2 gap-10">
           <div>
-            <p className="eyebrow">Co-Create  ／  策旅合作共創</p>
-            <h2 className="display mt-5 text-4xl">與在地夥伴<br/>共寫一段旅程</h2>
-            <p className="mt-6 text-base leading-relaxed text-foreground/75 max-w-md">
-              如果你來自旅宿、品牌、地方創生團隊，歡迎與我們一起策劃下一段旅程。
-            </p>
+            <p className="eyebrow">Co-create</p>
+            <h2 className="display mt-4 text-3xl md:text-4xl">{t(PAGE.collab)}</h2>
+          </div>
+          <div>
+            <p className="text-base leading-relaxed text-foreground/80">{t(PAGE.collabBody)}</p>
             <a
               href={`mailto:${CONTACT_EMAIL}`}
-              className="mt-8 inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
+              className="mt-6 inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
             >
-              Email 聯繫  ／  {CONTACT_EMAIL}
+              {CONTACT_EMAIL}
             </a>
           </div>
-          <CurationForm />
         </div>
       </section>
     </PageShell>

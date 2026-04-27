@@ -1,36 +1,50 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
-import { news } from "@/data/site";
+import { useT } from "@/i18n/LanguageContext";
+import { news } from "@/data/content";
 
 export const Route = createFileRoute("/news")({
   head: () => ({
     meta: [
-      { title: "最新消息｜小時光書店" },
-      { name: "description", content: "公告、展覽、活動與策旅的第一手消息。" },
+      { title: "最新消息 News｜小時光書店 Interval Books" },
+      { name: "description", content: "活動預告、營業調整與策旅消息。" },
       { property: "og:title", content: "最新消息｜小時光書店" },
-      { property: "og:description", content: "公告、展覽與活動更新。" },
+      { property: "og:description", content: "活動預告、營業調整與策旅消息。" },
     ],
   }),
   component: News,
 });
 
+const PAGE = {
+  title: { zh: "最新消息", en: "Latest News", ja: "お知らせ" },
+  intro: {
+    zh: "簡短的小通知與更新——展覽、活動、營業時間變動。",
+    en: "Short notes and updates — exhibitions, events, and hours.",
+    ja: "短いお知らせ。展覧、イベント、営業時間など。",
+  },
+};
+
 function News() {
+  const t = useT();
   return (
     <PageShell>
-      <PageHeader eyebrow="News  ／  最新消息" title="店裡最近發生的事" />
+      <PageHeader
+        eyebrow="News  ／  最新消息"
+        title={t(PAGE.title)}
+        intro={t(PAGE.intro)}
+      />
 
-      <section className="container-editorial pb-32">
-        <div className="border-t border-border">
+      <section className="container-editorial pb-32 max-w-3xl">
+        <ul className="divide-y divide-border border-y border-border">
           {news.map((n) => (
-            <article key={n.title} className="grid md:grid-cols-12 gap-6 py-10 border-b border-border">
-              <p className="md:col-span-2 text-xs tracking-widest text-muted-foreground">{n.date}</p>
-              <div className="md:col-span-10">
-                <h3 className="font-serif text-2xl leading-snug">{n.title}</h3>
-                <p className="mt-3 text-sm leading-relaxed text-foreground/75 max-w-2xl">{n.body}</p>
-              </div>
-            </article>
+            <li key={n.id} className="py-10">
+              <p className="text-xs text-muted-foreground tracking-widest">{n.date}</p>
+              <h3 className="font-serif text-2xl mt-3 leading-snug">{t(n.title)}</h3>
+              <p className="mt-4 text-sm leading-relaxed text-foreground/75">{t(n.summary)}</p>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{t(n.description)}</p>
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
     </PageShell>
   );
