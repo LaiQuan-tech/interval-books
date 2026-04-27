@@ -1,120 +1,73 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
-import { collaborations, cases, CONTACT_EMAIL } from "@/data/site";
-import interiorImg from "@/assets/bookstore-interior.jpg";
+import { useT } from "@/i18n/LanguageContext";
+import { CONTACT_EMAIL } from "@/i18n/strings";
+import { collaborations } from "@/data/content";
 
 export const Route = createFileRoute("/curation")({
   head: () => ({
     meta: [
-      { title: "策展與合作｜小時光書店" },
-      { name: "description", content: "為品牌、空間、機構量身打造的書展、藝術合作、生活節與內容策展。" },
+      { title: "策展與合作 Curation｜小時光書店 Interval Books" },
+      { name: "description", content: "療癒藝術節、空間策展、書店展售與品牌共創——以低調而精緻的方式，與夥伴共創。" },
       { property: "og:title", content: "策展與合作｜小時光書店" },
-      { property: "og:description", content: "與小時光共構一場策展。" },
-      { property: "og:image", content: interiorImg },
+      { property: "og:description", content: "與夥伴共創一種有策展感的現場。" },
     ],
   }),
   component: Curation,
 });
 
+const PAGE = {
+  title: {
+    zh: "與夥伴，共構一段現場",
+    en: "Co-creating a quiet stage",
+    ja: "ともに、ひとつの現場を",
+  },
+  intro: {
+    zh: "我們相信策展不只是擺放，而是讓人、物、空間，在一段時間裡彼此看見。",
+    en: "Curation, to us, is not arrangement — it's letting people, objects, and space see one another for a while.",
+    ja: "キュレーションとは並べることではなく、人と物と空間がしばらくのあいだ互いに見つめ合うこと。",
+  },
+  contact: {
+    zh: "合作邀請請以 Email 聯繫，我們會親自回覆。",
+    en: "For collaboration, please reach us by email — we'll reply personally.",
+    ja: "ご相談はメールにて。一通ずつお返事いたします。",
+  },
+};
+
 function Curation() {
+  const t = useT();
   return (
     <PageShell>
       <PageHeader
-        eyebrow="Curation & Collaboration  ／  策展與合作"
-        title="與我們，共構一場策展"
-        intro="從一場書展、一個展覽，到一座生活節，我們以策展為方法，協助品牌與機構說出有層次的故事。"
+        eyebrow="Curation  ／  策展與合作"
+        title={t(PAGE.title)}
+        intro={t(PAGE.intro)}
       />
 
-      <section className="container-editorial pb-24">
-        <p className="eyebrow">What We Do  ／  合作類型</p>
-        <div className="mt-10 grid gap-px bg-border border border-border md:grid-cols-2 lg:grid-cols-3">
-          {collaborations.map((c) => (
-            <div key={c.title} className="bg-background p-8">
-              <h3 className="display text-xl">{c.title}</h3>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{c.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="container-editorial pb-24">
-        <p className="eyebrow">Selected Cases  ／  合作案例</p>
-        <div className="mt-10 grid gap-10 md:grid-cols-3">
-          {cases.map((c) => (
-            <article key={c.title}>
-              <div className="aspect-[4/5] overflow-hidden bg-muted">
-                <img src={interiorImg} alt={c.title} loading="lazy" className="h-full w-full object-cover" />
-              </div>
-              <h3 className="font-serif text-xl mt-5">{c.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{c.line}</p>
-            </article>
-          ))}
-        </div>
+      <section className="container-editorial pb-24 grid gap-px bg-border border border-border md:grid-cols-2">
+        {collaborations.map((c, i) => (
+          <article key={i} className="bg-background p-8 md:p-10">
+            <p className="text-[0.65rem] tracking-widest text-muted-foreground">
+              {String(i + 1).padStart(2, "0")}
+            </p>
+            <h3 className="display mt-3 text-2xl">{t(c.title)}</h3>
+            <p className="mt-4 text-sm leading-relaxed text-foreground/75">{t(c.desc)}</p>
+          </article>
+        ))}
       </section>
 
       <section className="container-editorial pb-32">
-        <div className="border-t border-border pt-16 grid lg:grid-cols-2 gap-12">
-          <div>
-            <p className="eyebrow">Get in Touch  ／  聯繫我們</p>
-            <h2 className="display mt-5 text-4xl">先寫一封信，<br/>慢慢地談。</h2>
-            <p className="mt-6 text-base leading-relaxed text-foreground/75 max-w-md">
-              如果你有一個想法、一個品牌、一個空間，期待透過策展讓它被看見，歡迎來信。
-            </p>
-            <a
-              href={`mailto:${CONTACT_EMAIL}`}
-              className="mt-8 inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
-            >
-              Email 聯繫  ／  {CONTACT_EMAIL}
-            </a>
-          </div>
-          <CurationForm />
+        <div className="border-t border-border pt-16 max-w-2xl">
+          <p className="eyebrow">Contact</p>
+          <p className="mt-5 text-lg leading-relaxed text-foreground/80">{t(PAGE.contact)}</p>
+          <a
+            href={`mailto:${CONTACT_EMAIL}`}
+            className="mt-8 inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
+          >
+            {CONTACT_EMAIL}
+          </a>
         </div>
       </section>
     </PageShell>
-  );
-}
-
-export function CurationForm() {
-  return (
-    <form
-      action={`mailto:${CONTACT_EMAIL}`}
-      method="post"
-      encType="text/plain"
-      className="grid gap-5 text-sm"
-    >
-      <Field label="姓名" name="name" />
-      <Field label="單位" name="org" />
-      <Field label="合作類型" name="type" />
-      <div className="grid grid-cols-2 gap-5">
-        <Field label="預算" name="budget" />
-        <Field label="檔期" name="schedule" />
-      </div>
-      <Field label="Email" name="email" type="email" />
-      <div>
-        <label className="eyebrow">需求概述</label>
-        <textarea
-          name="message"
-          rows={5}
-          className="mt-2 w-full border border-input bg-background px-4 py-3 text-sm focus:border-foreground focus:outline-none"
-        />
-      </div>
-      <button type="submit" className="mt-2 self-start border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors">
-        送出洽詢
-      </button>
-    </form>
-  );
-}
-
-function Field({ label, name, type = "text" }: { label: string; name: string; type?: string }) {
-  return (
-    <div>
-      <label className="eyebrow" htmlFor={name}>{label}</label>
-      <input
-        id={name}
-        name={name}
-        type={type}
-        className="mt-2 w-full border border-input bg-background px-4 py-3 text-sm focus:border-foreground focus:outline-none"
-      />
-    </div>
   );
 }
