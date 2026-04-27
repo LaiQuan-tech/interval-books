@@ -26,14 +26,22 @@ const PAGE = {
   },
   address: { zh: "店址", en: "Address", ja: "ご住所" },
   hours: { zh: "營業時間", en: "Hours", ja: "営業時間" },
-  transport: { zh: "交通資訊", en: "Getting Here", ja: "アクセス" },
+  transport: { zh: "交通方式", en: "Getting Here", ja: "アクセス" },
   metro: { zh: "捷運", en: "Metro (MRT)", ja: "MRT" },
   bus: { zh: "公車", en: "Bus", ja: "バス" },
-  drive: { zh: "開車", en: "By car", ja: "お車" },
+  drive: { zh: "開車・停車", en: "By car & parking", ja: "お車・駐車" },
+  walk: { zh: "步行路線", en: "On foot", ja: "徒歩でのご案内" },
   inside: { zh: "店內體驗", en: "Inside", ja: "店内のこと" },
   busDetail: { zh: "查看公車路線", en: "View bus routes", ja: "バス路線を見る" },
   contactUs: { zh: "聯絡我們", en: "Contact us", ja: "お問合せ" },
   ig: { zh: "Instagram", en: "Instagram", ja: "Instagram" },
+  navHint: {
+    zh: "一鍵開啟導航，帶你走進紅磚六合院。",
+    en: "One tap to open turn-by-turn navigation to the Red Brick Courtyard.",
+    ja: "ワンタップで紅煉瓦六合院までのナビを開きます。",
+  },
+  openGoogle: { zh: "Google Maps 導航", en: "Open in Google Maps", ja: "Google マップで開く" },
+  openApple: { zh: "Apple 地圖導航", en: "Open in Apple Maps", ja: "Apple マップで開く" },
 };
 
 const METRO = {
@@ -70,9 +78,39 @@ const BUS = {
 };
 
 const DRIVE = {
-  zh: ["園區附設 24 小時停車場", "平日 TWD 40 ／小時　|　假日 TWD 60 ／小時"],
-  en: ["Park's 24-hour parking lot on site", "Weekdays TWD 40 / hr  ·  Weekends TWD 60 / hr"],
-  ja: ["園内の 24 時間駐車場をご利用いただけます", "平日 TWD 40 / 時　|　休日 TWD 60 / 時"],
+  zh: [
+    "園區附設 24 小時停車場（出入口位於八德路一段）",
+    "平日 TWD 40 ／小時　|　假日 TWD 60 ／小時",
+    "建議：假日車位緊張，可改搭捷運前往。",
+  ],
+  en: [
+    "On-site 24-hour parking lot (entrance on Bade Rd. Sec. 1)",
+    "Weekdays TWD 40 / hr  ·  Weekends TWD 60 / hr",
+    "Tip: weekend parking fills quickly — MRT is recommended.",
+  ],
+  ja: [
+    "園内に 24 時間駐車場あり（入口は八德路一段）",
+    "平日 TWD 40 / 時　|　休日 TWD 60 / 時",
+    "ヒント：週末は満車になりやすいため、MRT のご利用がおすすめです。",
+  ],
+};
+
+const WALK = {
+  zh: [
+    "從忠孝新生站 1 號出口出來，沿金山北路向北步行約 200 公尺。",
+    "看到紅磚老建築群即進入園區，沿主道走至「紅磚六合院」。",
+    "穿過六合院中庭，西側第三間即為「西 7-3 館」。",
+  ],
+  en: [
+    "From MRT Zhongxiao Xinsheng Exit 1, walk north on Jinshan N. Rd. for ~200 m.",
+    "Enter the park when you see the red-brick warehouses, then head to the Red Brick Courtyard.",
+    "Cross the courtyard — West 7-3 is the third unit on the west side.",
+  ],
+  ja: [
+    "忠孝新生駅 1 番出口から金山北路を北へ約 200 m。",
+    "赤煉瓦倉庫群が見えたら園内へ。メイン通りに沿って「紅煉瓦六合院」へ。",
+    "中庭を抜けた西側 3 番目が「西 7-3 館」です。",
+  ],
 };
 
 const INSIDE = {
