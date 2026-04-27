@@ -16,7 +16,7 @@ export function SiteFooter() {
         </div>
 
         <div className="text-sm leading-relaxed">
-          <p className="eyebrow mb-4">{t(UI.footer.visit)}</p>
+          <p className="eyebrow text-2xl mb-4">{t(UI.footer.visit)}</p>
           <p>{t(SITE_INFO.address)}</p>
           <p className="text-muted-foreground mt-1">{t(SITE_INFO.city)}</p>
           <p className="mt-3">{t(SITE_INFO.hours)}</p>
@@ -24,7 +24,7 @@ export function SiteFooter() {
         </div>
 
         <div className="text-sm leading-relaxed">
-          <p className="eyebrow mb-4">{t(UI.footer.contact)}</p>
+          <p className="eyebrow text-2xl mb-4">{t(UI.footer.contact)}</p>
           <a href={`mailto:${CONTACT_EMAIL}`} className="hover-underline break-all">
             {CONTACT_EMAIL}
           </a>

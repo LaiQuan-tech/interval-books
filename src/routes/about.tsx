@@ -114,7 +114,7 @@ function About() {
       </section>
 
       <section className="container-editorial pb-32">
-        <p className="eyebrow border-t border-border pt-12">
+        <p className="eyebrow text-2xl border-t border-border pt-12">
           {t({ zh: "空間特色", en: "Inside the space", ja: "空間" })}
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-3">

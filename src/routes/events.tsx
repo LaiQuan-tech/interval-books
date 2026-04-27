@@ -111,7 +111,7 @@ function Events() {
       <section className="container-editorial pb-32 grid gap-px bg-border border border-border md:grid-cols-2">
         {list.map((e) => (
           <article key={e.id} className="bg-background p-8 md:p-10 flex flex-col">
-            <p className="eyebrow">{t(CATEGORY_LABEL[e.category])}</p>
+            <p className="eyebrow text-2xl">{t(CATEGORY_LABEL[e.category])}</p>
             <h3 className="display mt-4 text-2xl md:text-3xl leading-snug">{t(e.title)}</h3>
             <p className="mt-4 text-sm text-muted-foreground">{e.date}</p>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(e.summary)}</p>

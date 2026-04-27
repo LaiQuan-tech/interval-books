@@ -54,12 +54,12 @@ function Contact() {
 
       <section className="container-editorial pb-32 grid gap-16 md:grid-cols-2 max-w-4xl">
         <div>
-          <p className="eyebrow">{t(PAGE.email)}</p>
+          <p className="eyebrow text-2xl">{t(PAGE.email)}</p>
           <a href={`mailto:${CONTACT_EMAIL}`} className="display mt-4 block text-2xl md:text-3xl hover-underline break-all">
             {CONTACT_EMAIL}
           </a>
 
-          <p className="eyebrow mt-10">{t(PAGE.phone)}</p>
+          <p className="eyebrow text-2xl mt-10">{t(PAGE.phone)}</p>
           <ul className="mt-4 space-y-2 text-lg">
             {CONTACT_PHONES.map((p) => (
               <li key={p.tel}>
@@ -72,13 +72,13 @@ function Contact() {
         </div>
         <div className="space-y-10">
           <div>
-            <p className="eyebrow">{t(PAGE.site)}</p>
+            <p className="eyebrow text-2xl">{t(PAGE.site)}</p>
             <a href={SITE_URL} target="_blank" rel="noreferrer" className="mt-3 block text-base hover-underline">
               intervalbooks.tw
             </a>
           </div>
           <div>
-            <p className="eyebrow">{t(PAGE.social)}</p>
+            <p className="eyebrow text-2xl">{t(PAGE.social)}</p>
             <ul className="mt-4 space-y-2 text-base">
               <li><a href={SOCIAL.instagram} target="_blank" rel="noreferrer" className="hover-underline">Instagram　@intervalbookstw</a></li>
               <li><a href={SOCIAL.facebook} target="_blank" rel="noreferrer" className="hover-underline text-muted-foreground">Facebook</a></li>

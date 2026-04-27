@@ -17,7 +17,7 @@ function NotFoundInner() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <p className="eyebrow">404</p>
+        <p className="eyebrow text-2xl">404</p>
         <h2 className="display mt-4 text-4xl">
           {useLang().lang === "zh"
             ? "頁面尚未開放"

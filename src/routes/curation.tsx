@@ -72,7 +72,7 @@ function Curation() {
 
       <section className="container-editorial pb-32">
         <div className="border-t border-border pt-16 max-w-2xl">
-          <p className="eyebrow">Contact</p>
+          <p className="eyebrow text-2xl">Contact</p>
           <p className="mt-5 text-lg leading-relaxed text-foreground/80">{t(PAGE.contact)}</p>
           <a
             href={`mailto:${CONTACT_EMAIL}`}

@@ -68,14 +68,14 @@ function Journeys() {
             <div className="aspect-[4/3] overflow-hidden bg-muted">
               <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
             </div>
-            <p className="eyebrow mt-6">{t(j.days)}  ／  {t(j.theme)}</p>
-            <h3 className="display mt-3 text-2xl leading-snug">{t(j.title)}</h3>
+            <p className="eyebrow text-2xl mt-6">{t(j.days)}  ／  {t(j.theme)}</p>
+            <h3 className="display mt-3 text-2xl leading-snug whitespace-pre-line">{t(j.title)}</h3>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(j.summary)}</p>
             <a
               href={j.externalUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-6 inline-block self-start text-xs tracking-widest text-clay hover-underline"
+              className="mt-6 inline-block self-start tracking-widest text-clay hover-underline text-base"
             >
               {t(UI.buttons.toJourney)}  →
             </a>
@@ -86,14 +86,14 @@ function Journeys() {
       <section className="container-editorial pb-32">
         <div className="border-t border-border pt-16 grid md:grid-cols-2 gap-10">
           <div>
-            <p className="eyebrow">Co-create</p>
+            <p className="eyebrow text-2xl">Co-create</p>
             <h2 className="display mt-4 text-3xl md:text-4xl">{t(PAGE.collab)}</h2>
           </div>
           <div>
             <p className="text-base leading-relaxed text-foreground/80">{t(PAGE.collabBody)}</p>
             <a
               href={`mailto:${CONTACT_EMAIL}`}
-              className="mt-6 inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
+              className="mt-6 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
             >
               {CONTACT_EMAIL}
             </a>
