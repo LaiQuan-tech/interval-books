@@ -44,15 +44,21 @@ export function SiteFooter() {
             intervalbooks.tw
           </a>
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-            <a href={SOCIAL.instagram} target="_blank" rel="noreferrer" className="hover-underline">
-              Instagram
-            </a>
-            <a href={SOCIAL.facebook} target="_blank" rel="noreferrer" className="hover-underline">
-              Facebook
-            </a>
-            <a href={SOCIAL.line} target="_blank" rel="noreferrer" className="hover-underline">
-              LINE
-            </a>
+            {SOCIAL.instagram && (
+              <a href={SOCIAL.instagram} target="_blank" rel="noreferrer" className="hover-underline">
+                Instagram
+              </a>
+            )}
+            {SOCIAL.facebook && (
+              <a href={SOCIAL.facebook} target="_blank" rel="noreferrer" className="hover-underline">
+                Facebook
+              </a>
+            )}
+            {SOCIAL.line && (
+              <a href={SOCIAL.line} target="_blank" rel="noreferrer" className="hover-underline">
+                LINE
+              </a>
+            )}
           </div>
         </div>
       </div>
