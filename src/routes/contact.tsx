@@ -59,7 +59,7 @@ function Contact() {
             {CONTACT_EMAIL}
           </a>
 
-          <p className="eyebrow mt-10">{t(PAGE.phone)}</p>
+          <p className="eyebrow text-2xl mt-10">{t(PAGE.phone)}</p>
           <ul className="mt-4 space-y-2 text-lg">
             {CONTACT_PHONES.map((p) => (
               <li key={p.tel}>

@@ -57,7 +57,7 @@ function Curated() {
           <div key={theme.id}>
             <div className="grid md:grid-cols-12 gap-10 items-end mb-12">
               <div className="md:col-span-5">
-                <p className="eyebrow">Window {String(i + 1).padStart(2, "0")}</p>
+                <p className="eyebrow text-2xl">Window {String(i + 1).padStart(2, "0")}</p>
                 <h2 className="display mt-4 text-4xl md:text-5xl">{t(theme.title)}</h2>
               </div>
               <p className="md:col-span-7 text-base leading-relaxed text-muted-foreground md:pb-2">

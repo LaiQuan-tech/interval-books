@@ -223,7 +223,7 @@ function Visit() {
 
       {/* 3) 交通方式 */}
       <section className="container-editorial pb-24">
-        <p className="eyebrow border-t border-border pt-12">{t(PAGE.transport)}</p>
+        <p className="eyebrow text-2xl border-t border-border pt-12">{t(PAGE.transport)}</p>
         <div className="mt-10 grid gap-12 md:grid-cols-2 lg:grid-cols-4">
           {/* Metro */}
           <div>
@@ -282,7 +282,7 @@ function Visit() {
       {/* 4) 店內體驗 + CTA */}
       <section className="container-editorial pb-32 grid gap-12 md:grid-cols-2">
         <div>
-          <p className="eyebrow border-t border-border pt-12">{t(PAGE.inside)}</p>
+          <p className="eyebrow text-2xl border-t border-border pt-12">{t(PAGE.inside)}</p>
           <ul className="mt-6 space-y-3 text-sm leading-relaxed text-foreground/80">
             {pickList(INSIDE).map((line, i) => (
               <li key={i}>· {line}</li>
@@ -290,7 +290,7 @@ function Visit() {
           </ul>
         </div>
         <div>
-          <p className="eyebrow border-t border-border pt-12">Contact</p>
+          <p className="eyebrow text-2xl border-t border-border pt-12">Contact</p>
           <div className="mt-6 flex flex-wrap gap-4 text-xs tracking-widest">
             <Link to="/contact" className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors">
               {t(PAGE.contactUs)}
