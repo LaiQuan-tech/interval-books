@@ -75,7 +75,7 @@ function Journeys() {
               href={j.externalUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-6 inline-block self-start text-xs tracking-widest text-clay hover-underline"
+              className="mt-6 inline-block self-start tracking-widest text-clay hover-underline text-base"
             >
               {t(UI.buttons.toJourney)}  →
             </a>
@@ -93,7 +93,7 @@ function Journeys() {
             <p className="text-base leading-relaxed text-foreground/80">{t(PAGE.collabBody)}</p>
             <a
               href={`mailto:${CONTACT_EMAIL}`}
-              className="mt-6 inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
+              className="mt-6 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
             >
               {CONTACT_EMAIL}
             </a>
