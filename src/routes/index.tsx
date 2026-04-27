@@ -28,14 +28,14 @@ const HERO = {
   eyebrow: { zh: "Interval Books  ／  Est.", en: "Interval Books  ／  Est.", ja: "Interval Books  ／  Est." },
   titleMain: { zh: "小時光書店", en: "Interval Books", ja: "小時光書店" },
   titleSub: {
-    zh: "風土誌策展的閱讀與生活場域",
-    en: "A curated home for reading, terroir, and quiet life.",
-    ja: "風土誌をキュレーションする、読書と暮らしの場。",
+    zh: "留一點時間給真正重要的事",
+    en: "Save a little time for what truly matters.",
+    ja: "本当に大切なことに、少しの時間を。",
   },
   intro: {
-    zh: "以書展策展為核心，串連地方選物、陶藝作品、讀書會與身心靈活動，延伸至深度策旅。",
-    en: "Anchored in book curation — woven through with local objects, ceramics, reading circles, healing practices, and slow journeys.",
-    ja: "書のキュレーションを軸に、地の選品、陶芸、読書会、ヒーリング、そして深い旅へ。",
+    zh: "留一段屬於自己的＿＿＿小時光。",
+    en: "Keep an interval that belongs only to you.",
+    ja: "あなただけの小さな時間を、ひとつ。",
   },
 };
 
@@ -109,7 +109,7 @@ function Index() {
             </p>
           </div>
           <div className="lg:col-span-6">
-            <div className="relative aspect-[4/5] overflow-hidden bg-muted">
+            <div className="relative aspect-[4/3] overflow-hidden bg-muted">
               <img
                 src={heroImg}
                 alt={t(HERO.titleMain)}
