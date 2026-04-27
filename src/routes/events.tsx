@@ -5,6 +5,7 @@ import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { UI } from "@/i18n/strings";
 import { events, type EventCategory } from "@/data/content";
+import eventImg from "@/assets/event-reading.jpg";
 
 export const Route = createFileRoute("/events")({
   head: () => ({
@@ -13,6 +14,8 @@ export const Route = createFileRoute("/events")({
       { name: "description", content: "讀書會、療癒生活節、策旅說明會、陶藝家展售、身心靈工作坊與好書交流——本頁為策展式彙整，每場活動皆有獨立網站。" },
       { property: "og:title", content: "活動 Events｜小時光書店" },
       { property: "og:description", content: "策展式活動彙整。" },
+      { property: "og:image", content: eventImg },
+      { name: "twitter:image", content: eventImg },
     ],
   }),
   component: Events,
@@ -66,6 +69,7 @@ function Events() {
       ja: "読書会、ヒーリング・フェス、旅の説明会、陶芸家の展示販売、ソマティック・ワークショップ、本の交流。各イベントには専用サイトがあります。",
     },
     ogTitle: PAGE_INTRO.title,
+    ogImage: eventImg,
   });
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const list = filter === "all" ? events : events.filter((e) => e.category === filter);
@@ -77,6 +81,12 @@ function Events() {
         title={t(PAGE_INTRO.title)}
         intro={t(PAGE_INTRO.intro)}
       />
+
+      <section className="container-editorial pb-12">
+        <div className="aspect-[16/9] overflow-hidden bg-muted">
+          <img src={eventImg} alt={t(PAGE_INTRO.title)} className="h-full w-full object-cover" loading="lazy" />
+        </div>
+      </section>
 
       <section className="container-editorial pb-12 flex flex-wrap gap-3 text-xs tracking-widest">
         {FILTERS.map((f) => {
