@@ -23,7 +23,7 @@ export function PageHeader({
 }) {
   return (
     <section className="container-editorial pt-20 md:pt-28 pb-12 md:pb-16">
-      <p className="eyebrow">{eyebrow}</p>
+      <p className="eyebrow text-2xl">{eyebrow}</p>
       <h1 className="display mt-5 text-5xl md:text-7xl max-w-4xl">{title}</h1>
       {intro && (
         <p className="mt-8 max-w-2xl text-base md:text-lg leading-relaxed text-muted-foreground">

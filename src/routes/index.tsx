@@ -61,14 +61,14 @@ const ENTRIES = {
   explore: { zh: "Explore", en: "Explore", ja: "Explore" },
   goTo: { zh: "前往", en: "Enter", ja: "見る" },
   curatedTitle: {
-    zh: "以櫥窗，而非貨架。",
+    zh: "一本好書，一份心意，\n風帶不走了，都留在美好的人情連結裡。",
     en: "A window, not a shelf.",
     ja: "棚ではなく、窓辺に。",
   },
   curatedBody: {
-    zh: "三個主題、數十件物——地方風土、器物與陶、茶與日常。每一只都是被留下來的緩慢時間。",
+    zh: "關於這片土地的故事\n地方風土、器物與陶、茶與日常。\n都是被留下來的緩慢時間。",
     en: "Three themes, dozens of pieces — place, vessels, tea. Each one a quiet pause held in form.",
-    ja: "三つのテーマ、数十の品。土地、器、茶。それぞれが、留め置かれた緩やかな時間。",
+    ja: "三つのテーマ、数十の品. 土地, 器, 茶. それぞれが、留め置かれた緩やかな時間。",
   },
   curatedCta: { zh: "走進選品櫥窗", en: "Enter the window", ja: "選品の窓辺へ" },
   visitFull: { zh: "完整來訪資訊", en: "Full visit info", ja: "ご案内" },

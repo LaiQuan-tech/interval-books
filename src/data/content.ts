@@ -265,7 +265,7 @@ export const journeys: JourneyItem[] = [
   {
     id: "jo-1",
     title: {
-      zh: "霧中山徑｜阿里山風土三日",
+      zh: "如果可以慢下來｜\n風土策旅",
       en: "Misty Trails | Three Days in Alishan",
       ja: "霧の山道｜阿里山風土 三日",
     },
@@ -281,7 +281,7 @@ export const journeys: JourneyItem[] = [
     },
     days: { zh: "3 天 2 夜", en: "3 days · 2 nights", ja: "2泊3日" },
     theme: {
-      zh: "茶、霧、山徑",
+      zh: "山、海、人情",
       en: "Tea, mist, mountain paths",
       ja: "茶、霧、山道",
     },

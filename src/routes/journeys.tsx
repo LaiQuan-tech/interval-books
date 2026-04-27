@@ -69,7 +69,7 @@ function Journeys() {
               <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
             </div>
             <p className="eyebrow mt-6">{t(j.days)}  ／  {t(j.theme)}</p>
-            <h3 className="display mt-3 text-2xl leading-snug">{t(j.title)}</h3>
+            <h3 className="display mt-3 text-2xl leading-snug whitespace-pre-line">{t(j.title)}</h3>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(j.summary)}</p>
             <a
               href={j.externalUrl}
@@ -86,7 +86,7 @@ function Journeys() {
       <section className="container-editorial pb-32">
         <div className="border-t border-border pt-16 grid md:grid-cols-2 gap-10">
           <div>
-            <p className="eyebrow">Co-create</p>
+            <p className="eyebrow text-2xl">Co-create</p>
             <h2 className="display mt-4 text-3xl md:text-4xl">{t(PAGE.collab)}</h2>
           </div>
           <div>

@@ -12,7 +12,7 @@ export const Route = createFileRoute("/curated")({
       { title: "主理人的選品 Curated｜小時光書店 Interval Books" },
       { name: "description", content: "三個主題櫥窗：地方風土、器物與陶、茶與日常。展示型呈現，請至店或來信詢問。" },
       { property: "og:title", content: "主理人的選品｜小時光書店" },
-      { property: "og:description", content: "以櫥窗，而非貨架。" },
+      { property: "og:description", content: "一本好書，一份心意，\n風帶不走了，都留在美好的人情連結裡。" },
       { property: "og:image", content: curatedImg },
     ],
   }),

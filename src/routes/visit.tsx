@@ -181,12 +181,12 @@ function Visit() {
       {/* 1) 地址 + 營業時間 */}
       <section className="container-editorial pb-16 grid gap-12 md:grid-cols-2">
         <div>
-          <p className="eyebrow">{t(PAGE.address)}</p>
+          <p className="eyebrow text-2xl">{t(PAGE.address)}</p>
           <h3 className="display mt-3 text-2xl">{t(SITE_INFO.address)}</h3>
           <p className="mt-2 text-sm text-muted-foreground">{t(SITE_INFO.city)}</p>
         </div>
         <div>
-          <p className="eyebrow">{t(PAGE.hours)}</p>
+          <p className="eyebrow text-2xl">{t(PAGE.hours)}</p>
           <p className="mt-3 text-base">{t(SITE_INFO.hours)}</p>
           <p className="mt-1 text-sm text-muted-foreground">{t(UI.footer.everyday)}</p>
         </div>
@@ -196,7 +196,7 @@ function Visit() {
       <section className="container-editorial pb-20">
         <div className="border border-border bg-[oklch(0.97_0.012_82)] p-8 md:p-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="max-w-md">
-            <p className="eyebrow">Navigate</p>
+            <p className="eyebrow text-2xl">Navigate</p>
             <h3 className="display mt-3 text-2xl md:text-3xl">{t(UI.buttons.navigate)}</h3>
             <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{t(PAGE.navHint)}</p>
           </div>

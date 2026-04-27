@@ -79,7 +79,7 @@ function Exhibitions() {
               </div>
             </div>
             <div className="md:col-span-5 flex flex-col justify-center">
-              <p className="eyebrow">{ex.period}</p>
+              <p className="eyebrow text-2xl">{ex.period}</p>
               <h2 className="display mt-4 text-4xl md:text-5xl">{t(ex.title)}</h2>
               <p className="mt-3 text-sm text-muted-foreground">{t(ex.location)}</p>
               <div className="rule mt-6" />
