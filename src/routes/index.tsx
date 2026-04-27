@@ -93,7 +93,7 @@ function Index() {
       <section className="container-editorial pt-16 md:pt-24 pb-20">
         <div className="grid lg:grid-cols-12 gap-10 lg:gap-16 items-end">
           <div className="lg:col-span-6">
-            <p className="eyebrow">{t(HERO.eyebrow)}</p>
+            <p className="eyebrow text-2xl">{t(HERO.eyebrow)}</p>
             <h1 className="display mt-6 text-5xl md:text-7xl lg:text-[5.5rem]">
               {t(HERO.titleMain)}
               <span className="block text-2xl md:text-3xl mt-6 text-muted-foreground font-light">
@@ -133,7 +133,7 @@ function Index() {
               to={c.to}
               className="group bg-background p-8 md:p-10 transition-colors hover:bg-[oklch(0.96_0.014_82)]"
             >
-              <p className="eyebrow">{t(ENTRIES.explore)}</p>
+              <p className="eyebrow text-2xl">{t(ENTRIES.explore)}</p>
               <h3 className="display mt-4 text-2xl">{c.label}</h3>
               <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{c.desc}</p>
               <span className="mt-8 inline-block text-xs tracking-widest text-clay group-hover:text-foreground">
@@ -149,7 +149,7 @@ function Index() {
       <div className="container-editorial pb-20 grid gap-10 md:grid-cols-3">
         {events.slice(0, 3).map((e) => (
           <article key={e.id} className="flex flex-col">
-            <p className="eyebrow">{e.category}</p>
+            <p className="eyebrow text-2xl">{e.category}</p>
             <h3 className="display mt-3 text-2xl leading-snug">{t(e.title)}</h3>
             <p className="mt-3 text-sm text-muted-foreground">{e.date}</p>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(e.summary)}</p>
@@ -173,7 +173,7 @@ function Index() {
             <div className="aspect-[5/4] overflow-hidden bg-muted">
               <img src={i === 0 ? exhibitionImg : storefrontImg} alt={t(ex.title)} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]" />
             </div>
-            <p className="eyebrow mt-6">{ex.period}</p>
+            <p className="eyebrow text-2xl mt-6">{ex.period}</p>
             <h3 className="display mt-3 text-3xl">{t(ex.title)}</h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{t(ex.summary)}</p>
             <Link to="/exhibitions" hash={ex.slug} className="mt-5 inline-block text-xs tracking-widest text-clay hover-underline">
@@ -192,10 +192,10 @@ function Index() {
               <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
             </div>
             <div>
-              <p className="eyebrow">{t(j.days)}  ／  {t(j.theme)}</p>
-              <h3 className="display mt-4 text-4xl">{t(j.title)}</h3>
+              <p className="eyebrow text-2xl">{t(j.days)}  ／  {t(j.theme)}</p>
+              <h3 className="display mt-4 text-4xl whitespace-pre-line">{t(j.title)}</h3>
               <p className="mt-5 text-base leading-relaxed text-foreground/75">{t(j.summary)}</p>
-              <a href={j.externalUrl} target="_blank" rel="noreferrer" className="mt-8 inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors">
+              <a href={j.externalUrl} target="_blank" rel="noreferrer" className="mt-8 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base">
                 {t(UI.buttons.toJourney)}
               </a>
             </div>
@@ -207,12 +207,12 @@ function Index() {
       <section className="container-editorial pb-24">
         <div className="grid md:grid-cols-2 gap-12 items-center">
           <div>
-            <p className="eyebrow">{t(UI.nav.curated)}</p>
-            <h2 className="display mt-5 text-4xl md:text-5xl">{t(ENTRIES.curatedTitle)}</h2>
-            <p className="mt-6 max-w-md text-base leading-relaxed text-foreground/75">
+            <p className="eyebrow text-2xl">{t(UI.nav.curated)}</p>
+            <h2 className="display mt-5 md:text-5xl text-3xl font-mono text-left whitespace-pre-line">{t(ENTRIES.curatedTitle)}</h2>
+            <p className="mt-6 max-w-md text-base leading-relaxed text-foreground/75 whitespace-pre-line">
               {t(ENTRIES.curatedBody)}
             </p>
-            <Link to="/curated" className="mt-8 inline-block text-xs tracking-widest text-clay hover-underline">
+            <Link to="/curated" className="mt-8 inline-block tracking-widest text-clay hover-underline text-base">
               {t(ENTRIES.curatedCta)}  →
             </Link>
           </div>
@@ -234,7 +234,7 @@ function Index() {
             />
           </div>
           <div className="flex flex-col justify-center">
-            <p className="eyebrow">{t(UI.nav.visit)}</p>
+            <p className="eyebrow text-2xl">{t(UI.nav.visit)}</p>
             <h2 className="display mt-5 text-3xl md:text-4xl">{t(SITE_INFO.address)}</h2>
             <p className="mt-6 text-base text-foreground/75">{t(SITE_INFO.hours)}</p>
             <p className="mt-1 text-sm text-muted-foreground">{t(UI.footer.everyday)}</p>
@@ -277,7 +277,7 @@ function SectionHeader({
   return (
     <div className="container-editorial pt-12 pb-10 flex items-end justify-between border-t border-border">
       <div>
-        <p className="eyebrow">{eyebrow}</p>
+        <p className="eyebrow text-2xl">{eyebrow}</p>
         <h2 className="display mt-3 text-3xl md:text-4xl">{title}</h2>
       </div>
       {link && (
