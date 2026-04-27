@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import interiorImg from "@/assets/bookstore-interior.jpg";
 import curatedImg from "@/assets/curated-objects.jpg";
 import exhibitionImg from "@/assets/exhibition-corner.jpg";
