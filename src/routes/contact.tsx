@@ -30,6 +30,19 @@ const PAGE = {
 
 function Contact() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "聯絡 Contact｜小時光書店 Interval Books",
+      en: "Contact｜Interval Books",
+      ja: "お問合せ｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "Email、Instagram、Facebook、LINE——歡迎與我們聯繫。",
+      en: "Reach us via email, Instagram, Facebook, or LINE — we'd love to hear from you.",
+      ja: "メール、Instagram、Facebook、LINE でお気軽にご連絡ください。",
+    },
+    ogTitle: PAGE.title,
+  });
   return (
     <PageShell>
       <PageHeader
