@@ -119,7 +119,7 @@ function Events() {
               href={e.externalUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-8 inline-block self-start border border-foreground px-5 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
+              className="mt-8 inline-block self-start border border-foreground px-5 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
             >
               {t(UI.buttons.toEvent)}
             </a>

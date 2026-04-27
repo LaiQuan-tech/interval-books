@@ -85,7 +85,7 @@ export const events: EventItem[] = [
       en: "Guided by a terroir essayist, paired with a small local table.",
       ja: "風土エッセイストが導く読書と、ささやかな地のテーブル。",
     },
-    date: "2025.05.10  Sat  14:00",
+    date: "即將公告",
     category: "讀書會",
     externalUrl: "https://example.com/event-1", // 待替換
     registrationType: "external",
@@ -99,7 +99,7 @@ export const events: EventItem[] = [
       ja: "静かな歩み｜呼吸と頁のあいだ",
     },
     summary: {
-      zh: "以閱讀為引，在身體裡安一個安靜的位置。",
+      zh: "以閱讀為引，在身體裡安一個安靜的位置。\n本場次舉辦地點在Boven Cafe\n\n",
       en: "Reading as a doorway into the body's quiet room.",
       ja: "読書を糸口に、身体のなかに静けさの席をひとつ。",
     },
@@ -108,9 +108,9 @@ export const events: EventItem[] = [
       en: "A gentle blend of body awareness and slow reading.",
       ja: "身体感覚とスローリーディングを組み合わせた、はじめての方にも優しい時間。",
     },
-    date: "2025.05.18  Sun  10:00",
+    date: "2026.5.30~5.31",
     category: "身心靈工作坊",
-    externalUrl: "https://example.com/event-2", // 待替換
+    externalUrl: "https://gogo.mygoodday.com.tw/", // 待替換
     registrationType: "external",
     paymentEnabled: false,
   },
