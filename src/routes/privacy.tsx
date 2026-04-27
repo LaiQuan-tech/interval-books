@@ -24,6 +24,19 @@ const PAGE = {
 
 function Privacy() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "隱私權 Privacy｜小時光書店 Interval Books",
+      en: "Privacy｜Interval Books",
+      ja: "プライバシー｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "小時光書店之隱私權聲明。",
+      en: "Privacy statement of Interval Books.",
+      ja: "小時光書店のプライバシーに関する声明。",
+    },
+    ogTitle: PAGE.title,
+  });
   return (
     <PageShell>
       <PageHeader eyebrow="Privacy" title={t(PAGE.title)} />
