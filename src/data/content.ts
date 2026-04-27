@@ -401,7 +401,7 @@ export const news: NewsItem[] = [
       en: "Limited to 12 guests. See Journeys for details.",
       ja: "定員12名。詳細は「旅」のページへ。",
     },
-    date: "2026.05.22~05.24",
+    date: "2026.05.22–05.24",
   },
 ];
 
