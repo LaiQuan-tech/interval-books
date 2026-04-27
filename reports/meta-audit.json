@@ -1,0 +1,92 @@
+{
+  "generatedAt": "2026-04-27T07:19:01.989Z",
+  "summary": {
+    "routesAudited": 11,
+    "languages": [
+      "zh",
+      "en",
+      "ja"
+    ],
+    "totalIssues": 0,
+    "issuesByLanguage": {
+      "zh": 0,
+      "en": 0,
+      "ja": 0,
+      "_none": 0
+    },
+    "issuesByCode": {},
+    "passed": true,
+    "coverage": {
+      "fields": [
+        "title",
+        "description",
+        "ogTitle",
+        "ogDescription"
+      ],
+      "approxChecks": 132
+    }
+  },
+  "routes": {
+    "/about": {
+      "file": "src/routes/about.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/contact": {
+      "file": "src/routes/contact.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/curated": {
+      "file": "src/routes/curated.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/curation": {
+      "file": "src/routes/curation.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/events": {
+      "file": "src/routes/events.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/exhibitions": {
+      "file": "src/routes/exhibitions.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/": {
+      "file": "src/routes/index.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/journeys": {
+      "file": "src/routes/journeys.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/news": {
+      "file": "src/routes/news.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/privacy": {
+      "file": "src/routes/privacy.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/visit": {
+      "file": "src/routes/visit.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "__content__": {
+      "file": "src/data/content.ts",
+      "ok": true,
+      "issues": []
+    }
+  },
+  "findings": []
+}
