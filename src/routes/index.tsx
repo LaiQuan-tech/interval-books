@@ -109,7 +109,7 @@ function Index() {
             </p>
           </div>
           <div className="lg:col-span-6">
-            <div className="relative aspect-[4/5] overflow-hidden bg-muted">
+            <div className="relative aspect-[4/3] overflow-hidden bg-muted">
               <img
                 src={heroImg}
                 alt={t(HERO.titleMain)}
