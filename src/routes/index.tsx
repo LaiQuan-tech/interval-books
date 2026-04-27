@@ -75,6 +75,16 @@ const ENTRIES = {
 
 function Index() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "小時光書店 Interval Books｜風土誌策展的閱讀與生活場域",
+      en: "Interval Books｜A curated home for reading, terroir, and quiet life",
+      ja: "小時光書店 Interval Books｜風土誌をキュレーションする読書と暮らしの場",
+    },
+    description: HERO.intro,
+    ogTitle: HERO.titleSub,
+    ogImage: heroImg,
+  });
 
   return (
     <PageShell>
