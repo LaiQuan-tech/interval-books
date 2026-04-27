@@ -43,6 +43,18 @@ export function useDocumentMeta(meta: MetaInput) {
     if (meta.ogImage) {
       setMeta('meta[property="og:image"]', "property", "og:image", meta.ogImage);
       setMeta('meta[name="twitter:image"]', "name", "twitter:image", meta.ogImage);
+    } else {
+      // Remove stale image tags from a previous route so each page only carries its own.
+      document.head.querySelector('meta[property="og:image"]')?.remove();
+      document.head.querySelector('meta[name="twitter:image"]')?.remove();
     }
-  }, [lang, meta]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    lang,
+    meta.title.zh, meta.title.en, meta.title.ja,
+    meta.description.zh, meta.description.en, meta.description.ja,
+    meta.ogTitle?.zh, meta.ogTitle?.en, meta.ogTitle?.ja,
+    meta.ogDescription?.zh, meta.ogDescription?.en, meta.ogDescription?.ja,
+    meta.ogImage,
+  ]);
 }
