@@ -54,6 +54,19 @@ const FILTERS: ("all" | EventCategory)[] = [
 
 function Events() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "活動 Events｜小時光書店 Interval Books",
+      en: "Events｜Interval Books",
+      ja: "イベント｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "讀書會、療癒生活節、策旅說明會、陶藝家展售、身心靈工作坊與好書交流——本頁為策展式彙整，每場活動皆有獨立網站。",
+      en: "Reading circles, healing festivals, journey briefings, ceramicist showcases, somatic workshops, and book exchanges — a curated overview; each event has its own site.",
+      ja: "読書会、ヒーリング・フェス、旅の説明会、陶芸家の展示販売、ソマティック・ワークショップ、本の交流。各イベントには専用サイトがあります。",
+    },
+    ogTitle: PAGE_INTRO.title,
+  });
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const list = filter === "all" ? events : events.filter((e) => e.category === filter);
 
