@@ -157,7 +157,7 @@ function Index() {
               href={e.externalUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-6 inline-block text-xs tracking-widest text-clay hover-underline self-start"
+              className="mt-6 inline-block tracking-widest text-clay hover-underline self-start text-base"
             >
               {t(UI.buttons.toEvent)}  →
             </a>
