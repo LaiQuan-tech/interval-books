@@ -46,6 +46,20 @@ const PAGE = {
 
 function Exhibitions() {
   const t = useT();
+  useDocumentMeta({
+    title: {
+      zh: "展覽 Exhibitions｜小時光書店 Interval Books",
+      en: "Exhibitions｜Interval Books",
+      ja: "展覧｜小時光書店 Interval Books",
+    },
+    description: {
+      zh: "風土、文字、器物的策展現場——當期與下檔展覽彙整。",
+      en: "A curated stage for terroir, words, and objects — current and upcoming exhibitions.",
+      ja: "風土、ことば、器のキュレーション現場。開催中・予定の展覧をご紹介します。",
+    },
+    ogTitle: PAGE.title,
+    ogImage: exhibitionImg,
+  });
   const [open, setOpen] = useState<string | null>(null);
 
   return (
