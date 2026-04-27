@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { exhibitions } from "@/data/content";
 import interiorImg from "@/assets/bookstore-interior.jpg";
 import exhibitionImg from "@/assets/exhibition-corner.jpg";
