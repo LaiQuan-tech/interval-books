@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useT } from "@/i18n/LanguageContext";
-import { UI, SITE_INFO, CONTACT_EMAIL, SITE_URL, SOCIAL } from "@/i18n/strings";
+import { UI, SITE_INFO, CONTACT_EMAIL, CONTACT_PHONES, SITE_URL, SOCIAL } from "@/i18n/strings";
 
 export function SiteFooter() {
   const t = useT();
@@ -25,14 +25,21 @@ export function SiteFooter() {
 
         <div className="text-sm leading-relaxed">
           <p className="eyebrow mb-4">{t(UI.footer.contact)}</p>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="hover-underline">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="hover-underline break-all">
             {CONTACT_EMAIL}
           </a>
+          <div className="mt-2 space-y-1">
+            {CONTACT_PHONES.map((p) => (
+              <a key={p.tel} href={`tel:${p.tel}`} className="block hover-underline text-muted-foreground">
+                {p.display}
+              </a>
+            ))}
+          </div>
           <a
             href={SITE_URL}
             target="_blank"
             rel="noreferrer"
-            className="block mt-2 text-muted-foreground hover-underline"
+            className="block mt-3 text-muted-foreground hover-underline"
           >
             intervalbooks.tw
           </a>

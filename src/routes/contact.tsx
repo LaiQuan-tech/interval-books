@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { CONTACT_EMAIL, SITE_URL, SOCIAL } from "@/i18n/strings";
+import { CONTACT_EMAIL, CONTACT_PHONES, SITE_URL, SOCIAL } from "@/i18n/strings";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -24,6 +24,7 @@ const PAGE = {
     ja: "メールが一番確実です。一通ずつお返事します。",
   },
   email: { zh: "Email", en: "Email", ja: "メール" },
+  phone: { zh: "電話", en: "Phone", ja: "お電話" },
   social: { zh: "社群", en: "Follow", ja: "フォロー" },
   site: { zh: "官方網站", en: "Website", ja: "公式サイト" },
 };
@@ -54,9 +55,20 @@ function Contact() {
       <section className="container-editorial pb-32 grid gap-16 md:grid-cols-2 max-w-4xl">
         <div>
           <p className="eyebrow">{t(PAGE.email)}</p>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="display mt-4 block text-3xl hover-underline">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="display mt-4 block text-2xl md:text-3xl hover-underline break-all">
             {CONTACT_EMAIL}
           </a>
+
+          <p className="eyebrow mt-10">{t(PAGE.phone)}</p>
+          <ul className="mt-4 space-y-2 text-lg">
+            {CONTACT_PHONES.map((p) => (
+              <li key={p.tel}>
+                <a href={`tel:${p.tel}`} className="font-serif hover-underline">
+                  {p.display}
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
         <div className="space-y-10">
           <div>
