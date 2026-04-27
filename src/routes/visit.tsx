@@ -26,14 +26,22 @@ const PAGE = {
   },
   address: { zh: "店址", en: "Address", ja: "ご住所" },
   hours: { zh: "營業時間", en: "Hours", ja: "営業時間" },
-  transport: { zh: "交通資訊", en: "Getting Here", ja: "アクセス" },
+  transport: { zh: "交通方式", en: "Getting Here", ja: "アクセス" },
   metro: { zh: "捷運", en: "Metro (MRT)", ja: "MRT" },
   bus: { zh: "公車", en: "Bus", ja: "バス" },
-  drive: { zh: "開車", en: "By car", ja: "お車" },
+  drive: { zh: "開車・停車", en: "By car & parking", ja: "お車・駐車" },
+  walk: { zh: "步行路線", en: "On foot", ja: "徒歩でのご案内" },
   inside: { zh: "店內體驗", en: "Inside", ja: "店内のこと" },
   busDetail: { zh: "查看公車路線", en: "View bus routes", ja: "バス路線を見る" },
   contactUs: { zh: "聯絡我們", en: "Contact us", ja: "お問合せ" },
   ig: { zh: "Instagram", en: "Instagram", ja: "Instagram" },
+  navHint: {
+    zh: "一鍵開啟導航，帶你走進紅磚六合院。",
+    en: "One tap to open turn-by-turn navigation to the Red Brick Courtyard.",
+    ja: "ワンタップで紅煉瓦六合院までのナビを開きます。",
+  },
+  openGoogle: { zh: "Google Maps 導航", en: "Open in Google Maps", ja: "Google マップで開く" },
+  openApple: { zh: "Apple 地圖導航", en: "Open in Apple Maps", ja: "Apple マップで開く" },
 };
 
 const METRO = {
@@ -70,9 +78,39 @@ const BUS = {
 };
 
 const DRIVE = {
-  zh: ["園區附設 24 小時停車場", "平日 TWD 40 ／小時　|　假日 TWD 60 ／小時"],
-  en: ["Park's 24-hour parking lot on site", "Weekdays TWD 40 / hr  ·  Weekends TWD 60 / hr"],
-  ja: ["園内の 24 時間駐車場をご利用いただけます", "平日 TWD 40 / 時　|　休日 TWD 60 / 時"],
+  zh: [
+    "園區附設 24 小時停車場（出入口位於八德路一段）",
+    "平日 TWD 40 ／小時　|　假日 TWD 60 ／小時",
+    "建議：假日車位緊張，可改搭捷運前往。",
+  ],
+  en: [
+    "On-site 24-hour parking lot (entrance on Bade Rd. Sec. 1)",
+    "Weekdays TWD 40 / hr  ·  Weekends TWD 60 / hr",
+    "Tip: weekend parking fills quickly — MRT is recommended.",
+  ],
+  ja: [
+    "園内に 24 時間駐車場あり（入口は八德路一段）",
+    "平日 TWD 40 / 時　|　休日 TWD 60 / 時",
+    "ヒント：週末は満車になりやすいため、MRT のご利用がおすすめです。",
+  ],
+};
+
+const WALK = {
+  zh: [
+    "從忠孝新生站 1 號出口出來，沿金山北路向北步行約 200 公尺。",
+    "看到紅磚老建築群即進入園區，沿主道走至「紅磚六合院」。",
+    "穿過六合院中庭，西側第三間即為「西 7-3 館」。",
+  ],
+  en: [
+    "From MRT Zhongxiao Xinsheng Exit 1, walk north on Jinshan N. Rd. for ~200 m.",
+    "Enter the park when you see the red-brick warehouses, then head to the Red Brick Courtyard.",
+    "Cross the courtyard — West 7-3 is the third unit on the west side.",
+  ],
+  ja: [
+    "忠孝新生駅 1 番出口から金山北路を北へ約 200 m。",
+    "赤煉瓦倉庫群が見えたら園内へ。メイン通りに沿って「紅煉瓦六合院」へ。",
+    "中庭を抜けた西側 3 番目が「西 7-3 館」です。",
+  ],
 };
 
 const INSIDE = {
@@ -156,20 +194,37 @@ function Visit() {
 
       {/* 2) 一鍵導航 */}
       <section className="container-editorial pb-20">
-        <a
-          href={MAP.link}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
-        >
-          {t(UI.buttons.navigate)}
-        </a>
+        <div className="border border-border bg-[oklch(0.97_0.012_82)] p-8 md:p-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="max-w-md">
+            <p className="eyebrow">Navigate</p>
+            <h3 className="display mt-3 text-2xl md:text-3xl">{t(UI.buttons.navigate)}</h3>
+            <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{t(PAGE.navHint)}</p>
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs tracking-widest">
+            <a
+              href={MAP.link}
+              target="_blank"
+              rel="noreferrer"
+              className="border border-foreground bg-foreground text-primary-foreground px-5 py-3 hover:opacity-90 transition-opacity"
+            >
+              {t(PAGE.openGoogle)}
+            </a>
+            <a
+              href={MAP.apple}
+              target="_blank"
+              rel="noreferrer"
+              className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors"
+            >
+              {t(PAGE.openApple)}
+            </a>
+          </div>
+        </div>
       </section>
 
-      {/* 3) 交通資訊 */}
+      {/* 3) 交通方式 */}
       <section className="container-editorial pb-24">
         <p className="eyebrow border-t border-border pt-12">{t(PAGE.transport)}</p>
-        <div className="mt-10 grid gap-12 md:grid-cols-3">
+        <div className="mt-10 grid gap-12 md:grid-cols-2 lg:grid-cols-4">
           {/* Metro */}
           <div>
             <h3 className="font-serif text-xl">{t(PAGE.metro)}</h3>
@@ -179,6 +234,17 @@ function Visit() {
                 <li key={i}>· {line}</li>
               ))}
             </ul>
+          </div>
+
+          {/* Walk */}
+          <div>
+            <h3 className="font-serif text-xl">{t(PAGE.walk)}</h3>
+            <div className="rule mt-3" />
+            <ol className="mt-5 space-y-3 text-sm leading-relaxed text-foreground/80 list-decimal pl-5">
+              {pickList(WALK).map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ol>
           </div>
 
           {/* Drive */}

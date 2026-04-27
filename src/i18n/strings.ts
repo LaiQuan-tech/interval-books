@@ -96,4 +96,5 @@ export const SOCIAL = {
 export const MAP = {
   embed: "https://www.google.com/maps?q=華山1914文化創意產業園區&output=embed",
   link: "https://goo.gl/maps/RB2ep3NoWFenLamV9",
+  apple: "https://maps.apple.com/?q=%E8%8F%AF%E5%B1%B11914%E6%96%87%E5%8C%96%E5%89%B5%E6%84%8F%E7%94%A2%E6%A5%AD%E5%9C%92%E5%8D%80&ll=25.0440,121.5298",
 };
