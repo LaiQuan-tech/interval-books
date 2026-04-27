@@ -25,10 +25,14 @@ jobs:
 
       - name: Run meta audit
         id: audit
-        run: bun run check:meta
+        # Capture exit code so the summary still runs on failure; we re-fail at the end.
+        run: |
+          set +e
+          bun run check:meta
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
 
       - name: Upload audit report
-        # Always upload — useful on success for tracking, critical on failure for triage.
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -37,19 +41,56 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Summarize report in job output
+      - name: Write job summary
         if: always()
         run: |
-          if [ -f reports/meta-audit.json ]; then
-            echo "## Meta Audit Report" >> "$GITHUB_STEP_SUMMARY"
-            echo '```json' >> "$GITHUB_STEP_SUMMARY"
-            jq '.summary' reports/meta-audit.json >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            FAILED=$(jq '.summary.totalIssues' reports/meta-audit.json)
-            if [ "$FAILED" != "0" ]; then
-              echo "### Findings" >> "$GITHUB_STEP_SUMMARY"
-              echo '```json' >> "$GITHUB_STEP_SUMMARY"
-              jq '.findings' reports/meta-audit.json >> "$GITHUB_STEP_SUMMARY"
-              echo '```' >> "$GITHUB_STEP_SUMMARY"
-            fi
+          SUMMARY="$GITHUB_STEP_SUMMARY"
+          if [ ! -f reports/meta-audit.json ]; then
+            echo "## ❌ Meta Audit — report not generated" >> "$SUMMARY"
+            echo "The audit script crashed before writing \`reports/meta-audit.json\`." >> "$SUMMARY"
+            exit 0
+          fi
+
+          TOTAL=$(jq -r '.summary.totalIssues' reports/meta-audit.json)
+          PASSED=$(jq -r '.summary.passed' reports/meta-audit.json)
+          ROUTES=$(jq -r '.summary.routesAudited' reports/meta-audit.json)
+
+          if [ "$PASSED" = "true" ]; then
+            echo "## ✅ Meta Audit passed" >> "$SUMMARY"
+            echo "- Routes audited: **$ROUTES**" >> "$SUMMARY"
+            echo "- Languages: zh / en / ja" >> "$SUMMARY"
+            echo "- Issues: **0**" >> "$SUMMARY"
+          else
+            echo "## ❌ Meta Audit failed — $TOTAL issue(s)" >> "$SUMMARY"
+            echo "" >> "$SUMMARY"
+            echo "### Counts by language" >> "$SUMMARY"
+            echo '| Language | Issues |' >> "$SUMMARY"
+            echo '|----------|--------|' >> "$SUMMARY"
+            jq -r '.summary.issuesByLanguage | to_entries[] | "| \(.key) | \(.value) |"' reports/meta-audit.json >> "$SUMMARY"
+            echo "" >> "$SUMMARY"
+            echo "### Counts by code" >> "$SUMMARY"
+            echo '| Code | Issues |' >> "$SUMMARY"
+            echo '|------|--------|' >> "$SUMMARY"
+            jq -r '.summary.issuesByCode | to_entries[] | "| `\(.key)` | \(.value) |"' reports/meta-audit.json >> "$SUMMARY"
+            echo "" >> "$SUMMARY"
+            echo "### Failing routes" >> "$SUMMARY"
+            echo '| Route | File | Issues |' >> "$SUMMARY"
+            echo '|-------|------|--------|' >> "$SUMMARY"
+            jq -r '.routes | to_entries[] | select(.value.ok == false) | "| \(.key) | `\(.value.file)` | \(.value.issues | length) |"' reports/meta-audit.json >> "$SUMMARY"
+            echo "" >> "$SUMMARY"
+            echo "### Findings" >> "$SUMMARY"
+            echo '| File | Line | Lang | Field | Code | Message |' >> "$SUMMARY"
+            echo '|------|------|------|-------|------|---------|' >> "$SUMMARY"
+            jq -r '.findings[] | "| `\(.file)` | \(.line // "-") | \(.lang // "-") | \(.field // "-") | `\(.code)` | \(.message) |"' reports/meta-audit.json >> "$SUMMARY"
+            echo "" >> "$SUMMARY"
+            echo "📎 Full JSON report attached as **meta-audit-report** artifact." >> "$SUMMARY"
+          fi
+
+      - name: Enforce audit result
+        if: always()
+        run: |
+          CODE="${{ steps.audit.outputs.exit_code }}"
+          if [ "$CODE" != "0" ]; then
+            echo "::error::Meta audit failed with exit code $CODE — see Job Summary and meta-audit-report artifact."
+            exit 1
           fi
