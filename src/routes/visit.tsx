@@ -194,20 +194,37 @@ function Visit() {
 
       {/* 2) 一鍵導航 */}
       <section className="container-editorial pb-20">
-        <a
-          href={MAP.link}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
-        >
-          {t(UI.buttons.navigate)}
-        </a>
+        <div className="border border-border bg-[oklch(0.97_0.012_82)] p-8 md:p-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="max-w-md">
+            <p className="eyebrow">Navigate</p>
+            <h3 className="display mt-3 text-2xl md:text-3xl">{t(UI.buttons.navigate)}</h3>
+            <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{t(PAGE.navHint)}</p>
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs tracking-widest">
+            <a
+              href={MAP.link}
+              target="_blank"
+              rel="noreferrer"
+              className="border border-foreground bg-foreground text-primary-foreground px-5 py-3 hover:opacity-90 transition-opacity"
+            >
+              {t(PAGE.openGoogle)}
+            </a>
+            <a
+              href={MAP.apple}
+              target="_blank"
+              rel="noreferrer"
+              className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors"
+            >
+              {t(PAGE.openApple)}
+            </a>
+          </div>
+        </div>
       </section>
 
-      {/* 3) 交通資訊 */}
+      {/* 3) 交通方式 */}
       <section className="container-editorial pb-24">
         <p className="eyebrow border-t border-border pt-12">{t(PAGE.transport)}</p>
-        <div className="mt-10 grid gap-12 md:grid-cols-3">
+        <div className="mt-10 grid gap-12 md:grid-cols-2 lg:grid-cols-4">
           {/* Metro */}
           <div>
             <h3 className="font-serif text-xl">{t(PAGE.metro)}</h3>
@@ -217,6 +234,17 @@ function Visit() {
                 <li key={i}>· {line}</li>
               ))}
             </ul>
+          </div>
+
+          {/* Walk */}
+          <div>
+            <h3 className="font-serif text-xl">{t(PAGE.walk)}</h3>
+            <div className="rule mt-3" />
+            <ol className="mt-5 space-y-3 text-sm leading-relaxed text-foreground/80 list-decimal pl-5">
+              {pickList(WALK).map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ol>
           </div>
 
           {/* Drive */}
