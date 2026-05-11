@@ -83,7 +83,7 @@ function Events() {
       />
 
       <section className="container-editorial pb-12">
-        <div className="aspect-[3/4] md:aspect-[16/10] overflow-hidden bg-muted">
+        <div className="mx-auto w-4/5 aspect-[3/4] md:aspect-[16/10] overflow-hidden bg-muted">
           <img src={eventImg} alt={t(PAGE_INTRO.title)} className="h-full w-full object-cover" loading="lazy" />
         </div>
       </section>
