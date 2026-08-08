@@ -1,31 +1,32 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useLang, useT } from "@/i18n/LanguageContext";
-import { UI } from "@/i18n/strings";
 import { LANGS } from "@/i18n/types";
+import { useSiteContent } from "@/lib/site-content";
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const t = useT();
   const { lang, setLang } = useLang();
+  const { ui } = useSiteContent();
 
   const NAV = [
-    { to: "/", label: t(UI.nav.home), exact: true },
-    { to: "/events", label: t(UI.nav.events), exact: false },
-    { to: "/exhibitions", label: t(UI.nav.exhibitions), exact: false },
-    { to: "/journeys", label: t(UI.nav.journeys), exact: false },
-    { to: "/curated", label: t(UI.nav.curated), exact: false },
-    { to: "/visit", label: t(UI.nav.visit), exact: false },
-    { to: "/about", label: t(UI.nav.about), exact: false },
-    { to: "/contact", label: t(UI.nav.contact), exact: false },
+    { to: "/", label: t(ui.nav.home), exact: true },
+    { to: "/events", label: t(ui.nav.events), exact: false },
+    { to: "/exhibitions", label: t(ui.nav.exhibitions), exact: false },
+    { to: "/journeys", label: t(ui.nav.journeys), exact: false },
+    { to: "/curated", label: t(ui.nav.curated), exact: false },
+    { to: "/visit", label: t(ui.nav.visit), exact: false },
+    { to: "/about", label: t(ui.nav.about), exact: false },
+    { to: "/contact", label: t(ui.nav.contact), exact: false },
   ] as const;
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
       <div className="container-editorial flex items-center justify-between py-5 gap-6">
         <Link to="/" className="flex flex-col leading-tight" onClick={() => setOpen(false)}>
-          <span className="font-serif text-xl tracking-tight">{t(UI.brand)}</span>
-          <span className="eyebrow mt-1 text-[0.6rem]">{t(UI.brandSub)}</span>
+          <span className="font-serif text-xl tracking-tight">{t(ui.brand)}</span>
+          <span className="eyebrow mt-1 text-[0.6rem]">{t(ui.brandSub)}</span>
         </Link>
 
         <nav className="hidden lg:flex items-center gap-6 text-[0.8rem] text-foreground/80">

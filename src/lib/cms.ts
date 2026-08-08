@@ -1,0 +1,671 @@
+/**
+ * Content layer: reads every piece of site copy from Supabase, with the
+ * in-repo constants (src/data/content.ts + src/i18n/strings.ts) as fallback.
+ *
+ * Design notes
+ *  - Every translatable column is jsonb shaped {zh, en, ja}, identical to the
+ *    `Localized` type, so rows are handed to `t()` with no transformation.
+ *  - snake_case columns are normalised to the camelCase names the components
+ *    already use. Two renames come from the schema: description (TS `desc`)
+ *    and display_date (TS `date`).
+ *  - Nothing here throws. Any network/permission failure degrades to the
+ *    bundled fallback so the site never white-screens on a DB hiccup.
+ *  - Called exclusively from TanStack Router loaders, which run on the server
+ *    during SSR — the rendered HTML therefore carries the real content.
+ */
+import { supabase } from "@/lib/supabase";
+import type { Localized } from "@/i18n/types";
+import {
+  UI,
+  SITE_INFO,
+  CONTACT_EMAIL,
+  CONTACT_PHONES,
+  SITE_URL,
+  SOCIAL,
+  MAP,
+} from "@/i18n/strings";
+import {
+  events as staticEvents,
+  exhibitions as staticExhibitions,
+  journeys as staticJourneys,
+  news as staticNews,
+  curatedThemes as staticCuratedThemes,
+  collaborations as staticCollaborations,
+} from "@/data/content";
+
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
+
+export type UiStrings = {
+  brand: Localized;
+  brandSub: Localized;
+  nav: Record<string, Localized>;
+  footer: Record<string, Localized>;
+  buttons: Record<string, Localized>;
+  sections: Record<string, Localized>;
+  notFound: Record<string, Localized>;
+};
+
+export type SiteContent = {
+  ui: UiStrings;
+  site: {
+    shortDesc: Localized;
+    address: Localized;
+    city: Localized;
+    hours: Localized;
+    closed: Localized;
+  };
+  contactEmail: string;
+  siteUrl: string;
+  phones: { label: string; display: string; tel: string }[];
+  social: { instagram: string; facebook: string; line: string };
+  map: { embed: string; link: string; apple: string };
+  meta: {
+    siteName: string;
+    author: string;
+    twitterCard: string;
+    ogType: string;
+    defaultTitle: string;
+    defaultDescription: string;
+  };
+};
+
+export type PageListEntry = {
+  label: Localized;
+  note: Localized | null;
+  imageKey: string | null;
+};
+
+export type PageContent = {
+  slug: string;
+  metaTitle: Localized;
+  metaDescription: Localized;
+  ogTitle: Localized | null;
+  ogDescription: Localized | null;
+  ogImageKey: string | null;
+  eyebrowPrefix: string | null;
+  eyebrowSuffix: Localized | null;
+  headerTitle: Localized | null;
+  headerIntro: Localized | null;
+  blocks: Record<string, Localized>;
+  lists: Record<string, PageListEntry[]>;
+};
+
+export type EventEntry = {
+  id: string;
+  title: Localized;
+  summary: Localized;
+  description: Localized;
+  date: string;
+  category: string;
+  externalUrl: string;
+};
+
+export type EventCategoryEntry = { id: string; label: Localized };
+
+export type ExhibitionEntry = {
+  id: string;
+  slug: string;
+  title: Localized;
+  summary: Localized;
+  description: Localized;
+  period: string;
+  location: Localized;
+  imageKey: string | null;
+};
+
+export type JourneyEntry = {
+  id: string;
+  title: Localized;
+  summary: Localized;
+  description: Localized;
+  days: Localized;
+  theme: Localized;
+  externalUrl: string;
+};
+
+export type NewsEntry = {
+  id: string;
+  title: Localized;
+  summary: Localized;
+  description: Localized;
+  date: string;
+};
+
+export type CuratedThemeEntry = {
+  id: string;
+  title: Localized;
+  description: Localized;
+  items: { name: Localized; note: Localized }[];
+};
+
+export type CollaborationEntry = {
+  id: string;
+  title: Localized;
+  description: Localized;
+};
+
+// -----------------------------------------------------------------------------
+// Fallbacks (bundled copy — used when Supabase is unreachable or misconfigured)
+// -----------------------------------------------------------------------------
+
+const NOT_FOUND_FALLBACK: Record<string, Localized> = {
+  title: { zh: "頁面尚未開放", en: "Page not found", ja: "ページが見つかりません" },
+};
+
+function staticUi(): UiStrings {
+  return {
+    brand: { ...UI.brand },
+    brandSub: { ...UI.brandSub },
+    nav: { ...UI.nav },
+    footer: { ...UI.footer },
+    buttons: { ...UI.buttons },
+    sections: { ...UI.sections },
+    notFound: { ...NOT_FOUND_FALLBACK },
+  };
+}
+
+export const FALLBACK_SITE_CONTENT: SiteContent = {
+  ui: staticUi(),
+  site: {
+    shortDesc: SITE_INFO.shortDesc,
+    address: SITE_INFO.address,
+    city: SITE_INFO.city,
+    hours: SITE_INFO.hours,
+    closed: SITE_INFO.closed,
+  },
+  contactEmail: CONTACT_EMAIL,
+  siteUrl: SITE_URL,
+  phones: CONTACT_PHONES.map((p) => ({ label: p.label, display: p.display, tel: p.tel })),
+  social: { ...SOCIAL },
+  map: { ...MAP },
+  meta: {
+    siteName: "小時光書店 Interval Books",
+    author: "小時光書店 Interval Books",
+    twitterCard: "summary_large_image",
+    ogType: "website",
+    defaultTitle: "小時光書店 Interval Books｜風土誌策展的閱讀與生活場域",
+    defaultDescription:
+      "我們是在華山的小時光書店，聽得到鳥鳴，聞得到茶香與書香，感受得到人情的溫度與連結。",
+  },
+};
+
+/** exhibitions.image_key equivalents for the bundled fallback data. */
+const EXHIBITION_IMAGE_FALLBACK: Record<string, string> = {
+  "soil-and-page": "exhibition-corner.jpg",
+  "quiet-objects": "storefront.jpg",
+};
+
+export const FALLBACK_EVENTS: EventEntry[] = staticEvents.map((e) => ({
+  id: e.id,
+  title: e.title,
+  summary: e.summary,
+  description: e.description,
+  date: e.date,
+  category: e.category,
+  externalUrl: e.externalUrl,
+}));
+
+export const FALLBACK_EVENT_CATEGORIES: EventCategoryEntry[] = [
+  { id: "讀書會", label: { zh: "讀書會", en: "Reading Circles", ja: "読書会" } },
+  { id: "療癒生活節", label: { zh: "療癒生活節", en: "Healing Festival", ja: "ヒーリング祭" } },
+  { id: "策旅說明會", label: { zh: "策旅說明會", en: "Journey Briefings", ja: "旅の説明会" } },
+  { id: "陶藝家展售", label: { zh: "陶藝家展售", en: "Ceramicist Showcases", ja: "陶芸家の展示販売" } },
+  { id: "身心靈工作坊", label: { zh: "身心靈工作坊", en: "Mind & Body Workshops", ja: "心身ワークショップ" } },
+  { id: "好書交流", label: { zh: "好書交流", en: "Book Exchange", ja: "本の交流" } },
+];
+
+export const FALLBACK_EXHIBITIONS: ExhibitionEntry[] = staticExhibitions.map((ex) => ({
+  id: ex.id,
+  slug: ex.slug,
+  title: ex.title,
+  summary: ex.summary,
+  description: ex.description,
+  period: ex.period,
+  location: ex.location,
+  imageKey: EXHIBITION_IMAGE_FALLBACK[ex.slug] ?? null,
+}));
+
+export const FALLBACK_JOURNEYS: JourneyEntry[] = staticJourneys.map((j) => ({
+  id: j.id,
+  title: j.title,
+  summary: j.summary,
+  description: j.description,
+  days: j.days,
+  theme: j.theme,
+  externalUrl: j.externalUrl,
+}));
+
+export const FALLBACK_NEWS: NewsEntry[] = staticNews.map((n) => ({
+  id: n.id,
+  title: n.title,
+  summary: n.summary,
+  description: n.description,
+  date: n.date,
+}));
+
+export const FALLBACK_CURATED_THEMES: CuratedThemeEntry[] = staticCuratedThemes.map((c) => ({
+  id: c.id,
+  title: c.title,
+  description: c.description,
+  items: c.items.map((i) => ({ name: i.name, note: i.note })),
+}));
+
+export const FALLBACK_COLLABORATIONS: CollaborationEntry[] = staticCollaborations.map((c, i) => ({
+  id: `co-${i + 1}`,
+  title: c.title,
+  description: c.desc,
+}));
+
+// -----------------------------------------------------------------------------
+// Internals
+// -----------------------------------------------------------------------------
+
+type Row = Record<string, unknown>;
+
+function isLocalized(v: unknown): v is Localized {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.zh === "string" && typeof o.en === "string" && typeof o.ja === "string";
+}
+
+/** Accepts a jsonb column, returns it only when it really carries zh/en/ja. */
+function loc(v: unknown): Localized | null {
+  return isLocalized(v) ? { zh: v.zh, en: v.en, ja: v.ja } : null;
+}
+
+function locOr(v: unknown, fallback: Localized): Localized {
+  return loc(v) ?? fallback;
+}
+
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+function nullableStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+type SelectOptions = {
+  /** Column to sort by (ascending). */
+  order?: string;
+  /** Restricts the query to rows where `eq[0]` equals `eq[1]`. */
+  eq?: [column: string, value: string];
+};
+
+/** Runs a PostgREST query, returning null instead of throwing on any failure. */
+async function select(
+  table: string,
+  columns: string,
+  options: SelectOptions = {},
+): Promise<Row[] | null> {
+  const db = supabase;
+  if (!db) return null;
+  try {
+    let query = db.from(table).select(columns);
+    if (options.eq) query = query.eq(options.eq[0], options.eq[1]);
+    if (options.order) query = query.order(options.order, { ascending: true });
+    const { data, error } = await query;
+    if (error || !Array.isArray(data)) {
+      if (error) logFailure(table, error.message);
+      return null;
+    }
+    return data as unknown as Row[];
+  } catch (err) {
+    logFailure(table, err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+function logFailure(table: string, message: string) {
+  // Surfaced in the server log; the caller has already fallen back to bundled copy.
+  console.warn(`[cms] ${table} unavailable, using bundled fallback — ${message}`);
+}
+
+// -----------------------------------------------------------------------------
+// Site-wide content (root route loader)
+// -----------------------------------------------------------------------------
+
+function buildUi(rows: Row[]): UiStrings {
+  const ui = staticUi();
+  for (const row of rows) {
+    const group = str(row.group_key);
+    const key = str(row.string_key);
+    const value = loc(row.value);
+    if (!group || !key || !value) continue;
+
+    if (group === "brand") {
+      if (key === "brand") ui.brand = value;
+      else if (key === "brandSub") ui.brandSub = value;
+      continue;
+    }
+    if (group === "nav" || group === "footer" || group === "buttons" || group === "sections" || group === "notFound") {
+      ui[group][key] = value;
+    }
+  }
+  return ui;
+}
+
+export async function fetchSiteContent(): Promise<SiteContent> {
+  const [settingsRows, uiRows, phoneRows] = await Promise.all([
+    select(
+      "site_settings",
+      "short_desc,address,city,hours,closed,contact_email,site_url,social_instagram,social_facebook,social_line,map_embed,map_link,map_apple,meta_site_name,meta_author,meta_twitter_card,meta_og_type,default_meta_title,default_meta_description",
+    ),
+    select("ui_strings", "group_key,string_key,value,sort_order", { order: "sort_order" }),
+    select("contact_phones", "label,display_text,tel,sort_order", { order: "sort_order" }),
+  ]);
+
+  const settings = settingsRows?.[0];
+  if (!settings && !uiRows && !phoneRows) return FALLBACK_SITE_CONTENT;
+
+  const fb = FALLBACK_SITE_CONTENT;
+
+  return {
+    ui: uiRows ? buildUi(uiRows) : fb.ui,
+    site: settings
+      ? {
+          shortDesc: locOr(settings.short_desc, fb.site.shortDesc),
+          address: locOr(settings.address, fb.site.address),
+          city: locOr(settings.city, fb.site.city),
+          hours: locOr(settings.hours, fb.site.hours),
+          closed: locOr(settings.closed, fb.site.closed),
+        }
+      : fb.site,
+    contactEmail: settings ? str(settings.contact_email, fb.contactEmail) : fb.contactEmail,
+    siteUrl: settings ? str(settings.site_url, fb.siteUrl) : fb.siteUrl,
+    phones:
+      phoneRows && phoneRows.length
+        ? phoneRows.map((p) => ({
+            label: str(p.label),
+            display: str(p.display_text),
+            tel: str(p.tel),
+          }))
+        : fb.phones,
+    social: settings
+      ? {
+          instagram: str(settings.social_instagram),
+          facebook: str(settings.social_facebook),
+          line: str(settings.social_line),
+        }
+      : fb.social,
+    map: settings
+      ? {
+          embed: str(settings.map_embed, fb.map.embed),
+          link: str(settings.map_link, fb.map.link),
+          apple: str(settings.map_apple, fb.map.apple),
+        }
+      : fb.map,
+    meta: settings
+      ? {
+          siteName: str(settings.meta_site_name, fb.meta.siteName),
+          author: str(settings.meta_author, fb.meta.author),
+          twitterCard: str(settings.meta_twitter_card, fb.meta.twitterCard),
+          ogType: str(settings.meta_og_type, fb.meta.ogType),
+          defaultTitle: str(settings.default_meta_title, fb.meta.defaultTitle),
+          defaultDescription: str(settings.default_meta_description, fb.meta.defaultDescription),
+        }
+      : fb.meta,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Per-page content (pages + page_blocks + page_list_items)
+// -----------------------------------------------------------------------------
+
+export async function fetchPage(slug: string): Promise<PageContent | null> {
+  const [pageRows, blockRows, listRows] = await Promise.all([
+    select(
+      "pages",
+      "slug,meta_title,meta_description,og_title,og_description,og_image_key,eyebrow_prefix,eyebrow_suffix,header_title,header_intro",
+      { eq: ["slug", slug] },
+    ),
+    select("page_blocks", "block_key,value,sort_order", {
+      eq: ["page_slug", slug],
+      order: "sort_order",
+    }),
+    select("page_list_items", "list_key,label,note,image_key,sort_order", {
+      eq: ["page_slug", slug],
+      order: "sort_order",
+    }),
+  ]);
+
+  const page = pageRows?.[0];
+  if (!page) return null;
+
+  const metaTitle = loc(page.meta_title);
+  const metaDescription = loc(page.meta_description);
+  if (!metaTitle || !metaDescription) return null;
+
+  const blocks: Record<string, Localized> = {};
+  for (const row of blockRows ?? []) {
+    const key = str(row.block_key);
+    const value = loc(row.value);
+    if (key && value) blocks[key] = value;
+  }
+
+  const lists: Record<string, PageListEntry[]> = {};
+  for (const row of listRows ?? []) {
+    const key = str(row.list_key);
+    const label = loc(row.label);
+    if (!key || !label) continue;
+    (lists[key] ??= []).push({
+      label,
+      note: loc(row.note),
+      imageKey: nullableStr(row.image_key),
+    });
+  }
+
+  return {
+    slug: str(page.slug, slug),
+    metaTitle,
+    metaDescription,
+    ogTitle: loc(page.og_title),
+    ogDescription: loc(page.og_description),
+    ogImageKey: nullableStr(page.og_image_key),
+    eyebrowPrefix: nullableStr(page.eyebrow_prefix),
+    eyebrowSuffix: loc(page.eyebrow_suffix),
+    headerTitle: loc(page.header_title),
+    headerIntro: loc(page.header_intro),
+    blocks,
+    lists,
+  };
+}
+
+/**
+ * Field-level accessors over a page row. Every getter takes the bundled copy as
+ * a fallback, so a missing row — or a single missing block — degrades to what
+ * shipped in the repo instead of rendering an empty page.
+ */
+export function pageText(page: PageContent | null) {
+  return {
+    block: (key: string, fallback: Localized): Localized => page?.blocks[key] ?? fallback,
+    /** Localized labels of a page_list_items list. */
+    list: (key: string, fallback: Localized[]): Localized[] => {
+      const rows = page?.lists[key];
+      return rows && rows.length ? rows.map((r) => r.label) : fallback;
+    },
+    /** Full rows (label + note + imageKey) of a page_list_items list. */
+    rows: (key: string, fallback: PageListEntry[]): PageListEntry[] => {
+      const rows = page?.lists[key];
+      return rows && rows.length ? rows : fallback;
+    },
+    title: (fallback: Localized): Localized => page?.headerTitle ?? fallback,
+    intro: (fallback: Localized): Localized => page?.headerIntro ?? fallback,
+    metaTitle: (fallback: Localized): Localized => page?.metaTitle ?? fallback,
+    metaDescription: (fallback: Localized): Localized => page?.metaDescription ?? fallback,
+    ogTitle: (fallback: Localized): Localized => page?.ogTitle ?? fallback,
+  };
+}
+
+/** Joins the Latin eyebrow prefix with its localized suffix, e.g. "Visit ／ 來店資訊". */
+export function eyebrowOf(page: PageContent | null, prefix: string, suffix: string | null): string {
+  const p = page?.eyebrowPrefix ?? prefix;
+  if (!suffix) return p;
+  return `${p}  ／  ${suffix}`;
+}
+
+// -----------------------------------------------------------------------------
+// Collections
+// -----------------------------------------------------------------------------
+
+export async function fetchEvents(): Promise<EventEntry[]> {
+  const rows = await select(
+    "events",
+    "id,title,summary,description,display_date,category,external_url,sort_order",
+    { order: "sort_order" },
+  );
+  if (!rows || !rows.length) return FALLBACK_EVENTS;
+  const mapped: EventEntry[] = [];
+  for (const r of rows) {
+    const title = loc(r.title);
+    const summary = loc(r.summary);
+    const description = loc(r.description);
+    if (!title || !summary || !description) continue;
+    mapped.push({
+      id: str(r.id),
+      title,
+      summary,
+      description,
+      date: str(r.display_date),
+      category: str(r.category),
+      externalUrl: str(r.external_url),
+    });
+  }
+  return mapped.length ? mapped : FALLBACK_EVENTS;
+}
+
+export async function fetchEventCategories(): Promise<EventCategoryEntry[]> {
+  const rows = await select("event_categories", "id,label,sort_order", { order: "sort_order" });
+  if (!rows || !rows.length) return FALLBACK_EVENT_CATEGORIES;
+  const mapped: EventCategoryEntry[] = [];
+  for (const r of rows) {
+    const label = loc(r.label);
+    if (!label) continue;
+    mapped.push({ id: str(r.id), label });
+  }
+  return mapped.length ? mapped : FALLBACK_EVENT_CATEGORIES;
+}
+
+export async function fetchExhibitions(): Promise<ExhibitionEntry[]> {
+  const rows = await select(
+    "exhibitions",
+    "id,slug,title,summary,description,period,location,image_key,sort_order",
+    { order: "sort_order" },
+  );
+  if (!rows || !rows.length) return FALLBACK_EXHIBITIONS;
+  const mapped: ExhibitionEntry[] = [];
+  for (const r of rows) {
+    const title = loc(r.title);
+    const summary = loc(r.summary);
+    const description = loc(r.description);
+    const location = loc(r.location);
+    if (!title || !summary || !description || !location) continue;
+    mapped.push({
+      id: str(r.id),
+      slug: str(r.slug),
+      title,
+      summary,
+      description,
+      period: str(r.period),
+      location,
+      imageKey: nullableStr(r.image_key),
+    });
+  }
+  return mapped.length ? mapped : FALLBACK_EXHIBITIONS;
+}
+
+export async function fetchJourneys(): Promise<JourneyEntry[]> {
+  const rows = await select(
+    "journeys",
+    "id,title,summary,description,days,theme,external_url,sort_order",
+    { order: "sort_order" },
+  );
+  if (!rows || !rows.length) return FALLBACK_JOURNEYS;
+  const mapped: JourneyEntry[] = [];
+  for (const r of rows) {
+    const title = loc(r.title);
+    const summary = loc(r.summary);
+    const description = loc(r.description);
+    const days = loc(r.days);
+    const theme = loc(r.theme);
+    if (!title || !summary || !description || !days || !theme) continue;
+    mapped.push({
+      id: str(r.id),
+      title,
+      summary,
+      description,
+      days,
+      theme,
+      externalUrl: str(r.external_url),
+    });
+  }
+  return mapped.length ? mapped : FALLBACK_JOURNEYS;
+}
+
+export async function fetchNews(): Promise<NewsEntry[]> {
+  const rows = await select(
+    "news",
+    "id,title,summary,description,display_date,sort_order",
+    { order: "sort_order" },
+  );
+  if (!rows || !rows.length) return FALLBACK_NEWS;
+  const mapped: NewsEntry[] = [];
+  for (const r of rows) {
+    const title = loc(r.title);
+    const summary = loc(r.summary);
+    const description = loc(r.description);
+    if (!title || !summary || !description) continue;
+    mapped.push({
+      id: str(r.id),
+      title,
+      summary,
+      description,
+      date: str(r.display_date),
+    });
+  }
+  return mapped.length ? mapped : FALLBACK_NEWS;
+}
+
+export async function fetchCuratedThemes(): Promise<CuratedThemeEntry[]> {
+  const [themeRows, itemRows] = await Promise.all([
+    select("curated_themes", "id,title,description,sort_order", { order: "sort_order" }),
+    select("curated_items", "theme_id,name,note,sort_order", { order: "sort_order" }),
+  ]);
+  if (!themeRows || !themeRows.length) return FALLBACK_CURATED_THEMES;
+
+  const itemsByTheme = new Map<string, { name: Localized; note: Localized }[]>();
+  for (const r of itemRows ?? []) {
+    const themeId = str(r.theme_id);
+    const name = loc(r.name);
+    const note = loc(r.note);
+    if (!themeId || !name || !note) continue;
+    const bucket = itemsByTheme.get(themeId) ?? [];
+    bucket.push({ name, note });
+    itemsByTheme.set(themeId, bucket);
+  }
+
+  const mapped: CuratedThemeEntry[] = [];
+  for (const r of themeRows) {
+    const title = loc(r.title);
+    const description = loc(r.description);
+    if (!title || !description) continue;
+    const id = str(r.id);
+    mapped.push({ id, title, description, items: itemsByTheme.get(id) ?? [] });
+  }
+  return mapped.length ? mapped : FALLBACK_CURATED_THEMES;
+}
+
+export async function fetchCollaborations(): Promise<CollaborationEntry[]> {
+  const rows = await select("collaborations", "id,title,description,sort_order", { order: "sort_order" });
+  if (!rows || !rows.length) return FALLBACK_COLLABORATIONS;
+  const mapped: CollaborationEntry[] = [];
+  for (const r of rows) {
+    const title = loc(r.title);
+    const description = loc(r.description);
+    if (!title || !description) continue;
+    mapped.push({ id: str(r.id), title, description });
+  }
+  return mapped.length ? mapped : FALLBACK_COLLABORATIONS;
+}

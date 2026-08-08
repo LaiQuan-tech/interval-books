@@ -2,24 +2,24 @@ import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { UI, CONTACT_EMAIL } from "@/i18n/strings";
-import { journeys } from "@/data/content";
+import { fetchJourneys, fetchPage, pageText, eyebrowOf } from "@/lib/cms";
+import { useSiteContent } from "@/lib/site-content";
+import { imageFor } from "@/lib/images";
 import journeyImg from "@/assets/journey-mist.jpg";
 
-export const Route = createFileRoute("/journeys")({
-  head: () => ({
-    meta: [
-      { title: "策旅 Journeys｜小時光書店 Interval Books" },
-      { name: "description", content: "由書與土地共同寫成的深度旅程。每一趟策旅皆有獨立網站，本頁為彙整導流。" },
-      { property: "og:title", content: "策旅 Journeys｜小時光書店" },
-      { property: "og:description", content: "由書與土地共同寫成的深度旅程。" },
-      { property: "og:image", content: journeyImg },
-    ],
-  }),
-  component: Journeys,
-});
-
+/** Fallback copy — used only when the Supabase read fails. */
 const PAGE = {
+  metaTitle: {
+    zh: "策旅 Journeys｜小時光書店 Interval Books",
+    en: "Journeys｜Interval Books",
+    ja: "旅｜小時光書店 Interval Books",
+  },
+  metaDescription: {
+    zh: "由書與土地共同寫成的深度旅程。每一趟策旅皆有獨立網站，本頁為彙整導流。",
+    en: "Slow journeys co-written by books and the land. Each trip has its own site; this page gathers the threads.",
+    ja: "本と土地が共に綴る、深い旅。各旅には専用サイトがあります。このページはその目次です。",
+  },
+  eyebrowSuffix: { zh: "策旅", en: "策旅", ja: "策旅" },
   title: {
     zh: "讓土地，成為書的延伸",
     en: "Let the land be the book's extension",
@@ -30,6 +30,7 @@ const PAGE = {
     en: "Each journey has its own dedicated site. Choose one to read further.",
     ja: "各「旅」には専用サイトがあります。気になる旅へお進みください。",
   },
+  coCreateEyebrow: { zh: "Co-create", en: "Co-create", ja: "Co-create" },
   collab: { zh: "策旅合作共創", en: "Journey co-creation", ja: "旅の共創" },
   collabBody: {
     zh: "若您是地方夥伴、職人、旅宿或品牌，歡迎與我們共創一段屬於風土的策旅。請以 Email 聯繫。",
@@ -38,28 +39,47 @@ const PAGE = {
   },
 };
 
+export const Route = createFileRoute("/journeys")({
+  loader: async () => {
+    const [page, journeys] = await Promise.all([
+      fetchPage("journeys"),
+      fetchJourneys(),
+    ]);
+    return { page, journeys };
+  },
+  head: ({ loaderData }) => {
+    const p = pageText(loaderData?.page ?? null);
+    return {
+      meta: [
+        { title: p.metaTitle(PAGE.metaTitle).zh },
+        { name: "description", content: p.metaDescription(PAGE.metaDescription).zh },
+        { property: "og:title", content: p.ogTitle(PAGE.title).zh },
+        { property: "og:description", content: p.metaDescription(PAGE.metaDescription).zh },
+        { property: "og:image", content: imageFor(loaderData?.page?.ogImageKey, journeyImg) },
+      ],
+    };
+  },
+  component: Journeys,
+});
+
 function Journeys() {
   const t = useT();
+  const { page, journeys } = Route.useLoaderData();
+  const p = pageText(page);
+  const { ui, contactEmail } = useSiteContent();
+
   useDocumentMeta({
-    title: {
-      zh: "策旅 Journeys｜小時光書店 Interval Books",
-      en: "Journeys｜Interval Books",
-      ja: "旅｜小時光書店 Interval Books",
-    },
-    description: {
-      zh: "由書與土地共同寫成的深度旅程。每一趟策旅皆有獨立網站，本頁為彙整導流。",
-      en: "Slow journeys co-written by books and the land. Each trip has its own site; this page gathers the threads.",
-      ja: "本と土地が共に綴る、深い旅。各旅には専用サイトがあります。このページはその目次です。",
-    },
-    ogTitle: PAGE.title,
-    ogImage: journeyImg,
+    title: p.metaTitle(PAGE.metaTitle),
+    description: p.metaDescription(PAGE.metaDescription),
+    ogTitle: p.ogTitle(PAGE.title),
+    ogImage: imageFor(page?.ogImageKey, journeyImg),
   });
   return (
     <PageShell>
       <PageHeader
-        eyebrow="Journeys  ／  策旅"
-        title={t(PAGE.title)}
-        intro={t(PAGE.intro)}
+        eyebrow={eyebrowOf(page, "Journeys", t(page?.eyebrowSuffix ?? PAGE.eyebrowSuffix))}
+        title={t(p.title(PAGE.title))}
+        intro={t(p.intro(PAGE.intro))}
       />
 
       <section className="container-editorial pb-24 grid gap-12 md:grid-cols-3">
@@ -77,7 +97,7 @@ function Journeys() {
               rel="noreferrer"
               className="mt-6 inline-block self-start tracking-widest text-clay hover-underline text-base"
             >
-              {t(UI.buttons.toJourney)}  →
+              {t(ui.buttons.toJourney)}  →
             </a>
           </article>
         ))}
@@ -86,16 +106,16 @@ function Journeys() {
       <section className="container-editorial pb-32">
         <div className="border-t border-border pt-16 grid md:grid-cols-2 gap-10">
           <div>
-            <p className="eyebrow text-2xl">Co-create</p>
-            <h2 className="display mt-4 text-3xl md:text-4xl">{t(PAGE.collab)}</h2>
+            <p className="eyebrow text-2xl">{t(p.block("coCreateEyebrow", PAGE.coCreateEyebrow))}</p>
+            <h2 className="display mt-4 text-3xl md:text-4xl">{t(p.block("collab", PAGE.collab))}</h2>
           </div>
           <div>
-            <p className="text-base leading-relaxed text-foreground/80">{t(PAGE.collabBody)}</p>
+            <p className="text-base leading-relaxed text-foreground/80">{t(p.block("collabBody", PAGE.collabBody))}</p>
             <a
-              href={`mailto:${CONTACT_EMAIL}`}
+              href={`mailto:${contactEmail}`}
               className="mt-6 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
             >
-              {CONTACT_EMAIL}
+              {contactEmail}
             </a>
           </div>
         </div>

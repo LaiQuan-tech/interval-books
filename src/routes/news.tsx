@@ -2,21 +2,21 @@ import { createFileRoute } from "@tanstack/react-router";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { news } from "@/data/content";
+import { eyebrowOf, fetchNews, fetchPage, pageText } from "@/lib/cms";
 
-export const Route = createFileRoute("/news")({
-  head: () => ({
-    meta: [
-      { title: "最新消息 News｜小時光書店 Interval Books" },
-      { name: "description", content: "活動預告、營業調整與策旅消息。" },
-      { property: "og:title", content: "最新消息｜小時光書店" },
-      { property: "og:description", content: "活動預告、營業調整與策旅消息。" },
-    ],
-  }),
-  component: News,
-});
-
+/** Fallback copy — used only when the Supabase read fails. */
 const PAGE = {
+  metaTitle: {
+    zh: "最新消息 News｜小時光書店 Interval Books",
+    en: "News｜Interval Books",
+    ja: "お知らせ｜小時光書店 Interval Books",
+  },
+  metaDescription: {
+    zh: "活動預告、營業調整與策旅消息。",
+    en: "Event announcements, opening updates, and journey news.",
+    ja: "イベント予告、営業のお知らせ、旅の最新情報。",
+  },
+  eyebrowSuffix: { zh: "最新消息", en: "最新消息", ja: "最新消息" },
   title: { zh: "最新消息", en: "Latest News", ja: "お知らせ" },
   intro: {
     zh: "簡短的小通知與更新——展覽、活動、營業時間變動。",
@@ -25,27 +25,42 @@ const PAGE = {
   },
 };
 
+export const Route = createFileRoute("/news")({
+  loader: async () => {
+    const [page, news] = await Promise.all([fetchPage("news"), fetchNews()]);
+    return { page, news };
+  },
+  head: ({ loaderData }) => {
+    const p = pageText(loaderData?.page ?? null);
+    return {
+      meta: [
+        { title: p.metaTitle(PAGE.metaTitle).zh },
+        { name: "description", content: p.metaDescription(PAGE.metaDescription).zh },
+        { property: "og:title", content: p.ogTitle(PAGE.title).zh },
+        { property: "og:description", content: p.metaDescription(PAGE.metaDescription).zh },
+      ],
+    };
+  },
+  component: News,
+});
+
 function News() {
   const t = useT();
+  const { page, news } = Route.useLoaderData();
+  const p = pageText(page);
+
   useDocumentMeta({
-    title: {
-      zh: "最新消息 News｜小時光書店 Interval Books",
-      en: "News｜Interval Books",
-      ja: "お知らせ｜小時光書店 Interval Books",
-    },
-    description: {
-      zh: "活動預告、營業調整與策旅消息。",
-      en: "Event announcements, opening updates, and journey news.",
-      ja: "イベント予告、営業のお知らせ、旅の最新情報。",
-    },
-    ogTitle: PAGE.title,
+    title: p.metaTitle(PAGE.metaTitle),
+    description: p.metaDescription(PAGE.metaDescription),
+    ogTitle: p.ogTitle(PAGE.title),
   });
+
   return (
     <PageShell>
       <PageHeader
-        eyebrow="News  ／  最新消息"
-        title={t(PAGE.title)}
-        intro={t(PAGE.intro)}
+        eyebrow={eyebrowOf(page, "News", t(page?.eyebrowSuffix ?? PAGE.eyebrowSuffix))}
+        title={t(p.title(PAGE.title))}
+        intro={t(p.intro(PAGE.intro))}
       />
 
       <section className="container-editorial pb-32 max-w-3xl">
