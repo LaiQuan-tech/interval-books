@@ -1,0 +1,312 @@
+-- =============================================================================
+-- Interval Books / 小時光書店 — seed data
+--
+-- Mirrors, verbatim, the content that lives in the repo today:
+--   src/data/content.ts   (events, exhibitions, journeys, news,
+--                          curatedThemes + items, collaborations)
+--   src/i18n/strings.ts   (UI, SITE_INFO, CONTACT_*, SOCIAL, MAP)
+--   src/routes/*.tsx      (per-page meta + page copy + route-local lists)
+--
+-- Nothing here is invented. Where the current code renders the SAME string in
+-- all three languages (a hard-coded Latin/Chinese label), the row repeats that
+-- string across zh/en/ja so the rendered output is byte-identical after the
+-- cutover. Those spots are flagged with `-- not localized in code today`.
+--
+-- Re-runnable: truncates the content tables first, so applying it twice yields
+-- the same state. Run against a database that has 0001_init.sql applied.
+-- =============================================================================
+
+begin;
+
+truncate table
+  public.page_list_items,
+  public.page_blocks,
+  public.pages,
+  public.collaborations,
+  public.curated_items,
+  public.curated_themes,
+  public.news,
+  public.journeys,
+  public.exhibitions,
+  public.events,
+  public.event_categories,
+  public.contact_phones,
+  public.ui_strings,
+  public.site_settings
+  restart identity cascade;
+
+
+-- site_settings ---------------------------------------------------------------
+-- SITE_INFO / CONTACT_* / SOCIAL / MAP (src/i18n/strings.ts:59-107)
+-- + site-wide <head> defaults (src/routes/__root.tsx:43-52)
+insert into public.site_settings
+  (short_desc, address, city, hours, closed, contact_email, site_url, social_instagram, social_facebook, social_line, map_embed, map_link, map_apple, meta_site_name, meta_author, meta_twitter_card, meta_og_type, default_meta_title, default_meta_description)
+values
+  ('{"zh":"我們是在華山的小時光書店，聽得到鳥鳴，聞得到茶香與書香，感受得到人情的溫度與連結。","en":"Tucked inside Huashan Cultural Park, Interval Books is a quiet pause — birdsong outside, the scent of tea and paper within, and the warmth of small encounters.","ja":"華山文化園にひっそりと佇む小時光書店。鳥のさえずり、茶と本の香り、ひとと人のあたたかな繋がりが息づく場所です。"}'::jsonb, '{"zh":"華山文創園區．紅磚六合院 西7-3館","en":"Huashan 1914 Creative Park, Red Brick Courtyard, West 7-3","ja":"華山1914文化創意産業園區 紅煉瓦六合院 西7-3館"}'::jsonb, '{"zh":"台北市中正區","en":"Zhongzheng District, Taipei","ja":"台北市中正区"}'::jsonb, '{"zh":"週一至週日 11:00 – 19:00","en":"Mon – Sun, 11:00 – 19:00","ja":"月〜日 11:00 – 19:00"}'::jsonb, '{"zh":"每日開放（特殊節日另行公告）","en":"Open every day (special closures announced)","ja":"年中無休（特別休業は別途告知）"}'::jsonb, 'intervalbookstores@gmail.com', 'https://intervalbooks.tw', 'https://www.instagram.com/intervalbookstw/', '', '', 'https://www.google.com/maps?q=華山1914文化創意產業園區&output=embed', 'https://goo.gl/maps/RB2ep3NoWFenLamV9', 'https://maps.apple.com/?q=%E8%8F%AF%E5%B1%B11914%E6%96%87%E5%8C%96%E5%89%B5%E6%84%8F%E7%94%A2%E6%A5%AD%E5%9C%92%E5%8D%80&ll=25.0440,121.5298', '小時光書店 Interval Books', '小時光書店 Interval Books', 'summary_large_image', 'website', '小時光書店 Interval Books｜風土誌策展的閱讀與生活場域', '我們是在華山的小時光書店，聽得到鳥鳴，聞得到茶香與書香，感受得到人情的溫度與連結。');
+
+-- ui_strings ------------------------------------------------------------------
+-- The UI object, flattened: UI.<group_key>.<string_key> (src/i18n/strings.ts:4-57)
+insert into public.ui_strings
+  (group_key, string_key, value, sort_order)
+values
+  ('brand', 'brand', '{"zh":"小時光書店","en":"Interval Books","ja":"小時光書店"}'::jsonb, 1),
+  ('brand', 'brandSub', '{"zh":"Interval Books","en":"Hourlight Bookstore","ja":"Interval Books"}'::jsonb, 2),
+  ('nav', 'home', '{"zh":"首頁","en":"Home","ja":"ホーム"}'::jsonb, 1),
+  ('nav', 'events', '{"zh":"活動","en":"Events","ja":"イベント"}'::jsonb, 2),
+  ('nav', 'exhibitions', '{"zh":"展覽","en":"Exhibitions","ja":"展覧"}'::jsonb, 3),
+  ('nav', 'journeys', '{"zh":"策旅","en":"Journeys","ja":"旅"}'::jsonb, 4),
+  ('nav', 'curated', '{"zh":"主理人的選品","en":"Curated","ja":"店主の選品"}'::jsonb, 5),
+  ('nav', 'visit', '{"zh":"來店資訊","en":"Visit","ja":"ご来店"}'::jsonb, 6),
+  ('nav', 'about', '{"zh":"關於","en":"About","ja":"について"}'::jsonb, 7),
+  ('nav', 'contact', '{"zh":"聯絡","en":"Contact","ja":"お問合せ"}'::jsonb, 8),
+  ('nav', 'curation', '{"zh":"策展與合作","en":"Curation & Collaboration","ja":"キュレーション"}'::jsonb, 9),
+  ('nav', 'privacy', '{"zh":"隱私權聲明","en":"Privacy","ja":"プライバシー"}'::jsonb, 10),
+  ('footer', 'visit', '{"zh":"來訪","en":"Visit","ja":"ご来店"}'::jsonb, 1),
+  ('footer', 'contact', '{"zh":"聯繫","en":"Contact","ja":"お問合せ"}'::jsonb, 2),
+  ('footer', 'follow', '{"zh":"追蹤","en":"Follow","ja":"フォロー"}'::jsonb, 3),
+  ('footer', 'aboutBlurb', '{"zh":"我們是在華山的小時光書店，聽得到鳥鳴，聞得到茶香與書香，感受得到人情的溫度與連結。","en":"Tucked inside Huashan Cultural Park, Interval Books is a quiet pause — birdsong outside, the scent of tea and paper within, and the warmth of small encounters.","ja":"華山文化園にひっそりと佇む小時光書店。鳥のさえずり、茶と本の香り、ひとと人のあたたかな繋がりが息づく場所です。"}'::jsonb, 4),
+  ('footer', 'rights', '{"zh":"小時光書店．保留所有權利","en":"Interval Books. All rights reserved.","ja":"Interval Books. All rights reserved."}'::jsonb, 5),
+  ('footer', 'everyday', '{"zh":"每日開放","en":"Open every day","ja":"年中無休"}'::jsonb, 6),
+  ('buttons', 'toEvent', '{"zh":"前往活動網站","en":"Visit event site","ja":"イベントサイトへ"}'::jsonb, 1),
+  ('buttons', 'toJourney', '{"zh":"前往旅程網站","en":"Visit journey site","ja":"旅のサイトへ"}'::jsonb, 2),
+  ('buttons', 'toExhibition', '{"zh":"看展覽詳情","en":"View exhibition","ja":"展覧の詳細"}'::jsonb, 3),
+  ('buttons', 'navigate', '{"zh":"點此導航","en":"Open in Maps","ja":"地図を開く"}'::jsonb, 4),
+  ('buttons', 'emailUs', '{"zh":"Email 聯繫","en":"Email us","ja":"メールで問合せ"}'::jsonb, 5),
+  ('buttons', 'line', '{"zh":"LINE 私訊","en":"Message on LINE","ja":"LINE で連絡"}'::jsonb, 6),
+  ('buttons', 'inStore', '{"zh":"到店選購","en":"Visit in store","ja":"店頭でご覧"}'::jsonb, 7),
+  ('buttons', 'viewAll', '{"zh":"查看全部","en":"View all","ja":"すべて見る"}'::jsonb, 8),
+  ('buttons', 'backHome', '{"zh":"回到首頁","en":"Back home","ja":"ホームへ"}'::jsonb, 9),
+  ('sections', 'thisMonth', '{"zh":"本月精選","en":"This Month","ja":"今月の特集"}'::jsonb, 1),
+  ('sections', 'featuredEvents', '{"zh":"精選活動","en":"Featured Events","ja":"特選イベント"}'::jsonb, 2),
+  ('sections', 'featuredExhibitions', '{"zh":"精選展覽","en":"Featured Exhibitions","ja":"特選展覧"}'::jsonb, 3),
+  ('sections', 'featuredJourney', '{"zh":"精選策旅","en":"Featured Journey","ja":"特選の旅"}'::jsonb, 4),
+  ('sections', 'latestNews', '{"zh":"最新消息","en":"Latest News","ja":"お知らせ"}'::jsonb, 5),
+  ('notFound', 'title', '{"zh":"頁面尚未開放","en":"Page not found","ja":"ページが見つかりません"}'::jsonb, 1);
+
+-- contact_phones --------------------------------------------------------------
+insert into public.contact_phones
+  (label, display_text, tel, sort_order)
+values
+  ('Tel', '+886 2 2341 6800', '+886223416800', 1),
+  ('Mobile', '+886 917 540 615', '+886917540615', 2);
+
+-- event_categories ------------------------------------------------------------
+-- Order follows FILTERS (src/routes/events.tsx:48-56); labels from CATEGORY_LABEL.
+insert into public.event_categories
+  (id, label, sort_order)
+values
+  ('讀書會', '{"zh":"讀書會","en":"Reading Circles","ja":"読書会"}'::jsonb, 1),
+  ('療癒生活節', '{"zh":"療癒生活節","en":"Healing Festival","ja":"ヒーリング祭"}'::jsonb, 2),
+  ('策旅說明會', '{"zh":"策旅說明會","en":"Journey Briefings","ja":"旅の説明会"}'::jsonb, 3),
+  ('陶藝家展售', '{"zh":"陶藝家展售","en":"Ceramicist Showcases","ja":"陶芸家の展示販売"}'::jsonb, 4),
+  ('身心靈工作坊', '{"zh":"身心靈工作坊","en":"Mind & Body Workshops","ja":"心身ワークショップ"}'::jsonb, 5),
+  ('好書交流', '{"zh":"好書交流","en":"Book Exchange","ja":"本の交流"}'::jsonb, 6);
+
+-- events ----------------------------------------------------------------------
+-- src/data/content.ts:70-209. sort_order preserves array order: the home page
+-- slices events[0..2] (index.tsx:150).
+insert into public.events
+  (id, title, summary, description, display_date, iso_date, category, external_url, registration_type, payment_enabled, sort_order)
+values
+  ('ev-1', '{"zh":"風土誌讀書會｜土地與餐桌","en":"Terroir Reading Circle | Land & Table","ja":"風土誌読書会｜土地と食卓"}'::jsonb, '{"zh":"從一本書、一道菜，回望腳下的土地。","en":"A book, a dish, and the soil beneath our feet.","ja":"一冊の本と一皿の料理から、足元の大地を見つめ直す。"}'::jsonb, '{"zh":"由風土書寫者帶讀，配一席在地餐桌，緩慢開啟對土地的感受。","en":"Guided by a terroir essayist, paired with a small local table.","ja":"風土エッセイストが導く読書と、ささやかな地のテーブル。"}'::jsonb, '即將公告', null, '讀書會', 'https://example.com/event-1', 'external', false, 1),
+  ('ev-2', '{"zh":"靜走．呼吸與書頁之間","en":"Quiet Walk: Between Breath and Page","ja":"静かな歩み｜呼吸と頁のあいだ"}'::jsonb, '{"zh":"以閱讀為引，在身體裡安一個安靜的位置。\n本場次舉辦地點在Boven Cafe\n\n","en":"Reading as a doorway into the body''s quiet room.","ja":"読書を糸口に、身体のなかに静けさの席をひとつ。"}'::jsonb, '{"zh":"結合身體覺察與緩讀，適合初次接觸者。","en":"A gentle blend of body awareness and slow reading.","ja":"身体感覚とスローリーディングを組み合わせた、はじめての方にも優しい時間。"}'::jsonb, '2026.5.30~5.31', null, '身心靈工作坊', 'https://gogo.mygoodday.com.tw/', 'external', false, 2),
+  ('ev-3', '{"zh":"編輯講座｜如何閱讀一本地方誌","en":"Editor Talk: Reading a Place-Based Journal","ja":"編集者トーク｜地方誌の読み方"}'::jsonb, '{"zh":"與獨立出版人對談，解構在地書寫的層次。","en":"An evening with an independent publisher on layered place writing.","ja":"独立系編集者との対話で、ローカル・ライティングの層を読み解く。"}'::jsonb, '{"zh":"現場帶來數本台灣地方誌，講者與讀者一同翻閱拆解。","en":"Several Taiwanese local journals on hand, opened together.","ja":"数冊の台湾地方誌を持ち寄り、参加者と一緒にページを開きます。"}'::jsonb, '2025.05.24  Sat  19:30', null, '好書交流', 'https://example.com/event-3', 'external', false, 3),
+  ('ev-4', '{"zh":"陶土工作坊｜手感器物的第一次","en":"Clay Workshop: Your First Vessel","ja":"陶土ワークショップ｜はじめての器"}'::jsonb, '{"zh":"從一團土開始，捏出屬於自己的一只杯。","en":"From a lump of earth, shape a cup of your own.","ja":"ひとかたまりの土から、自分だけの一碗を。"}'::jsonb, '{"zh":"由駐店陶藝家帶領，以手捏方式完成第一件作品。","en":"Hand-built guidance from our resident ceramicist.","ja":"店内陶芸家が手びねりで第一作の制作をご案内します。"}'::jsonb, '2025.06.07  Sat  13:30', null, '陶藝家展售', 'https://example.com/event-4', 'external', false, 4),
+  ('ev-5', '{"zh":"深夜讀書會｜詩與微光","en":"Late-Night Reading: Poetry & Faint Light","ja":"深夜読書会｜詩と微光"}'::jsonb, '{"zh":"在書店熄燈前的兩小時，留給詩。","en":"Two hours before lights-out, given to poetry.","ja":"閉店前の二時間を、詩のために。"}'::jsonb, '{"zh":"選讀華語詩人作品，輪流朗讀、低聲交談。","en":"Selected Sinophone poetry, read aloud and softly discussed.","ja":"中国語圏の詩を選び、朗読と静かな会話で過ごします。"}'::jsonb, '2025.06.14  Sat  20:00', null, '讀書會', 'https://example.com/event-5', 'external', false, 5),
+  ('ev-6', '{"zh":"聲音療癒｜頌缽之夜","en":"Sound Healing: A Singing Bowl Evening","ja":"サウンドヒーリング｜シンギングボウルの夜"}'::jsonb, '{"zh":"以聲波鬆開肩頸，也鬆開一週的緊。","en":"Let the bowls loosen the shoulders and the week.","ja":"響きで肩のこわばりも、一週間の緊張も、ほどいてゆく。"}'::jsonb, '{"zh":"由認證頌缽老師帶領，建議帶上薄毯。","en":"Led by a certified practitioner. A light blanket is recommended.","ja":"認定講師による進行。薄手のブランケットをお持ちください。"}'::jsonb, '2025.06.21  Sat  19:00', null, '療癒生活節', 'https://example.com/event-6', 'external', false, 6);
+
+-- exhibitions -----------------------------------------------------------------
+-- src/data/content.ts:211-262. image_key resolves the IMAGES map that currently
+-- lives in src/routes/exhibitions.tsx:10-13 (ExhibitionItem.image was never set).
+insert into public.exhibitions
+  (id, slug, title, summary, description, period, location, image_key, sort_order)
+values
+  ('ex-1', 'soil-and-page', '{"zh":"土壤與書頁","en":"Soil and Page","ja":"土と頁"}'::jsonb, '{"zh":"六位地方書寫者與三位陶藝家，共構一場關於土地的閱讀。","en":"Six place-based writers and three ceramicists, on the reading of land.","ja":"六人の地方執筆者と三人の陶芸家による、土地をめぐる読書。"}'::jsonb, '{"zh":"本展以「風土」為線索，邀請文字與器物對話。書頁是被捻平的土地，陶土則是被烘烤的時間。我們希望觀者在閱讀與觸摸之間，重新感受腳下這片島嶼的紋理。","en":"Following the thread of terroir, words and vessels enter into conversation. The page is flattened earth, clay is fired time. We hope visitors feel, between reading and touching, the texture of this island anew.","ja":"「風土」を糸口に、言葉と器が静かに対話します。頁は均された大地、陶土は焼かれた時間。読み、触れるあいだに、この島の肌理をもう一度感じていただければ。"}'::jsonb, '2025.04.20 – 2025.06.15', '{"zh":"小時光書店．主展區","en":"Interval Books — Main Hall","ja":"小時光書店 メイン展示室"}'::jsonb, 'exhibition-corner.jpg', 1),
+  ('ex-2', 'quiet-objects', '{"zh":"安靜的物件","en":"Quiet Objects","ja":"静かな物たち"}'::jsonb, '{"zh":"選物與作品，在留白之中各自發聲。","en":"Curated objects and works, each speaking softly within white space.","ja":"選び抜かれた品々が、余白のなかで静かに語りはじめる。"}'::jsonb, '{"zh":"策展團隊與三位設計師合作，挑選日用之器、文具與紙品。展期間每週末舉辦器物導讀，邀請觀者放慢腳步。","en":"In collaboration with three designers, selecting daily wares, stationery, and paper goods. Weekend object-readings throughout the run.","ja":"三人のデザイナーと協働し、日用の器、文具、紙ものを選びました。会期中は週末ごとに「物の読み聞かせ」を開催します。"}'::jsonb, '2025.07.05 – 2025.08.31', '{"zh":"小時光書店．東側書房","en":"Interval Books — East Reading Room","ja":"小時光書店 東側ブックルーム"}'::jsonb, 'storefront.jpg', 2);
+
+-- journeys --------------------------------------------------------------------
+-- src/data/content.ts:264-346. The home page features journeys[0] (index.tsx:189).
+insert into public.journeys
+  (id, title, summary, description, days, theme, external_url, registration_type, payment_enabled, sort_order)
+values
+  ('jo-1', '{"zh":"如果可以慢下來｜\n風土策旅","en":"Misty Trails | Three Days in Alishan","ja":"霧の山道｜阿里山風土 三日"}'::jsonb, '{"zh":"以一本山林之書為地圖，走進雲海與茶園的縫隙。","en":"A book of mountains as our map, into the seams of cloud and tea.","ja":"一冊の山の本を地図に、雲海と茶畑のあわいへ。"}'::jsonb, '{"zh":"與在地茶人、書寫者一同走訪山徑，住宿於老茶廠改建的旅宿。","en":"Walking the trails with local tea makers and writers; lodging in a converted old tea factory.","ja":"地元の茶人や書き手とともに山道を歩き、古い製茶工場を改装した宿に泊まります。"}'::jsonb, '{"zh":"3 天 2 夜","en":"3 days · 2 nights","ja":"2泊3日"}'::jsonb, '{"zh":"山、海、人情","en":"Tea, mist, mountain paths","ja":"茶、霧、山道"}'::jsonb, 'https://example.com/journey-1', 'external', false, 1),
+  ('jo-2', '{"zh":"島南慢讀｜恆春半島的風與書","en":"Slow South | Wind & Books in Hengchun","ja":"島の南でゆっくり読む｜恒春半島の風と本"}'::jsonb, '{"zh":"拜訪南方的書店與廚房，讓海風翻動我們的書頁。","en":"Bookshops, kitchens, and a southern wind that turns our pages.","ja":"南の書店と厨房を訪ね、海風がページをめくる旅。"}'::jsonb, '{"zh":"由主理人帶隊，串連恆春半島的獨立書店、地方廚房與海岸散步。","en":"Led by our owner: independent bookshops, local kitchens, and coastal walks.","ja":"店主が引率し、独立書店、ローカル・キッチン、海辺の散策をつなぎます。"}'::jsonb, '{"zh":"2 天 1 夜","en":"2 days · 1 night","ja":"1泊2日"}'::jsonb, '{"zh":"海風、獨立書店、地方廚房","en":"Sea breeze, indie bookshops, local kitchens","ja":"海風、独立書店、ローカル厨房"}'::jsonb, 'https://example.com/journey-2', 'external', false, 2),
+  ('jo-3', '{"zh":"陶土之路｜苗栗手作工藝旅","en":"The Clay Road | Craft Days in Miaoli","ja":"陶土の道｜苗栗 手しごとの旅"}'::jsonb, '{"zh":"踏訪窯場與工作室，親手帶回一只屬於自己的器。","en":"Visit kilns and studios, and bring back a vessel of your own.","ja":"窯元と工房を訪ね、自分だけの器を持ち帰る。"}'::jsonb, '{"zh":"拜訪三位苗栗陶藝家，於工作室現場手作一只茶碗或小皿。","en":"Three ceramicists in Miaoli; make a tea bowl or small dish in studio.","ja":"苗栗の陶芸家三名を訪ね、工房で茶碗か小皿を制作します。"}'::jsonb, '{"zh":"2 天 1 夜","en":"2 days · 1 night","ja":"1泊2日"}'::jsonb, '{"zh":"陶土、職人、地方料理","en":"Clay, craftspeople, local cuisine","ja":"陶土、職人、地のごはん"}'::jsonb, 'https://example.com/journey-3', 'external', false, 3);
+
+-- news -----------------------------------------------------------------------
+-- src/data/content.ts:348-406.
+insert into public.news
+  (id, title, summary, description, display_date, sort_order)
+values
+  ('n-1', '{"zh":"夏季展覽預告｜「安靜的物件」\n 媽媽的味道 即將開幕\n","en":"Summer preview: ''Quiet Objects'' opens soon","ja":"夏の展覧予告｜「静かな物たち」開幕"}'::jsonb, '{"zh":"我們將於5月推出新一檔策展，邀請三位設計師共同呈現日用之美。","en":"A new July show with three designers presenting the beauty of daily wares.","ja":"七月、三名のデザイナーと日用の美を呈する新展を開きます。"}'::jsonb, '{"zh":"展期 2025.07.05 – 2025.08.31，更多細節將陸續釋出。","en":"On view 2025.07.05 – 2025.08.31. More details to follow.","ja":"会期 2025.07.05 – 2025.08.31。詳細は順次公開します。"}'::jsonb, '2026.04.28', 1),
+  ('n-2', '{"zh":"公告｜5/2, 5/16 包場，不對外開放","en":"Notice: Adjusted hours for the Dragon Boat holiday","ja":"営業時間のお知らせ｜端午節連休"}'::jsonb, '{"zh":"這2天沒有對外開放，敬請留意！\n需要訂書的朋友，請以官方Line聯繫。","en":"May 31 – Jun 2: closing at 17:00.","ja":"5/31 – 6/2 は 17:00 閉店となります。"}'::jsonb, '{"zh":"其餘時間維持原 11:00 – 19:00 營業。","en":"Otherwise open as usual, 11:00 – 19:00.","ja":"それ以外は通常通り 11:00 – 19:00 営業します。"}'::jsonb, '2026.05.02', 2),
+  ('n-3', '{"zh":"策旅招募｜台東風土三日，04/30開放報名","en":"Journey open: Alishan three-day, signup May 15","ja":"旅の募集｜阿里山風土三日 5/15 受付開始"}'::jsonb, '{"zh":"由主理人帶隊，與在地職人、書寫者一同踏訪山海大地。","en":"Led by our owner with local tea makers and writers.","ja":"店主が引率、地元の茶人と書き手とともに山道を歩きます。"}'::jsonb, '{"zh":"限額 12 人，詳情請見策旅頁面。","en":"Limited to 12 guests. See Journeys for details.","ja":"定員12名。詳細は「旅」のページへ。"}'::jsonb, '2026.05.22–05.24', 3);
+
+-- curated_themes / curated_items ----------------------------------------------
+-- src/data/content.ts:408-514.
+insert into public.curated_themes
+  (id, title, description, sort_order)
+values
+  ('ct-1', '{"zh":"地方風土","en":"Place & Terroir","ja":"土地と風土"}'::jsonb, '{"zh":"從一本地方誌，到一罐自家熬的果醬。","en":"From a local journal to a jar of home-cooked jam.","ja":"地方誌から、自家製のジャムまで。"}'::jsonb, 1),
+  ('ct-2', '{"zh":"器物與陶","en":"Vessels & Clay","ja":"器と陶"}'::jsonb, '{"zh":"每一只都是職人手中緩慢的時間。","en":"Each piece, the slow time of a maker''s hands.","ja":"ひとつひとつが、職人の手のなかの緩やかな時間。"}'::jsonb, 2),
+  ('ct-3', '{"zh":"茶與日常","en":"Tea & Daily","ja":"茶と日々"}'::jsonb, '{"zh":"讀一頁書，配一口靜。","en":"A page of reading, a sip of quiet.","ja":"一頁の読書に、ひと口の静けさを。"}'::jsonb, 3);
+
+insert into public.curated_items
+  (theme_id, name, note, sort_order)
+values
+  ('ct-1', '{"zh":"山村釀造．桂花蜜","en":"Mountain Village Osmanthus Honey","ja":"山村醸造 桂花蜜"}'::jsonb, '{"zh":"南投手工小批次","en":"Small batch from Nantou","ja":"南投の小ロット"}'::jsonb, 1),
+  ('ct-1', '{"zh":"東海岸海鹽","en":"East Coast Sea Salt","ja":"東海岸の海塩"}'::jsonb, '{"zh":"粗粒、慢曬","en":"Coarse, slow-dried","ja":"粗粒、ゆっくり天日干し"}'::jsonb, 2),
+  ('ct-1', '{"zh":"苗栗黑糖磚","en":"Miaoli Brown Sugar Block","ja":"苗栗の黒糖ブロック"}'::jsonb, '{"zh":"古法柴燒","en":"Wood-fired the old way","ja":"古法の薪焚き"}'::jsonb, 3),
+  ('ct-1', '{"zh":"阿里山高山茶","en":"Alishan High Mountain Tea","ja":"阿里山高山茶"}'::jsonb, '{"zh":"春摘．烏龍","en":"Spring pick · Oolong","ja":"春摘み・烏龍"}'::jsonb, 4),
+  ('ct-1', '{"zh":"金門高粱醋","en":"Kinmen Sorghum Vinegar","ja":"金門高粱酢"}'::jsonb, '{"zh":"陳年三年","en":"Aged three years","ja":"三年熟成"}'::jsonb, 5),
+  ('ct-1', '{"zh":"花蓮米果","en":"Hualien Rice Cracker","ja":"花蓮の米菓"}'::jsonb, '{"zh":"在地稻米製","en":"Made with local rice","ja":"地の米から"}'::jsonb, 6),
+  ('ct-2', '{"zh":"粗陶茶碗","en":"Stoneware Tea Bowl","ja":"粗陶の茶碗"}'::jsonb, '{"zh":"手捏．不規則口緣","en":"Hand-pinched, irregular rim","ja":"手びねり・不揃いの縁"}'::jsonb, 1),
+  ('ct-2', '{"zh":"白瓷小皿","en":"White Porcelain Small Dish","ja":"白磁の小皿"}'::jsonb, '{"zh":"釉下青花","en":"Underglaze blue-and-white","ja":"釉下の青花"}'::jsonb, 2),
+  ('ct-2', '{"zh":"黑陶花器","en":"Black Clay Vase","ja":"黒陶の花器"}'::jsonb, '{"zh":"燻燒．霧面","en":"Smoke-fired, matte","ja":"燻し焼き・マット"}'::jsonb, 3),
+  ('ct-2', '{"zh":"木製茶則","en":"Wooden Tea Scoop","ja":"木の茶則"}'::jsonb, '{"zh":"台灣相思木","en":"Taiwanese acacia","ja":"台湾相思木"}'::jsonb, 4),
+  ('ct-2', '{"zh":"亞麻織布巾","en":"Linen Cloth","ja":"リネンの布巾"}'::jsonb, '{"zh":"天然染","en":"Naturally dyed","ja":"天然染め"}'::jsonb, 5),
+  ('ct-2', '{"zh":"鑄鐵燭台","en":"Cast Iron Candlestick","ja":"鋳鉄の燭台"}'::jsonb, '{"zh":"霧黑塗裝","en":"Matte black finish","ja":"マットブラック仕上げ"}'::jsonb, 6),
+  ('ct-3', '{"zh":"手工焙茶包","en":"Hand-roasted Tea Bags","ja":"手焙煎ティーバッグ"}'::jsonb, '{"zh":"三入裝","en":"Set of three","ja":"三入り"}'::jsonb, 1),
+  ('ct-3', '{"zh":"海鹽可可","en":"Sea Salt Cocoa","ja":"海塩ココア"}'::jsonb, '{"zh":"70% 黑巧克力","en":"70% dark chocolate","ja":"70% ダーク"}'::jsonb, 2),
+  ('ct-3', '{"zh":"奶油酥餅","en":"Butter Shortbread","ja":"バターショートブレッド"}'::jsonb, '{"zh":"古早味．小份量","en":"Old-fashioned, small","ja":"昔ながら・小ぶり"}'::jsonb, 3),
+  ('ct-3', '{"zh":"蜂蜜檸檬糖","en":"Honey Lemon Drops","ja":"はちみつレモン飴"}'::jsonb, '{"zh":"台南龍眼蜜","en":"Tainan longan honey","ja":"台南の龍眼蜜"}'::jsonb, 4),
+  ('ct-3', '{"zh":"杏仁脆片","en":"Almond Crisps","ja":"アーモンドクリスプ"}'::jsonb, '{"zh":"薄．脆．香","en":"Thin, crisp, fragrant","ja":"薄く・香ばしく"}'::jsonb, 5),
+  ('ct-3', '{"zh":"桂圓紅棗茶","en":"Longan & Date Tea","ja":"竜眼と紅棗の茶"}'::jsonb, '{"zh":"冬季限定","en":"Winter only","ja":"冬季限定"}'::jsonb, 6);
+
+-- collaborations --------------------------------------------------------------
+-- src/data/content.ts:517-566. Source has no ids; co-1..co-N assigned by order.
+insert into public.collaborations
+  (id, title, description, sort_order)
+values
+  ('co-1', '{"zh":"療癒藝術節／療癒師品牌共創","en":"Healing Arts Festivals & Practitioner Brands","ja":"ヒーリング・アートフェス／セラピスト共創"}'::jsonb, '{"zh":"為節慶與品牌設計具策展感的療癒現場。","en":"Curated healing experiences for festivals and brands.","ja":"祭典やブランドのために、キュレーションされたヒーリングの場を。"}'::jsonb, 1),
+  ('co-2', '{"zh":"空間策展","en":"Space Curation","ja":"空間キュレーション"}'::jsonb, '{"zh":"為旅宿、咖啡館、辦公空間策劃選書與選物。","en":"Books and objects for hotels, cafés, and offices.","ja":"宿、カフェ、オフィスのための選書と選品。"}'::jsonb, 2),
+  ('co-3', '{"zh":"書店展售／茶品器具內容策展","en":"Bookshop Showcase & Tea-ware Content","ja":"書店ショーケース／茶道具の内容企画"}'::jsonb, '{"zh":"結合書、茶與器物的主題內容策劃。","en":"Themed editorial pairings of books, tea, and vessels.","ja":"本、茶、器物を組み合わせたテーマ企画。"}'::jsonb, 3),
+  ('co-4', '{"zh":"品牌共創","en":"Brand Co-creation","ja":"ブランド共創"}'::jsonb, '{"zh":"為品牌設計閱讀活動、內容資產與企業接待。","en":"Reading events, content, and hospitality for brands.","ja":"ブランドのための読書プログラム、コンテンツ、ホスピタリティ。"}'::jsonb, 4);
+
+-- pages ----------------------------------------------------------------------
+-- One row per src/routes/*.tsx (excluding __root). meta_* comes from the
+-- useDocumentMeta({...}) call, header_* from <PageHeader>.
+-- The eyebrow suffix on news / exhibitions / journeys / curation is hard-coded
+-- Chinese in the JSX today, so it is seeded identically in all three languages
+-- to preserve current output.  -- not localized in code today
+insert into public.pages
+  (slug, meta_title, meta_description, og_title, og_description, og_image_key, eyebrow_prefix, eyebrow_suffix, header_title, header_intro, sort_order)
+values
+  ('index', '{"zh":"小時光書店 Interval Books｜風土誌策展的閱讀與生活場域","en":"Interval Books｜A curated home for reading, terroir, and quiet life","ja":"小時光書店 Interval Books｜風土誌をキュレーションする読書と暮らしの場"}'::jsonb, '{"zh":"留一段屬於自己的＿＿＿小時光。","en":"Keep an interval that belongs only to you.","ja":"あなただけの小さな時間を、ひとつ。"}'::jsonb, '{"zh":"留一點時間給真正重要的事","en":"Save a little time for what truly matters.","ja":"本当に大切なことに、少しの時間を。"}'::jsonb, null, 'hero-mountain.jpg', null, null, null, null, 1),
+  ('news', '{"zh":"最新消息 News｜小時光書店 Interval Books","en":"News｜Interval Books","ja":"お知らせ｜小時光書店 Interval Books"}'::jsonb, '{"zh":"活動預告、營業調整與策旅消息。","en":"Event announcements, opening updates, and journey news.","ja":"イベント予告、営業のお知らせ、旅の最新情報。"}'::jsonb, '{"zh":"最新消息","en":"Latest News","ja":"お知らせ"}'::jsonb, null, null, 'News', '{"zh":"最新消息","en":"最新消息","ja":"最新消息"}'::jsonb, '{"zh":"最新消息","en":"Latest News","ja":"お知らせ"}'::jsonb, '{"zh":"簡短的小通知與更新——展覽、活動、營業時間變動。","en":"Short notes and updates — exhibitions, events, and hours.","ja":"短いお知らせ。展覧、イベント、営業時間など。"}'::jsonb, 2),
+  ('events', '{"zh":"活動 Events｜小時光書店 Interval Books","en":"Events｜Interval Books","ja":"イベント｜小時光書店 Interval Books"}'::jsonb, '{"zh":"讀書會、療癒生活節、策旅說明會、陶藝家展售、身心靈工作坊與好書交流——本頁為策展式彙整，每場活動皆有獨立網站。","en":"Reading circles, healing festivals, journey briefings, ceramicist showcases, somatic workshops, and book exchanges — a curated overview; each event has its own site.","ja":"読書会、ヒーリング・フェス、旅の説明会、陶芸家の展示販売、ソマティック・ワークショップ、本の交流。各イベントには専用サイトがあります。"}'::jsonb, '{"zh":"閱讀，是一種共同進行的生活","en":"Reading, a life held in common","ja":"読むことは、ともにある暮らし"}'::jsonb, null, 'event-reading.jpg', 'Events', '{"zh":"活動","en":"Events","ja":"イベント"}'::jsonb, '{"zh":"閱讀，是一種共同進行的生活","en":"Reading, a life held in common","ja":"読むことは、ともにある暮らし"}'::jsonb, '{"zh":"每一場活動都有獨立的網站。本頁僅作為策展式彙整，幫助你在書店發生的事情之間，找到屬於自己的節奏。","en":"Each event has its own site. This page is a curated overview — find your own rhythm among what unfolds in the bookshop.","ja":"各イベントには専用サイトがあります。このページはキュレーションされた目次として、書店で起きることのなかから、ご自身のリズムを見つけていただくためのものです。"}'::jsonb, 3),
+  ('exhibitions', '{"zh":"展覽 Exhibitions｜小時光書店 Interval Books","en":"Exhibitions｜Interval Books","ja":"展覧｜小時光書店 Interval Books"}'::jsonb, '{"zh":"風土、文字、器物的策展現場——當期與下檔展覽彙整。","en":"A curated stage for terroir, words, and objects — current and upcoming exhibitions.","ja":"風土、ことば、器のキュレーション現場。開催中・予定の展覧をご紹介します。"}'::jsonb, '{"zh":"在書頁與展牆之間","en":"Between page and wall","ja":"頁と壁のあいだに"}'::jsonb, null, 'exhibition-corner.jpg', 'Exhibitions', '{"zh":"展覽","en":"展覽","ja":"展覽"}'::jsonb, '{"zh":"在書頁與展牆之間","en":"Between page and wall","ja":"頁と壁のあいだに"}'::jsonb, '{"zh":"我們以小型策展的節奏經營展覽，每一檔展覽都嘗試讓文字、影像與器物對話。","en":"We work in the rhythm of small curation — letting words, images, and objects speak together.","ja":"小さなキュレーションのリズムで、言葉、像、器がともに語り合う場をつくります。"}'::jsonb, 4),
+  ('journeys', '{"zh":"策旅 Journeys｜小時光書店 Interval Books","en":"Journeys｜Interval Books","ja":"旅｜小時光書店 Interval Books"}'::jsonb, '{"zh":"由書與土地共同寫成的深度旅程。每一趟策旅皆有獨立網站，本頁為彙整導流。","en":"Slow journeys co-written by books and the land. Each trip has its own site; this page gathers the threads.","ja":"本と土地が共に綴る、深い旅。各旅には専用サイトがあります。このページはその目次です。"}'::jsonb, '{"zh":"讓土地，成為書的延伸","en":"Let the land be the book''s extension","ja":"土地を、本の延長に"}'::jsonb, null, 'journey-mist.jpg', 'Journeys', '{"zh":"策旅","en":"策旅","ja":"策旅"}'::jsonb, '{"zh":"讓土地，成為書的延伸","en":"Let the land be the book''s extension","ja":"土地を、本の延長に"}'::jsonb, '{"zh":"每一趟策旅皆有獨立網站，本頁僅做彙整導流。請點選感興趣的旅程，前往該旅程的專屬頁面。","en":"Each journey has its own dedicated site. Choose one to read further.","ja":"各「旅」には専用サイトがあります。気になる旅へお進みください。"}'::jsonb, 5),
+  ('visit', '{"zh":"來店資訊 Visit｜小時光書店 Interval Books","en":"Visit｜Interval Books","ja":"ご来店｜小時光書店 Interval Books"}'::jsonb, '{"zh":"華山文創園區．紅磚六合院 西7-3館。週一至週日 11:00–19:00。捷運忠孝新生站步行 3 分鐘。","en":"Huashan 1914 Creative Park, Red Brick Courtyard, West 7-3. Open daily 11:00–19:00. 3 min walk from MRT Zhongxiao Xinsheng.","ja":"華山1914文化創意産業園區 紅煉瓦六合院 西7-3館。月〜日 11:00–19:00。MRT 忠孝新生駅から徒歩3分。"}'::jsonb, '{"zh":"走進小時光","en":"Step inside the interval","ja":"小時光へ"}'::jsonb, null, null, 'Visit', '{"zh":"來店資訊","en":"Visit","ja":"ご来店"}'::jsonb, '{"zh":"走進小時光","en":"Step inside the interval","ja":"小時光へ"}'::jsonb, '{"zh":"一處藏在紅磚六合院裡的閱讀場域。歡迎在週間午後或週末傍晚，帶一本你正在讀的書，來坐一會兒。","en":"A reading space tucked inside the Red Brick Courtyard. Drop by on a quiet afternoon with the book you''re reading.","ja":"紅煉瓦六合院に佇む読書の場所。平日の午後や週末の夕暮れに、いま読んでいる本を抱えてお越しください。"}'::jsonb, 6),
+  ('curated', '{"zh":"主理人的選品 Curated｜小時光書店 Interval Books","en":"Curated｜Interval Books","ja":"店主の選品｜小時光書店 Interval Books"}'::jsonb, '{"zh":"三個主題櫥窗：地方風土、器物與陶、茶與日常。展示型呈現，請至店或來信詢問。","en":"Three themed windows — place, vessels and clay, tea and daily life. A display, not a shop. Visit us or write to enquire.","ja":"三つのテーマの窓辺：土地の風土、器と陶、茶と日常。展示としてのご紹介です。店頭またはメールでお問い合わせください。"}'::jsonb, '{"zh":"主理人的選品","en":"The Owner''s Curated Window","ja":"店主の選品"}'::jsonb, null, 'curated-objects.jpg', 'Curated', '{"zh":"主理人的選品","en":"Curated","ja":"店主の選品"}'::jsonb, '{"zh":"主理人的選品","en":"The Owner''s Curated Window","ja":"店主の選品"}'::jsonb, '{"zh":"我們以「主題櫥窗」呈現選物，而非商品清單。每一件物，都是一段被留下來的時間。","en":"We arrange the selection as themed windows, not as a catalogue. Each piece holds a quiet stretch of time.","ja":"商品リストではなく、テーマの窓辺として並べています。一品一品が、留まった時間そのもの。"}'::jsonb, 7),
+  ('curation', '{"zh":"策展與合作 Curation｜小時光書店 Interval Books","en":"Curation & Collaboration｜Interval Books","ja":"キュレーションと協働｜小時光書店 Interval Books"}'::jsonb, '{"zh":"療癒藝術節、空間策展、書店展售與品牌共創——以低調而精緻的方式，與夥伴共創。","en":"Healing arts festivals, spatial curation, in-store exhibitions, and quiet brand collaborations — co-created with care.","ja":"ヒーリング・アートフェス、空間キュレーション、店内展示、ブランド共創。静かで丁寧な協働を。"}'::jsonb, '{"zh":"與夥伴，共構一段現場","en":"Co-creating a quiet stage","ja":"ともに、ひとつの現場を"}'::jsonb, null, null, 'Curation', '{"zh":"策展與合作","en":"策展與合作","ja":"策展與合作"}'::jsonb, '{"zh":"與夥伴，共構一段現場","en":"Co-creating a quiet stage","ja":"ともに、ひとつの現場を"}'::jsonb, '{"zh":"我們相信策展不只是擺放，而是讓人、物、空間，在一段時間裡彼此看見。","en":"Curation, to us, is not arrangement — it''s letting people, objects, and space see one another for a while.","ja":"キュレーションとは並べることではなく、人と物と空間がしばらくのあいだ互いに見つめ合うこと。"}'::jsonb, 8),
+  ('about', '{"zh":"關於 About｜小時光書店 Interval Books","en":"About｜Interval Books","ja":"について｜小時光書店 Interval Books"}'::jsonb, '{"zh":"我們是在華山的小時光書店，聽得到鳥鳴，聞得到茶香與書香，感受得到人情的溫度與連結。","en":"We are Interval Books, tucked inside Huashan — birdsong, the scent of tea and paper, and the warmth of small encounters.","ja":"華山の小時光書店です。鳥のさえずり、茶と本の香り、ひとのぬくもりが交わる場。"}'::jsonb, '{"zh":"在華山的一段安靜時光","en":"A quiet interval in Huashan","ja":"華山の、しずかな小さき時間"}'::jsonb, null, 'bookstore-interior.jpg', 'About', '{"zh":"關於","en":"About","ja":"について"}'::jsonb, '{"zh":"在華山的一段安靜時光","en":"A quiet interval in Huashan","ja":"華山の、しずかな小さき時間"}'::jsonb, '{"zh":"我們是在華山的小時光書店，聽得到鳥鳴，聞得到茶香與書香，感受得到人情的溫度與連結。","en":"We are Interval Books, tucked inside Huashan — birdsong, the scent of tea and paper, and the warmth of small encounters.","ja":"華山の小時光書店です。鳥のさえずり、茶と本の香り、ひとのぬくもりが交わる場。"}'::jsonb, 9),
+  ('contact', '{"zh":"聯絡 Contact｜小時光書店 Interval Books","en":"Contact｜Interval Books","ja":"お問合せ｜小時光書店 Interval Books"}'::jsonb, '{"zh":"Email、Instagram、Facebook、LINE——歡迎與我們聯繫。","en":"Reach us via email, Instagram, Facebook, or LINE — we''d love to hear from you.","ja":"メール、Instagram、Facebook、LINE でお気軽にご連絡ください。"}'::jsonb, '{"zh":"請與我們聯繫","en":"Reach out","ja":"ご連絡ください"}'::jsonb, null, null, 'Contact', '{"zh":"聯絡","en":"Contact","ja":"お問合せ"}'::jsonb, '{"zh":"請與我們聯繫","en":"Reach out","ja":"ご連絡ください"}'::jsonb, '{"zh":"Email 是最直接的方式，我們會親自回覆。","en":"Email is the most direct way to reach us — we''ll reply personally.","ja":"メールが一番確実です。一通ずつお返事します。"}'::jsonb, 10),
+  ('privacy', '{"zh":"隱私權 Privacy｜小時光書店 Interval Books","en":"Privacy｜Interval Books","ja":"プライバシー｜小時光書店 Interval Books"}'::jsonb, '{"zh":"小時光書店之隱私權聲明。","en":"Privacy statement of Interval Books.","ja":"小時光書店のプライバシーに関する声明。"}'::jsonb, '{"zh":"隱私權聲明","en":"Privacy Statement","ja":"プライバシー"}'::jsonb, null, null, 'Privacy', null, '{"zh":"隱私權聲明","en":"Privacy Statement","ja":"プライバシー"}'::jsonb, null, 11);
+
+-- page_blocks -----------------------------------------------------------------
+-- Standalone localized strings that currently sit in route files. block_key
+-- mirrors the TS path, e.g. index.tsx HERO.titleSub -> 'hero.titleSub'.
+-- 'visit.ig' is seeded for completeness: PAGE.ig is declared at visit.tsx:37
+-- but never rendered.
+insert into public.page_blocks
+  (page_slug, block_key, value, sort_order)
+values
+  ('index', 'hero.eyebrow', '{"zh":"Interval Books  ／  Est.","en":"Interval Books  ／  Est.","ja":"Interval Books  ／  Est."}'::jsonb, 1),
+  ('index', 'hero.titleMain', '{"zh":"小時光書店","en":"Interval Books","ja":"小時光書店"}'::jsonb, 2),
+  ('index', 'hero.titleSub', '{"zh":"留一點時間給真正重要的事","en":"Save a little time for what truly matters.","ja":"本当に大切なことに、少しの時間を。"}'::jsonb, 3),
+  ('index', 'hero.intro', '{"zh":"留一段屬於自己的＿＿＿小時光。","en":"Keep an interval that belongs only to you.","ja":"あなただけの小さな時間を、ひとつ。"}'::jsonb, 4),
+  ('index', 'entries.explore', '{"zh":"Explore","en":"Explore","ja":"Explore"}'::jsonb, 5),
+  ('index', 'entries.goTo', '{"zh":"前往","en":"Enter","ja":"見る"}'::jsonb, 6),
+  ('index', 'entries.curatedTitle', '{"zh":"一本好書，一份心意，\n風帶不走了，都留在美好的人情連結裡。","en":"A window, not a shelf.","ja":"棚ではなく、窓辺に。"}'::jsonb, 7),
+  ('index', 'entries.curatedBody', '{"zh":"關於這片土地的故事\n地方風土、器物與陶、茶與日常。\n都是被留下來的緩慢時間。","en":"Three themes, dozens of pieces — place, vessels, tea. Each one a quiet pause held in form.","ja":"三つのテーマ、数十の品. 土地, 器, 茶. それぞれが、留め置かれた緩やかな時間。"}'::jsonb, 8),
+  ('index', 'entries.curatedCta', '{"zh":"走進選品櫥窗","en":"Enter the window","ja":"選品の窓辺へ"}'::jsonb, 9),
+  ('index', 'entries.visitFull', '{"zh":"完整來訪資訊","en":"Full visit info","ja":"ご案内"}'::jsonb, 10),
+  ('index', 'sections.exhibitionsEyebrow', '{"zh":"Exhibitions","en":"Exhibitions","ja":"Exhibitions"}'::jsonb, 11),
+  ('index', 'sections.journeysEyebrow', '{"zh":"Journeys","en":"Journeys","ja":"Journeys"}'::jsonb, 12),
+  ('index', 'sections.newsEyebrow', '{"zh":"News","en":"News","ja":"News"}'::jsonb, 13),
+  ('events', 'filters.all', '{"zh":"全部","en":"All","ja":"すべて"}'::jsonb, 1),
+  ('exhibitions', 'details', '{"zh":"展覽細節","en":"Exhibition details","ja":"展覧の詳細"}'::jsonb, 1),
+  ('exhibitions', 'visitNote', '{"zh":"參觀方式 ／ 營業時間內自由參觀，無需預約","en":"Visit anytime during opening hours, no reservation needed.","ja":"営業時間内は予約不要で自由にご覧いただけます。"}'::jsonb, 2),
+  ('journeys', 'coCreateEyebrow', '{"zh":"Co-create","en":"Co-create","ja":"Co-create"}'::jsonb, 1),
+  ('journeys', 'collab', '{"zh":"策旅合作共創","en":"Journey co-creation","ja":"旅の共創"}'::jsonb, 2),
+  ('journeys', 'collabBody', '{"zh":"若您是地方夥伴、職人、旅宿或品牌，歡迎與我們共創一段屬於風土的策旅。請以 Email 聯繫。","en":"If you''re a local partner, maker, hotel, or brand, we''d love to co-create a journey rooted in place. Reach us by email.","ja":"地域のパートナー、作り手、宿、ブランドの方へ。風土に根ざした旅をともに育てましょう。メールでご連絡ください。"}'::jsonb, 3),
+  ('curated', 'windowLabel', '{"zh":"Window","en":"Window","ja":"Window"}'::jsonb, 1),
+  ('curated', 'askPurchase', '{"zh":"詢問與選購","en":"Ask & purchase","ja":"お問合せ・お求め"}'::jsonb, 2),
+  ('visit', 'address', '{"zh":"店址","en":"Address","ja":"ご住所"}'::jsonb, 1),
+  ('visit', 'hours', '{"zh":"營業時間","en":"Hours","ja":"営業時間"}'::jsonb, 2),
+  ('visit', 'transport', '{"zh":"交通方式","en":"Getting Here","ja":"アクセス"}'::jsonb, 3),
+  ('visit', 'metro', '{"zh":"捷運","en":"Metro (MRT)","ja":"MRT"}'::jsonb, 4),
+  ('visit', 'bus', '{"zh":"公車","en":"Bus","ja":"バス"}'::jsonb, 5),
+  ('visit', 'drive', '{"zh":"開車・停車","en":"By car & parking","ja":"お車・駐車"}'::jsonb, 6),
+  ('visit', 'walk', '{"zh":"步行路線","en":"On foot","ja":"徒歩でのご案内"}'::jsonb, 7),
+  ('visit', 'inside', '{"zh":"店內體驗","en":"Inside","ja":"店内のこと"}'::jsonb, 8),
+  ('visit', 'busDetail', '{"zh":"查看公車路線","en":"View bus routes","ja":"バス路線を見る"}'::jsonb, 9),
+  ('visit', 'contactUs', '{"zh":"聯絡我們","en":"Contact us","ja":"お問合せ"}'::jsonb, 10),
+  ('visit', 'ig', '{"zh":"Instagram","en":"Instagram","ja":"Instagram"}'::jsonb, 11),
+  ('visit', 'navHint', '{"zh":"一鍵開啟導航，帶你走進紅磚六合院。","en":"One tap to open turn-by-turn navigation to the Red Brick Courtyard.","ja":"ワンタップで紅煉瓦六合院までのナビを開きます。"}'::jsonb, 12),
+  ('visit', 'openGoogle', '{"zh":"Google Maps 導航","en":"Open in Google Maps","ja":"Google マップで開く"}'::jsonb, 13),
+  ('visit', 'openApple', '{"zh":"Apple 地圖導航","en":"Open in Apple Maps","ja":"Apple マップで開く"}'::jsonb, 14),
+  ('visit', 'navigateEyebrow', '{"zh":"Navigate","en":"Navigate","ja":"Navigate"}'::jsonb, 15),
+  ('visit', 'contactEyebrow', '{"zh":"Contact","en":"Contact","ja":"Contact"}'::jsonb, 16),
+  ('about', 'story', '{"zh":"從一櫃書、一張長桌開始，我們慢慢有了陶藝家的器物、地方夥伴的選物、與每月一場讀書會。書店並不大，但它是我們對於「閱讀」的長時間練習——讓書頁與生活，能彼此呼吸。","en":"We began with a single shelf and a long table. Then came the ceramicists'' vessels, the local partners'' selections, and a monthly reading circle. The shop is small, but it is our long practice of reading — letting page and life breathe together.","ja":"一棚の本と一脚の長机から始まりました。やがて陶芸家の器、地方の作り手の品、月に一度の読書会が加わりました。小さな店ですが、本と暮らしがともに呼吸できる場をめざす、長い練習なのです。"}'::jsonb, 1),
+  ('about', 'workTitle', '{"zh":"我們做的事","en":"What we do","ja":"わたしたちのしごと"}'::jsonb, 2),
+  ('about', 'spaceTitle', '{"zh":"空間特色","en":"Inside the space","ja":"空間"}'::jsonb, 3),
+  ('contact', 'email', '{"zh":"Email","en":"Email","ja":"メール"}'::jsonb, 1),
+  ('contact', 'phone', '{"zh":"電話","en":"Phone","ja":"お電話"}'::jsonb, 2),
+  ('contact', 'social', '{"zh":"社群","en":"Follow","ja":"フォロー"}'::jsonb, 3),
+  ('contact', 'site', '{"zh":"官方網站","en":"Website","ja":"公式サイト"}'::jsonb, 4),
+  ('curation', 'contactEyebrow', '{"zh":"Contact","en":"Contact","ja":"Contact"}'::jsonb, 1),
+  ('curation', 'contact', '{"zh":"合作邀請請以 Email 聯繫，我們會親自回覆。","en":"For collaboration, please reach us by email — we''ll reply personally.","ja":"ご相談はメールにて。一通ずつお返事いたします。"}'::jsonb, 2),
+  ('privacy', 'body', '{"zh":"小時光書店尊重每一位讀者與來訪者的個人資訊。本網站僅作為品牌、活動、選品與來店資訊之展示用途，目前不收集個人帳號、付款資訊或會員資料。若您透過 Email 與我們聯繫，您所提供的姓名與聯絡方式僅用於回覆與後續合作溝通，不會被轉作他用，亦不會與第三方分享。第三方嵌入服務（如 Google Maps、Instagram）可能依其自身政策蒐集使用紀錄，請參閱該服務之隱私聲明。本聲明可能依實際營運狀況更新，更新版本將直接公佈於本頁。","en":"Interval Books respects the privacy of every reader and visitor. This site exists to present our brand, events, curated objects, and visit information; we do not currently collect accounts, payment data, or member records. If you reach us by email, the name and contact details you share are used only to reply and to continue our conversation — never repurposed or shared with third parties. Third-party embeds (such as Google Maps and Instagram) may collect usage data under their own policies; please see those services'' notices. This statement may be updated as operations evolve, and any new version will be posted on this page.","ja":"小時光書店は、読者と来訪者おひとりおひとりの個人情報を尊重します。本サイトはブランド・イベント・選品・ご来店案内を提示する目的で運営されており、現在のところアカウント、決済情報、会員情報は取得しておりません。メールでご連絡いただいた際の氏名・連絡先は、お返事とその後のやり取りのみに使用し、第三者に共有することはありません。Google Maps や Instagram などの埋め込みサービスは、各社のポリシーに基づき利用情報を収集する場合があります。詳細は各サービスのプライバシーポリシーをご参照ください。本声明は運営状況により更新される場合があり、最新版は本ページに掲載します。"}'::jsonb, 1);
+
+-- page_list_items -------------------------------------------------------------
+-- index.tsx three entry cards (label + desc), visit.tsx METRO/WALK/DRIVE/BUS/
+-- INSIDE (visit.tsx:47-135), about.tsx WORK (title + desc) and SPACE (label +
+-- image). The visit.tsx lists are stored per language in code and are re-joined
+-- here index-by-index into one Localized row each.
+insert into public.page_list_items
+  (page_slug, list_key, label, note, image_key, sort_order)
+values
+  ('index', 'entryCards', '{"zh":"看活動","en":"Events","ja":"イベント"}'::jsonb, '{"zh":"讀書會、講座、工作坊與身心靈活動。","en":"Reading circles, talks, workshops, and healing practice.","ja":"読書会、トーク、ワークショップ、ヒーリング。"}'::jsonb, null, 1),
+  ('index', 'entryCards', '{"zh":"看策旅","en":"Journeys","ja":"旅"}'::jsonb, '{"zh":"由書與土地共同寫成的深度旅程。","en":"Slow journeys co-written by books and the land.","ja":"本と土地が共に綴る、深い旅。"}'::jsonb, null, 2),
+  ('index', 'entryCards', '{"zh":"來店資訊","en":"Visit","ja":"ご来店"}'::jsonb, '{"zh":"華山，紅磚六合院，西7-3館。","en":"Huashan, Red Brick Courtyard, West 7-3.","ja":"華山、紅煉瓦六合院、西7-3館。"}'::jsonb, null, 3),
+  ('visit', 'metro', '{"zh":"板南線「忠孝新生站」1 號出口，步行約 3 分鐘","en":"Bannan Line, Zhongxiao Xinsheng Station, Exit 1 — about 3 min on foot","ja":"板南線「忠孝新生」駅 1 番出口より徒歩約 3 分"}'::jsonb, null, null, 1),
+  ('visit', 'metro', '{"zh":"或「善導寺站」6 號出口，步行約 5 分鐘","en":"Or Shandao Temple Station, Exit 6 — about 5 min on foot","ja":"または「善導寺」駅 6 番出口より徒歩約 5 分"}'::jsonb, null, null, 2),
+  ('visit', 'walk', '{"zh":"從忠孝新生站 1 號出口出來，沿金山北路向北步行約 200 公尺。","en":"From MRT Zhongxiao Xinsheng Exit 1, walk north on Jinshan N. Rd. for ~200 m.","ja":"忠孝新生駅 1 番出口から金山北路を北へ約 200 m。"}'::jsonb, null, null, 1),
+  ('visit', 'walk', '{"zh":"看到紅磚老建築群即進入園區，沿主道走至「紅磚六合院」。","en":"Enter the park when you see the red-brick warehouses, then head to the Red Brick Courtyard.","ja":"赤煉瓦倉庫群が見えたら園内へ。メイン通りに沿って「紅煉瓦六合院」へ。"}'::jsonb, null, null, 2),
+  ('visit', 'walk', '{"zh":"穿過六合院中庭，西側第三間即為「西 7-3 館」。","en":"Cross the courtyard — West 7-3 is the third unit on the west side.","ja":"中庭を抜けた西側 3 番目が「西 7-3 館」です。"}'::jsonb, null, null, 3),
+  ('visit', 'drive', '{"zh":"園區附設 24 小時停車場（出入口位於八德路一段）","en":"On-site 24-hour parking lot (entrance on Bade Rd. Sec. 1)","ja":"園内に 24 時間駐車場あり（入口は八德路一段）"}'::jsonb, null, null, 1),
+  ('visit', 'drive', '{"zh":"平日 TWD 40 ／小時　|　假日 TWD 60 ／小時","en":"Weekdays TWD 40 / hr  ·  Weekends TWD 60 / hr","ja":"平日 TWD 40 / 時　|　休日 TWD 60 / 時"}'::jsonb, null, null, 2),
+  ('visit', 'drive', '{"zh":"建議：假日車位緊張，可改搭捷運前往。","en":"Tip: weekend parking fills quickly — MRT is recommended.","ja":"ヒント：週末は満車になりやすいため、MRT のご利用がおすすめです。"}'::jsonb, null, null, 3),
+  ('visit', 'bus', '{"zh":"忠孝國小站：232、232(副)、605 系列、665","en":"Zhongxiao Elementary School stop (忠孝國小): 232, 232(sub), 605 series, 665","ja":"忠孝國小停留所：232、232(副)、605 系統、665"}'::jsonb, null, null, 1),
+  ('visit', 'bus', '{"zh":"華山公園站：669","en":"Huashan Park stop (華山公園): 669","ja":"華山公園停留所：669"}'::jsonb, null, null, 2),
+  ('visit', 'bus', '{"zh":"審計部（忠孝東路）：205、232、262(區間)、276、299、忠孝新幹線","en":"National Audit Office on Zhongxiao E. Rd. (審計部): 205, 232, 262(local), 276, 299, Zhongxiao Express","ja":"審計部（忠孝東路）停留所：205、232、262(区間)、276、299、忠孝新幹線"}'::jsonb, null, null, 3),
+  ('visit', 'inside', '{"zh":"自選茶點與小份量甜食","en":"Self-serve tea and small sweets","ja":"セルフのお茶と小ぶりな甘いもの"}'::jsonb, null, null, 1),
+  ('visit', 'inside', '{"zh":"安靜閱讀座位（請小聲交談）","en":"Quiet reading seats (please keep voices low)","ja":"静かな読書席（小声でどうぞ）"}'::jsonb, null, null, 2),
+  ('visit', 'inside', '{"zh":"不定期舉辦讀書會、講座與身心靈活動","en":"Occasional reading circles, talks, and healing sessions","ja":"読書会、トーク、ヒーリングを随時開催"}'::jsonb, null, null, 3),
+  ('visit', 'inside', '{"zh":"可詢問主理人選書與選品建議","en":"Ask the owner for book and object recommendations","ja":"店主におすすめの本や品をお気軽にご相談ください"}'::jsonb, null, null, 4),
+  ('about', 'work', '{"zh":"風土誌策展","en":"Terroir Curation","ja":"風土誌キュレーション"}'::jsonb, '{"zh":"以地方為線索，策劃書展、選物與內容。","en":"Place as the thread for book shows, objects, and content.","ja":"土地を糸口に、書展・選品・コンテンツを編む。"}'::jsonb, null, 1),
+  ('about', 'work', '{"zh":"活動與讀書會","en":"Events & Reading Circles","ja":"イベントと読書会"}'::jsonb, '{"zh":"讀書會、講座、工作坊、身心靈活動。","en":"Reading circles, talks, workshops, and healing practice.","ja":"読書会、トーク、ワークショップ、ヒーリング。"}'::jsonb, null, 2),
+  ('about', 'work', '{"zh":"策旅與合作共創","en":"Journeys & Co-creation","ja":"旅と共創"}'::jsonb, '{"zh":"與在地夥伴設計風土主題旅程與品牌共創。","en":"Place-rooted journeys and brand co-creation with local partners.","ja":"地のパートナーと風土の旅、ブランド共創を設計します。"}'::jsonb, null, 3),
+  ('about', 'space', '{"zh":"書","en":"Books","ja":"本"}'::jsonb, null, 'bookstore-interior.jpg', 1),
+  ('about', 'space', '{"zh":"選品","en":"Objects","ja":"選品"}'::jsonb, null, 'curated-objects.jpg', 2),
+  ('about', 'space', '{"zh":"策展","en":"Exhibitions","ja":"展覧"}'::jsonb, null, 'exhibition-corner.jpg', 3);
+
+commit;
+
+-- Expected row counts after this seed:
+--   site_settings        1
+--   ui_strings          33
+--   contact_phones       2
+--   event_categories     6
+--   events               6
+--   exhibitions          2
+--   journeys             3
+--   news                 3
+--   curated_themes       3
+--   curated_items       18
+--   collaborations       4
+--   pages               11
+--   page_blocks         47
+--   page_list_items     24
