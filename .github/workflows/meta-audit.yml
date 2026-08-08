@@ -15,20 +15,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      # npm, not bun: Vercel builds this project with `npm run build`, so
+      # package-lock.json is the lockfile that actually gets maintained.
+      # Keeping bun here meant bun.lockb silently drifted whenever a dependency
+      # was added, and `--frozen-lockfile` then failed the whole workflow before
+      # the audit ever ran.
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Run meta audit
         id: audit
         # Capture exit code so the summary still runs on failure; we re-fail at the end.
         run: |
           set +e
-          bun run check:meta
+          npm run check:meta
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           set -e
 
@@ -194,6 +200,14 @@ jobs:
         if: always()
         run: |
           CODE="${{ steps.audit.outputs.exit_code }}"
+          # An empty CODE means the audit step never ran — an earlier step (e.g.
+          # dependency install) failed. Say so plainly instead of reporting
+          # "failed with exit code " and sending the reader hunting through the
+          # audit findings for a problem that isn't there.
+          if [ -z "$CODE" ]; then
+            echo "::error::Meta audit did not run — an earlier step failed. Check the Install dependencies step."
+            exit 1
+          fi
           if [ "$CODE" != "0" ]; then
             echo "::error::Meta audit failed with exit code $CODE — see Job Summary and meta-audit-report artifact."
             exit 1
