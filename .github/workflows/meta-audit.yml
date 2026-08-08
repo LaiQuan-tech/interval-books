@@ -20,10 +20,13 @@ jobs:
       # Keeping bun here meant bun.lockb silently drifted whenever a dependency
       # was added, and `--frozen-lockfile` then failed the whole workflow before
       # the audit ever ran.
+      # Node 24 ships npm 11, matching the npm that generated package-lock.json.
+      # npm 10 (bundled with Node 22) resolves this lockfile differently and
+      # reports platform-specific packages as missing even though they are present.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
