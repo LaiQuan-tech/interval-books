@@ -130,6 +130,23 @@ async function auditRoute(file) {
       return prop?.value?.type === "ObjectExpression" ? prop.value : null;
     }
     if (node.type === "Identifier") return topObjects.get(node.name) ?? null;
+    if (node.type === "CallExpression") {
+      // Meta is now DB-driven: src/lib/cms.ts's pageText() returns accessors
+      // like `p.metaTitle(fallback)` that read from Supabase at runtime and
+      // fall back to the in-repo constant when the DB is empty/unreachable.
+      // We can't know the DB value statically, but the fallback argument is
+      // still a real object literal worth auditing for zh/en/ja completeness
+      // — so unwrap the call and resolve through its argument(s) instead.
+      // If a call has several arguments, use the first one that resolves to
+      // an object literal. If none do (e.g. a fully dynamic expression with
+      // no literal fallback), fall through to `null` so the caller still
+      // reports unresolved_reference rather than silently passing.
+      for (const arg of node.arguments) {
+        const resolved = resolveObject(arg);
+        if (resolved) return resolved;
+      }
+      return null;
+    }
     return null;
   }
 
