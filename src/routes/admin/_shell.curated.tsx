@@ -44,6 +44,7 @@ import {
   removeCuratedItem,
   reorderCuratedItems,
 } from "@/lib/admin/fns/curated";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 type CuratedThemeRow = Awaited<ReturnType<typeof listCuratedThemes>>[number];
 type CuratedItemRow = Awaited<ReturnType<typeof listCuratedItems>>[number];
@@ -301,13 +302,14 @@ function AdminCuratedPage() {
               <TableHead className="w-16">排序</TableHead>
               <TableHead>主題名稱</TableHead>
               <TableHead className="w-24">狀態</TableHead>
+              <TableHead className="w-36">最後更新</TableHead>
               <TableHead className="w-64 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {themes.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增主題」開始。
                 </TableCell>
               </TableRow>
@@ -320,6 +322,9 @@ function AdminCuratedPage() {
                     <Badge variant={t.is_published ? "default" : "secondary"}>
                       {t.is_published ? "已發布" : "草稿"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatUpdatedAt(t.updated_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -370,19 +375,20 @@ function AdminCuratedPage() {
                   <TableHead className="w-20">排序</TableHead>
                   <TableHead>品項名稱</TableHead>
                   <TableHead className="w-24">狀態</TableHead>
+                  <TableHead className="w-36">最後更新</TableHead>
                   <TableHead className="w-40 text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {itemsLoading ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                       載入中…
                     </TableCell>
                   </TableRow>
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                       這個主題底下尚無品項，點右上角「新增品項」開始。
                     </TableCell>
                   </TableRow>
@@ -418,6 +424,9 @@ function AdminCuratedPage() {
                         <Badge variant={item.is_published ? "default" : "secondary"}>
                           {item.is_published ? "已發布" : "草稿"}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatUpdatedAt(item.updated_at)}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">

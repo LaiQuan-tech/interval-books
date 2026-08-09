@@ -31,6 +31,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { newsSchema, type NewsFormValues } from "@/lib/admin/schemas";
 import { listNews, removeNews, upsertNews } from "@/lib/admin/fns/news";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 type NewsRow = Awaited<ReturnType<typeof listNews>>[number];
 
@@ -145,13 +146,14 @@ function AdminNewsPage() {
               <TableHead>標題</TableHead>
               <TableHead>顯示日期</TableHead>
               <TableHead className="w-24">狀態</TableHead>
+              <TableHead className="w-36">最後更新</TableHead>
               <TableHead className="w-36 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {news.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增消息」開始。
                 </TableCell>
               </TableRow>
@@ -165,6 +167,9 @@ function AdminNewsPage() {
                     <Badge variant={n.is_published ? "default" : "secondary"}>
                       {n.is_published ? "已發布" : "草稿"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatUpdatedAt(n.updated_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

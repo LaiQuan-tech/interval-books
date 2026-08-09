@@ -32,6 +32,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { journeySchema, type JourneyFormValues } from "@/lib/admin/schemas";
 import { listJourneys, removeJourney, upsertJourney } from "@/lib/admin/fns/journeys";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 type JourneyRow = Awaited<ReturnType<typeof listJourneys>>[number];
 
@@ -160,13 +161,14 @@ function AdminJourneysPage() {
               <TableHead>天數</TableHead>
               <TableHead>報名方式</TableHead>
               <TableHead className="w-24">狀態</TableHead>
+              <TableHead className="w-36">最後更新</TableHead>
               <TableHead className="w-36 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {journeys.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增策旅」開始。
                 </TableCell>
               </TableRow>
@@ -184,6 +186,9 @@ function AdminJourneysPage() {
                     <Badge variant={j.is_published ? "default" : "secondary"}>
                       {j.is_published ? "已發布" : "草稿"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatUpdatedAt(j.updated_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

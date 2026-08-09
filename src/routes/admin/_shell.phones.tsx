@@ -28,6 +28,7 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { contactPhoneSchema, type ContactPhoneFormValues } from "@/lib/admin/schemas";
 import { listContactPhones, removeContactPhone, upsertContactPhone } from "@/lib/admin/fns/contact-phones";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 type ContactPhoneRow = Awaited<ReturnType<typeof listContactPhones>>[number];
 
@@ -136,13 +137,14 @@ function AdminPhonesPage() {
               <TableHead>標籤</TableHead>
               <TableHead>顯示文字</TableHead>
               <TableHead>撥號用號碼</TableHead>
+              <TableHead className="w-36">最後更新</TableHead>
               <TableHead className="w-36 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {phones.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增電話」開始。
                 </TableCell>
               </TableRow>
@@ -153,6 +155,9 @@ function AdminPhonesPage() {
                   <TableCell className="font-medium">{p.label}</TableCell>
                   <TableCell>{p.display_text}</TableCell>
                   <TableCell className="text-muted-foreground">{p.tel}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatUpdatedAt(p.updated_at)}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>

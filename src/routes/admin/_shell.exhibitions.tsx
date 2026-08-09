@@ -33,6 +33,7 @@ import { ImageField } from "@/components/admin/ImageField";
 import { exhibitionSchema, type ExhibitionFormValues } from "@/lib/admin/schemas";
 import { listExhibitions, removeExhibition, upsertExhibition } from "@/lib/admin/fns/exhibitions";
 import { imageFor, exhibitionCorner } from "@/lib/images";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 type ExhibitionRow = Awaited<ReturnType<typeof listExhibitions>>[number];
 
@@ -158,13 +159,14 @@ function AdminExhibitionsPage() {
               <TableHead>網址代稱</TableHead>
               <TableHead>展期</TableHead>
               <TableHead className="w-24">狀態</TableHead>
+              <TableHead className="hidden w-36 lg:table-cell">最後更新</TableHead>
               <TableHead className="w-36 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {exhibitions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增展覽」開始。
                 </TableCell>
               </TableRow>
@@ -186,6 +188,9 @@ function AdminExhibitionsPage() {
                     <Badge variant={e.is_published ? "default" : "secondary"}>
                       {e.is_published ? "已發布" : "草稿"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
+                    {formatUpdatedAt(e.updated_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

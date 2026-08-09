@@ -31,6 +31,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { collaborationSchema, type CollaborationFormValues } from "@/lib/admin/schemas";
 import { listCollaborations, removeCollaboration, upsertCollaboration } from "@/lib/admin/fns/collaborations";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 type CollaborationRow = Awaited<ReturnType<typeof listCollaborations>>[number];
 
@@ -140,13 +141,14 @@ function AdminCollaborationsPage() {
               <TableHead className="w-16">排序</TableHead>
               <TableHead>名稱</TableHead>
               <TableHead className="w-24">狀態</TableHead>
+              <TableHead className="w-36">最後更新</TableHead>
               <TableHead className="w-36 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {collaborations.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增合作」開始。
                 </TableCell>
               </TableRow>
@@ -159,6 +161,9 @@ function AdminCollaborationsPage() {
                     <Badge variant={c.is_published ? "default" : "secondary"}>
                       {c.is_published ? "已發布" : "草稿"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatUpdatedAt(c.updated_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

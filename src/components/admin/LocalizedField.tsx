@@ -29,14 +29,31 @@ type LocalizedFieldProps = {
   /** Use a <Textarea> instead of <Input> for all three languages. */
   multiline?: boolean;
   rows?: number;
+  /**
+   * Set for nullable jsonb columns (og_title, header_intro, …), where leaving
+   * all three languages blank is valid and means "don't override the default".
+   * Only a *partial* fill is an error there, so the header drops the 必填
+   * wording and the section only force-opens once Chinese has content.
+   */
+  optional?: boolean;
 };
 
-export function LocalizedField({ name, label, multiline = false, rows = 3 }: LocalizedFieldProps) {
+export function LocalizedField({
+  name,
+  label,
+  multiline = false,
+  rows = 3,
+  optional = false,
+}: LocalizedFieldProps) {
   const { control, getValues, setValue } = useFormContext();
+  const zh = useWatch({ control, name: `${name}.zh` }) as string | undefined;
   const en = useWatch({ control, name: `${name}.en` }) as string | undefined;
   const ja = useWatch({ control, name: `${name}.ja` }) as string | undefined;
 
-  const missing = !en?.trim() || !ja?.trim();
+  const anyLanguageMissing = !en?.trim() || !ja?.trim();
+  // An optional field that is entirely blank is fine; it only becomes a problem
+  // once Chinese is filled in and the other two are not.
+  const missing = optional ? Boolean(zh?.trim()) && anyLanguageMissing : anyLanguageMissing;
   const [manuallyOpen, setManuallyOpen] = useState(false);
   const open = missing || manuallyOpen;
 
@@ -82,7 +99,7 @@ export function LocalizedField({ name, label, multiline = false, rows = 3 }: Loc
               className="h-auto gap-1.5 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
-              {label}（英文／日文 — 必填）
+              {label}（英文／日文{optional ? "" : " — 必填"}）
             </Button>
           </CollapsibleTrigger>
           <Button

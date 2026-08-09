@@ -2,6 +2,7 @@ import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-r
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { listPages } from "@/lib/admin/fns/pages";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 /**
  * List view for /admin/pages, and — because TanStack Router's flat-routes
@@ -55,6 +56,7 @@ function AdminPagesListPage() {
               <TableHead className="w-16">排序</TableHead>
               <TableHead>頁面</TableHead>
               <TableHead>網址代稱</TableHead>
+              <TableHead className="w-36">最後更新</TableHead>
               <TableHead className="w-24 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
@@ -66,6 +68,9 @@ function AdminPagesListPage() {
                   <TableCell className="text-muted-foreground">{p.sort_order}</TableCell>
                   <TableCell className="max-w-sm truncate font-medium">{displayName}</TableCell>
                   <TableCell className="text-muted-foreground">{p.slug}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatUpdatedAt(p.updated_at)}
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" asChild>
                       <Link to="/admin/pages/$slug" params={{ slug: p.slug }}>

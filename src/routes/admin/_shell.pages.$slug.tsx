@@ -208,8 +208,8 @@ function PageMetaSection({ page, onSaved }: { page: PageRow; onSaved: (row: Page
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
           <LocalizedField name="meta_title" label="Meta 標題" />
           <LocalizedField name="meta_description" label="Meta 描述" multiline />
-          <LocalizedField name="og_title" label="社群分享標題（選填）" />
-          <LocalizedField name="og_description" label="社群分享描述（選填）" multiline />
+          <LocalizedField name="og_title" label="社群分享標題（選填）" optional />
+          <LocalizedField name="og_description" label="社群分享描述（選填）" multiline optional />
 
           <FormField
             control={form.control}
@@ -242,9 +242,9 @@ function PageMetaSection({ page, onSaved }: { page: PageRow; onSaved: (row: Page
               </FormItem>
             )}
           />
-          <LocalizedField name="eyebrow_suffix" label="頁首標籤（選填）" />
-          <LocalizedField name="header_title" label="頁首標題（選填）" />
-          <LocalizedField name="header_intro" label="頁首說明（選填）" multiline />
+          <LocalizedField name="eyebrow_suffix" label="頁首標籤（選填）" optional />
+          <LocalizedField name="header_title" label="頁首標題（選填）" optional />
+          <LocalizedField name="header_intro" label="頁首說明（選填）" multiline optional />
 
           <div className="flex justify-end">
             <Button type="submit" disabled={submitting}>
@@ -678,7 +678,7 @@ function ListItemForm({ defaultValues, onSubmit, submitting, submitLabel }: List
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
         <LocalizedField name="label" label="內容" multiline />
-        <LocalizedField name="note" label="備註（選填）" multiline />
+        <LocalizedField name="note" label="備註（選填）" multiline optional />
 
         <FormField
           control={form.control}

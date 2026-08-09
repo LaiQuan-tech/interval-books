@@ -33,6 +33,7 @@ import { LocalizedField } from "@/components/admin/LocalizedField";
 import { eventSchema, type EventFormValues } from "@/lib/admin/schemas";
 import { countEventsByCategory, listEvents, removeEvent, upsertEvent } from "@/lib/admin/fns/events";
 import { listEventCategories } from "@/lib/admin/fns/event-categories";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 type EventRow = Awaited<ReturnType<typeof listEvents>>[number];
 type EventCategoryRow = Awaited<ReturnType<typeof listEventCategories>>[number];
@@ -176,13 +177,14 @@ function AdminEventsPage() {
               <TableHead>顯示日期</TableHead>
               <TableHead>報名方式</TableHead>
               <TableHead className="w-24">狀態</TableHead>
+              <TableHead className="hidden w-36 lg:table-cell">最後更新</TableHead>
               <TableHead className="w-36 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增活動」開始。
                 </TableCell>
               </TableRow>
@@ -203,6 +205,9 @@ function AdminEventsPage() {
                     <Badge variant={e.is_published ? "default" : "secondary"}>
                       {e.is_published ? "已發布" : "草稿"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
+                    {formatUpdatedAt(e.updated_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

@@ -35,6 +35,7 @@ import {
   upsertEventCategory,
 } from "@/lib/admin/fns/event-categories";
 import { countEventsByCategory } from "@/lib/admin/fns/events";
+import { formatUpdatedAt } from "@/lib/admin/format";
 
 type EventCategoryRow = Awaited<ReturnType<typeof listEventCategories>>[number];
 
@@ -152,13 +153,14 @@ function AdminEventCategoriesPage() {
               <TableHead>分類代碼</TableHead>
               <TableHead>名稱</TableHead>
               <TableHead className="w-28">使用中活動數</TableHead>
+              <TableHead className="w-36">最後更新</TableHead>
               <TableHead className="w-44 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {categories.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增分類」開始。
                 </TableCell>
               </TableRow>
@@ -172,6 +174,9 @@ function AdminEventCategoriesPage() {
                     <TableCell className="max-w-sm truncate font-medium">{c.label.zh}</TableCell>
                     <TableCell>
                       <Badge variant={inUse > 0 ? "outline" : "secondary"}>{inUse} 場</Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatUpdatedAt(c.updated_at)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex flex-col items-end gap-1">
