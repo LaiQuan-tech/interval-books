@@ -24,6 +24,12 @@ import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell.index'
 import { Route as AdminShellNewsRouteImport } from './routes/admin/_shell.news'
+import { Route as AdminShellJourneysRouteImport } from './routes/admin/_shell.journeys'
+import { Route as AdminShellExhibitionsRouteImport } from './routes/admin/_shell.exhibitions'
+import { Route as AdminShellEventsRouteImport } from './routes/admin/_shell.events'
+import { Route as AdminShellCuratedRouteImport } from './routes/admin/_shell.curated'
+import { Route as AdminShellCollaborationsRouteImport } from './routes/admin/_shell.collaborations'
+import { Route as AdminShellCategoriesRouteImport } from './routes/admin/_shell.categories'
 
 const VisitRoute = VisitRouteImport.update({
   id: '/visit',
@@ -100,6 +106,37 @@ const AdminShellNewsRoute = AdminShellNewsRouteImport.update({
   path: '/news',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellJourneysRoute = AdminShellJourneysRouteImport.update({
+  id: '/journeys',
+  path: '/journeys',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellExhibitionsRoute = AdminShellExhibitionsRouteImport.update({
+  id: '/exhibitions',
+  path: '/exhibitions',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellEventsRoute = AdminShellEventsRouteImport.update({
+  id: '/events',
+  path: '/events',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellCuratedRoute = AdminShellCuratedRouteImport.update({
+  id: '/curated',
+  path: '/curated',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellCollaborationsRoute =
+  AdminShellCollaborationsRouteImport.update({
+    id: '/collaborations',
+    path: '/collaborations',
+    getParentRoute: () => AdminShellRoute,
+  } as any)
+const AdminShellCategoriesRoute = AdminShellCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -115,6 +152,12 @@ export interface FileRoutesByFullPath {
   '/visit': typeof VisitRoute
   '/admin': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
+  '/admin/categories': typeof AdminShellCategoriesRoute
+  '/admin/collaborations': typeof AdminShellCollaborationsRoute
+  '/admin/curated': typeof AdminShellCuratedRoute
+  '/admin/events': typeof AdminShellEventsRoute
+  '/admin/exhibitions': typeof AdminShellExhibitionsRoute
+  '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/': typeof AdminShellIndexRoute
 }
@@ -131,6 +174,12 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/visit': typeof VisitRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/categories': typeof AdminShellCategoriesRoute
+  '/admin/collaborations': typeof AdminShellCollaborationsRoute
+  '/admin/curated': typeof AdminShellCuratedRoute
+  '/admin/events': typeof AdminShellEventsRoute
+  '/admin/exhibitions': typeof AdminShellExhibitionsRoute
+  '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
   '/admin': typeof AdminShellIndexRoute
 }
@@ -149,6 +198,12 @@ export interface FileRoutesById {
   '/visit': typeof VisitRoute
   '/admin/_shell': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
+  '/admin/_shell/categories': typeof AdminShellCategoriesRoute
+  '/admin/_shell/collaborations': typeof AdminShellCollaborationsRoute
+  '/admin/_shell/curated': typeof AdminShellCuratedRoute
+  '/admin/_shell/events': typeof AdminShellEventsRoute
+  '/admin/_shell/exhibitions': typeof AdminShellExhibitionsRoute
+  '/admin/_shell/journeys': typeof AdminShellJourneysRoute
   '/admin/_shell/news': typeof AdminShellNewsRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
 }
@@ -168,6 +223,12 @@ export interface FileRouteTypes {
     | '/visit'
     | '/admin'
     | '/admin/login'
+    | '/admin/categories'
+    | '/admin/collaborations'
+    | '/admin/curated'
+    | '/admin/events'
+    | '/admin/exhibitions'
+    | '/admin/journeys'
     | '/admin/news'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -184,6 +245,12 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/visit'
     | '/admin/login'
+    | '/admin/categories'
+    | '/admin/collaborations'
+    | '/admin/curated'
+    | '/admin/events'
+    | '/admin/exhibitions'
+    | '/admin/journeys'
     | '/admin/news'
     | '/admin'
   id:
@@ -201,6 +268,12 @@ export interface FileRouteTypes {
     | '/visit'
     | '/admin/_shell'
     | '/admin/login'
+    | '/admin/_shell/categories'
+    | '/admin/_shell/collaborations'
+    | '/admin/_shell/curated'
+    | '/admin/_shell/events'
+    | '/admin/_shell/exhibitions'
+    | '/admin/_shell/journeys'
     | '/admin/_shell/news'
     | '/admin/_shell/'
   fileRoutesById: FileRoutesById
@@ -328,15 +401,69 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellNewsRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/journeys': {
+      id: '/admin/_shell/journeys'
+      path: '/journeys'
+      fullPath: '/admin/journeys'
+      preLoaderRoute: typeof AdminShellJourneysRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/exhibitions': {
+      id: '/admin/_shell/exhibitions'
+      path: '/exhibitions'
+      fullPath: '/admin/exhibitions'
+      preLoaderRoute: typeof AdminShellExhibitionsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/events': {
+      id: '/admin/_shell/events'
+      path: '/events'
+      fullPath: '/admin/events'
+      preLoaderRoute: typeof AdminShellEventsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/curated': {
+      id: '/admin/_shell/curated'
+      path: '/curated'
+      fullPath: '/admin/curated'
+      preLoaderRoute: typeof AdminShellCuratedRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/collaborations': {
+      id: '/admin/_shell/collaborations'
+      path: '/collaborations'
+      fullPath: '/admin/collaborations'
+      preLoaderRoute: typeof AdminShellCollaborationsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/categories': {
+      id: '/admin/_shell/categories'
+      path: '/categories'
+      fullPath: '/admin/categories'
+      preLoaderRoute: typeof AdminShellCategoriesRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
   }
 }
 
 interface AdminShellRouteChildren {
+  AdminShellCategoriesRoute: typeof AdminShellCategoriesRoute
+  AdminShellCollaborationsRoute: typeof AdminShellCollaborationsRoute
+  AdminShellCuratedRoute: typeof AdminShellCuratedRoute
+  AdminShellEventsRoute: typeof AdminShellEventsRoute
+  AdminShellExhibitionsRoute: typeof AdminShellExhibitionsRoute
+  AdminShellJourneysRoute: typeof AdminShellJourneysRoute
   AdminShellNewsRoute: typeof AdminShellNewsRoute
   AdminShellIndexRoute: typeof AdminShellIndexRoute
 }
 
 const AdminShellRouteChildren: AdminShellRouteChildren = {
+  AdminShellCategoriesRoute: AdminShellCategoriesRoute,
+  AdminShellCollaborationsRoute: AdminShellCollaborationsRoute,
+  AdminShellCuratedRoute: AdminShellCuratedRoute,
+  AdminShellEventsRoute: AdminShellEventsRoute,
+  AdminShellExhibitionsRoute: AdminShellExhibitionsRoute,
+  AdminShellJourneysRoute: AdminShellJourneysRoute,
   AdminShellNewsRoute: AdminShellNewsRoute,
   AdminShellIndexRoute: AdminShellIndexRoute,
 }

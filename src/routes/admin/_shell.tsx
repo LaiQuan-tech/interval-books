@@ -1,5 +1,15 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, LogOut, Newspaper } from "lucide-react";
+import {
+  CalendarDays,
+  Handshake,
+  ImageIcon,
+  LayoutDashboard,
+  LogOut,
+  Newspaper,
+  ShoppingBag,
+  Tags,
+  Tent,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +53,13 @@ export const Route = createFileRoute("/admin/_shell")({
 const NAV_ITEMS = [
   { to: "/admin", label: "儀表板", icon: LayoutDashboard },
   { to: "/admin/news", label: "最新消息", icon: Newspaper },
+  { to: "/admin/events", label: "活動", icon: CalendarDays },
+  { to: "/admin/exhibitions", label: "展覽", icon: ImageIcon },
+  // lucide's `Route` icon would collide with this file's `export const Route`.
+  { to: "/admin/journeys", label: "策旅", icon: Tent },
+  { to: "/admin/curated", label: "選品", icon: ShoppingBag },
+  { to: "/admin/collaborations", label: "合作", icon: Handshake },
+  { to: "/admin/categories", label: "活動分類", icon: Tags },
 ] as const;
 
 function AdminShell() {
