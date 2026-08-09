@@ -20,6 +20,10 @@ import { Route as CuratedRouteImport } from './routes/curated'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminLoginRouteImport } from './routes/admin/login'
+import { Route as AdminShellRouteImport } from './routes/admin/_shell'
+import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell.index'
+import { Route as AdminShellNewsRouteImport } from './routes/admin/_shell.news'
 
 const VisitRoute = VisitRouteImport.update({
   id: '/visit',
@@ -76,6 +80,26 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/admin/login',
+  path: '/admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminShellRoute = AdminShellRouteImport.update({
+  id: '/admin/_shell',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminShellIndexRoute = AdminShellIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellNewsRoute = AdminShellNewsRouteImport.update({
+  id: '/news',
+  path: '/news',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +113,10 @@ export interface FileRoutesByFullPath {
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
   '/visit': typeof VisitRoute
+  '/admin': typeof AdminShellRouteWithChildren
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/news': typeof AdminShellNewsRoute
+  '/admin/': typeof AdminShellIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +130,9 @@ export interface FileRoutesByTo {
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
   '/visit': typeof VisitRoute
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/news': typeof AdminShellNewsRoute
+  '/admin': typeof AdminShellIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +147,10 @@ export interface FileRoutesById {
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
   '/visit': typeof VisitRoute
+  '/admin/_shell': typeof AdminShellRouteWithChildren
+  '/admin/login': typeof AdminLoginRoute
+  '/admin/_shell/news': typeof AdminShellNewsRoute
+  '/admin/_shell/': typeof AdminShellIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +166,10 @@ export interface FileRouteTypes {
     | '/news'
     | '/privacy'
     | '/visit'
+    | '/admin'
+    | '/admin/login'
+    | '/admin/news'
+    | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +183,9 @@ export interface FileRouteTypes {
     | '/news'
     | '/privacy'
     | '/visit'
+    | '/admin/login'
+    | '/admin/news'
+    | '/admin'
   id:
     | '__root__'
     | '/'
@@ -157,6 +199,10 @@ export interface FileRouteTypes {
     | '/news'
     | '/privacy'
     | '/visit'
+    | '/admin/_shell'
+    | '/admin/login'
+    | '/admin/_shell/news'
+    | '/admin/_shell/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +217,8 @@ export interface RootRouteChildren {
   NewsRoute: typeof NewsRoute
   PrivacyRoute: typeof PrivacyRoute
   VisitRoute: typeof VisitRoute
+  AdminShellRoute: typeof AdminShellRouteWithChildren
+  AdminLoginRoute: typeof AdminLoginRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,8 +300,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/admin/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/_shell': {
+      id: '/admin/_shell'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/_shell/': {
+      id: '/admin/_shell/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminShellIndexRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/news': {
+      id: '/admin/_shell/news'
+      path: '/news'
+      fullPath: '/admin/news'
+      preLoaderRoute: typeof AdminShellNewsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
   }
 }
+
+interface AdminShellRouteChildren {
+  AdminShellNewsRoute: typeof AdminShellNewsRoute
+  AdminShellIndexRoute: typeof AdminShellIndexRoute
+}
+
+const AdminShellRouteChildren: AdminShellRouteChildren = {
+  AdminShellNewsRoute: AdminShellNewsRoute,
+  AdminShellIndexRoute: AdminShellIndexRoute,
+}
+
+const AdminShellRouteWithChildren = AdminShellRoute._addFileChildren(
+  AdminShellRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -267,6 +357,8 @@ const rootRouteChildren: RootRouteChildren = {
   NewsRoute: NewsRoute,
   PrivacyRoute: PrivacyRoute,
   VisitRoute: VisitRoute,
+  AdminShellRoute: AdminShellRouteWithChildren,
+  AdminLoginRoute: AdminLoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

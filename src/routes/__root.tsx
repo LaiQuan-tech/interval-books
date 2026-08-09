@@ -1,4 +1,5 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { Toaster } from "@/components/ui/sonner";
 import { LanguageProvider, useT } from "@/i18n/LanguageContext";
 import { fetchSiteContent, FALLBACK_SITE_CONTENT } from "@/lib/cms";
 import { SiteContentProvider, useSiteContent } from "@/lib/site-content";
@@ -77,6 +78,9 @@ function RootShell({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        {/* sonner was a dependency but was never mounted, so toast() calls
+            silently did nothing. The /admin forms rely on it for save feedback. */}
+        <Toaster position="top-center" richColors closeButton />
         <Scripts />
       </body>
     </html>

@@ -69,6 +69,20 @@
   --border: oklch(0.88 0.018 78);
   --input: oklch(0.88 0.018 78);
   --ring: oklch(0.55 0.045 55);
+
+  /* Sidebar — consumed by src/components/ui/sidebar.tsx (bg-sidebar,
+     text-sidebar-foreground, border-sidebar, …). These were missing, so every
+     sidebar utility resolved to nothing. Only the /admin shell uses them; the
+     public site never renders a sidebar. Tinted one step off --background so
+     the nav reads as a distinct surface without leaving the warm palette. */
+  --sidebar: oklch(0.955 0.014 82);
+  --sidebar-foreground: oklch(0.245 0.018 60);
+  --sidebar-primary: oklch(0.245 0.018 60);
+  --sidebar-primary-foreground: oklch(0.985 0.008 85);
+  --sidebar-accent: oklch(0.92 0.018 80);
+  --sidebar-accent-foreground: oklch(0.245 0.018 60);
+  --sidebar-border: oklch(0.88 0.018 78);
+  --sidebar-ring: oklch(0.55 0.045 55);
 }
 
 .dark {
@@ -89,6 +103,15 @@
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.55 0.045 55);
+
+  --sidebar: oklch(0.22 0.012 60);
+  --sidebar-foreground: oklch(0.95 0.01 84);
+  --sidebar-primary: oklch(0.95 0.01 84);
+  --sidebar-primary-foreground: oklch(0.18 0.012 60);
+  --sidebar-accent: oklch(0.28 0.012 60);
+  --sidebar-accent-foreground: oklch(0.95 0.01 84);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.55 0.045 55);
 }
 
 @layer base {
