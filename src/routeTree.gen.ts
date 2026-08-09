@@ -25,6 +25,7 @@ import { Route as AdminShellRouteImport } from './routes/admin/_shell'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell.index'
 import { Route as AdminShellStringsRouteImport } from './routes/admin/_shell.strings'
 import { Route as AdminShellSettingsRouteImport } from './routes/admin/_shell.settings'
+import { Route as AdminShellProductsRouteImport } from './routes/admin/_shell.products'
 import { Route as AdminShellPhonesRouteImport } from './routes/admin/_shell.phones'
 import { Route as AdminShellPagesRouteImport } from './routes/admin/_shell.pages'
 import { Route as AdminShellNewsRouteImport } from './routes/admin/_shell.news'
@@ -116,6 +117,11 @@ const AdminShellSettingsRoute = AdminShellSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellProductsRoute = AdminShellProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellPhonesRoute = AdminShellPhonesRouteImport.update({
   id: '/phones',
   path: '/phones',
@@ -191,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/phones': typeof AdminShellPhonesRoute
+  '/admin/products': typeof AdminShellProductsRoute
   '/admin/settings': typeof AdminShellSettingsRoute
   '/admin/strings': typeof AdminShellStringsRoute
   '/admin/': typeof AdminShellIndexRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/phones': typeof AdminShellPhonesRoute
+  '/admin/products': typeof AdminShellProductsRoute
   '/admin/settings': typeof AdminShellSettingsRoute
   '/admin/strings': typeof AdminShellStringsRoute
   '/admin': typeof AdminShellIndexRoute
@@ -247,6 +255,7 @@ export interface FileRoutesById {
   '/admin/_shell/news': typeof AdminShellNewsRoute
   '/admin/_shell/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/_shell/phones': typeof AdminShellPhonesRoute
+  '/admin/_shell/products': typeof AdminShellProductsRoute
   '/admin/_shell/settings': typeof AdminShellSettingsRoute
   '/admin/_shell/strings': typeof AdminShellStringsRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
@@ -277,6 +286,7 @@ export interface FileRouteTypes {
     | '/admin/news'
     | '/admin/pages'
     | '/admin/phones'
+    | '/admin/products'
     | '/admin/settings'
     | '/admin/strings'
     | '/admin/'
@@ -304,6 +314,7 @@ export interface FileRouteTypes {
     | '/admin/news'
     | '/admin/pages'
     | '/admin/phones'
+    | '/admin/products'
     | '/admin/settings'
     | '/admin/strings'
     | '/admin'
@@ -332,6 +343,7 @@ export interface FileRouteTypes {
     | '/admin/_shell/news'
     | '/admin/_shell/pages'
     | '/admin/_shell/phones'
+    | '/admin/_shell/products'
     | '/admin/_shell/settings'
     | '/admin/_shell/strings'
     | '/admin/_shell/'
@@ -468,6 +480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellSettingsRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/products': {
+      id: '/admin/_shell/products'
+      path: '/products'
+      fullPath: '/admin/products'
+      preLoaderRoute: typeof AdminShellProductsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/phones': {
       id: '/admin/_shell/phones'
       path: '/phones'
@@ -563,6 +582,7 @@ interface AdminShellRouteChildren {
   AdminShellNewsRoute: typeof AdminShellNewsRoute
   AdminShellPagesRoute: typeof AdminShellPagesRouteWithChildren
   AdminShellPhonesRoute: typeof AdminShellPhonesRoute
+  AdminShellProductsRoute: typeof AdminShellProductsRoute
   AdminShellSettingsRoute: typeof AdminShellSettingsRoute
   AdminShellStringsRoute: typeof AdminShellStringsRoute
   AdminShellIndexRoute: typeof AdminShellIndexRoute
@@ -578,6 +598,7 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellNewsRoute: AdminShellNewsRoute,
   AdminShellPagesRoute: AdminShellPagesRouteWithChildren,
   AdminShellPhonesRoute: AdminShellPhonesRoute,
+  AdminShellProductsRoute: AdminShellProductsRoute,
   AdminShellSettingsRoute: AdminShellSettingsRoute,
   AdminShellStringsRoute: AdminShellStringsRoute,
   AdminShellIndexRoute: AdminShellIndexRoute,

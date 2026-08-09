@@ -216,3 +216,79 @@ export const contactPhoneSchema = z.object({
   sort_order: z.number().int(),
 });
 export type ContactPhoneFormValues = z.infer<typeof contactPhoneSchema>;
+
+/* ------------------------------------------------------------------ *
+ * Commerce — products
+ * ------------------------------------------------------------------ */
+
+const PRODUCT_TYPES = ["goods", "book", "event", "journey"] as const;
+const PRODUCT_SOURCE_TYPES = ["event", "journey", "curated_item"] as const;
+const PRODUCT_STATUSES = ["draft", "active", "archived"] as const;
+
+/**
+ * products.id is a plain `text primary key` with no DB default (same shape as
+ * news.id — see src/server/repos/products.ts), so `id` absent/empty means
+ * "create a new row", same convention as newsSchema.
+ *
+ * The superRefine below reproduces the DB's products_capacity_shape CHECK
+ * (supabase/migrations/0004_commerce_products.sql) client-side: event/journey
+ * products must have a capacity. Doing it here puts the error on the
+ * capacity field itself instead of letting the admin hit a raw Postgres
+ * 23514 check-violation message after submit.
+ *
+ * `seats_taken` is deliberately not a field on this schema at all — see
+ * src/server/repos/products.ts for why it must never be part of a form write.
+ */
+export const productSchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    slug: z.string().trim().min(1, "請輸入網址代稱"),
+    product_type: z.enum(PRODUCT_TYPES),
+    // Optional link back to the CMS row this product is sold from — plain
+    // fields, not a picker (see src/routes/admin/_shell.products.tsx).
+    source_type: z.enum(PRODUCT_SOURCE_TYPES).nullable().optional(),
+    source_id: z.string().trim().nullable().optional(),
+    title: localizedSchema,
+    summary: localizedSchema,
+    description: localizedSchema,
+    // TWD, whole dollars — never cents (see migration comment).
+    price: z.number().int("價格必須是整數，不接受小數").min(0, "價格不可為負數"),
+    compare_at_price: z
+      .number()
+      .int("原價必須是整數，不接受小數")
+      .min(0, "原價不可為負數")
+      .nullable()
+      .optional(),
+    // Physical goods only. NULL means "not stock-managed".
+    stock: z
+      .number()
+      .int("庫存必須是整數，不接受小數")
+      .min(0, "庫存不可為負數")
+      .nullable()
+      .optional(),
+    // Bookings only (event/journey) — required-when-applicable enforced below.
+    capacity: z
+      .number()
+      .int("名額必須是整數，不接受小數")
+      .min(0, "名額不可為負數")
+      .nullable()
+      .optional(),
+    image_key: z.string().trim().nullable().optional(),
+    requires_shipping: z.boolean(),
+    status: z.enum(PRODUCT_STATUSES),
+    sort_order: z.number().int("排序必須是整數"),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      (data.product_type === "event" || data.product_type === "journey") &&
+      data.capacity == null
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "活動／策旅類型的商品必須填寫名額",
+        path: ["capacity"],
+      });
+    }
+  });
+
+export type ProductFormValues = z.infer<typeof productSchema>;

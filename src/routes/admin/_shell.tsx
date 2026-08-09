@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LogOut,
   Newspaper,
+  Package,
   Phone,
   Settings,
   ShoppingBag,
@@ -68,6 +69,7 @@ const NAV_ITEMS = [
   { to: "/admin/settings", label: "全站設定", icon: Settings },
   { to: "/admin/strings", label: "介面文字", icon: Type },
   { to: "/admin/phones", label: "聯絡電話", icon: Phone },
+  { to: "/admin/products", label: "商品", icon: Package },
 ] as const;
 
 function AdminShell() {
