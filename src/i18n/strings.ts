@@ -11,6 +11,8 @@ export const UI = {
     exhibitions: { zh: "展覽", en: "Exhibitions", ja: "展覧" },
     journeys: { zh: "策旅", en: "Journeys", ja: "旅" },
     curated: { zh: "主理人的選品", en: "Curated", ja: "店主の選品" },
+    shop: { zh: "選購", en: "Shop", ja: "ショップ" },
+    cart: { zh: "購物車", en: "Cart", ja: "カート" },
     visit: { zh: "來店資訊", en: "Visit", ja: "ご来店" },
     about: { zh: "關於", en: "About", ja: "について" },
     contact: { zh: "聯絡", en: "Contact", ja: "お問合せ" },
@@ -45,6 +47,12 @@ export const UI = {
     inStore: { zh: "到店選購", en: "Visit in store", ja: "店頭でご覧" },
     viewAll: { zh: "查看全部", en: "View all", ja: "すべて見る" },
     backHome: { zh: "回到首頁", en: "Back home", ja: "ホームへ" },
+    addToCart: { zh: "加入購物車", en: "Add to cart", ja: "カートに入れる" },
+    soldOut: { zh: "已售完", en: "Sold out", ja: "完売" },
+    viewProduct: { zh: "查看商品", en: "View item", ja: "商品を見る" },
+    continueShopping: { zh: "繼續選購", en: "Continue shopping", ja: "買い物を続ける" },
+    remove: { zh: "移除", en: "Remove", ja: "削除" },
+    viewCart: { zh: "前往購物車", en: "Go to cart", ja: "カートへ" },
   },
 
   sections: {
@@ -97,11 +105,12 @@ export const CONTACT_PHONES = [
 export const SOCIAL = {
   instagram: "https://www.instagram.com/intervalbookstw/",
   facebook: "", // TODO: 填入正式 Facebook 粉絲頁網址
-  line: "",     // TODO: 填入正式 LINE 官方帳號連結（例如 https://lin.ee/xxxxxx）
+  line: "", // TODO: 填入正式 LINE 官方帳號連結（例如 https://lin.ee/xxxxxx）
 };
 
 export const MAP = {
   embed: "https://www.google.com/maps?q=華山1914文化創意產業園區&output=embed",
   link: "https://goo.gl/maps/RB2ep3NoWFenLamV9",
-  apple: "https://maps.apple.com/?q=%E8%8F%AF%E5%B1%B11914%E6%96%87%E5%8C%96%E5%89%B5%E6%84%8F%E7%94%A2%E6%A5%AD%E5%9C%92%E5%8D%80&ll=25.0440,121.5298",
+  apple:
+    "https://maps.apple.com/?q=%E8%8F%AF%E5%B1%B11914%E6%96%87%E5%8C%96%E5%89%B5%E6%84%8F%E7%94%A2%E6%A5%AD%E5%9C%92%E5%8D%80&ll=25.0440,121.5298",
 };

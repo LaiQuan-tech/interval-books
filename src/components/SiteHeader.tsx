@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { ShoppingBag } from "lucide-react";
 import { useLang, useT } from "@/i18n/LanguageContext";
 import { LANGS } from "@/i18n/types";
+import { useCartCount, useCartHydrated } from "@/lib/cart";
 import { useSiteContent } from "@/lib/site-content";
 
 export function SiteHeader() {
@@ -12,6 +14,7 @@ export function SiteHeader() {
 
   const NAV = [
     { to: "/", label: t(ui.nav.home), exact: true },
+    { to: "/shop", label: t(ui.nav.shop), exact: false },
     { to: "/events", label: t(ui.nav.events), exact: false },
     { to: "/exhibitions", label: t(ui.nav.exhibitions), exact: false },
     { to: "/journeys", label: t(ui.nav.journeys), exact: false },
@@ -60,19 +63,24 @@ export function SiteHeader() {
               </span>
             ))}
           </span>
+
+          <CartLink label={t(ui.nav.cart)} />
         </nav>
 
-        <button
-          aria-label="Menu"
-          onClick={() => setOpen((v) => !v)}
-          className="lg:hidden flex h-10 w-10 items-center justify-center text-foreground"
-        >
-          <span className="flex flex-col gap-1.5">
-            <span className="block h-px w-6 bg-current" />
-            <span className="block h-px w-6 bg-current" />
-            <span className="block h-px w-6 bg-current" />
-          </span>
-        </button>
+        <div className="flex items-center gap-1 lg:hidden">
+          <CartLink label={t(ui.nav.cart)} onNavigate={() => setOpen(false)} />
+          <button
+            aria-label="Menu"
+            onClick={() => setOpen((v) => !v)}
+            className="flex h-10 w-10 items-center justify-center text-foreground"
+          >
+            <span className="flex flex-col gap-1.5">
+              <span className="block h-px w-6 bg-current" />
+              <span className="block h-px w-6 bg-current" />
+              <span className="block h-px w-6 bg-current" />
+            </span>
+          </button>
+        </div>
       </div>
 
       {open && (
@@ -107,9 +115,48 @@ export function SiteHeader() {
                 {n.label}
               </Link>
             ))}
+            <Link
+              to="/cart"
+              onClick={() => setOpen(false)}
+              activeProps={{ className: "text-foreground font-medium" }}
+              className="text-foreground/75"
+            >
+              {t(ui.nav.cart)}
+            </Link>
           </nav>
         </div>
       )}
     </header>
+  );
+}
+
+/**
+ * Cart icon with a unit-count badge.
+ *
+ * The count is gated on useCartHydrated(): the cart lives in localStorage, so
+ * the server has no idea what is in it. Rendering the real number on the first
+ * client pass would disagree with the SSR HTML and trip a hydration mismatch —
+ * hence "0 until the effect has read storage", which is the same discipline
+ * every cart-reading component in Realreal follows.
+ */
+function CartLink({ label, onNavigate }: { label: string; onNavigate?: () => void }) {
+  const hydrated = useCartHydrated();
+  const storedCount = useCartCount();
+  const count = hydrated ? storedCount : 0;
+
+  return (
+    <Link
+      to="/cart"
+      onClick={onNavigate}
+      aria-label={count > 0 ? `${label} (${count})` : label}
+      className="relative ml-2 flex h-10 w-10 items-center justify-center text-foreground/80 transition-colors hover:text-foreground"
+    >
+      <ShoppingBag className="h-5 w-5" aria-hidden="true" />
+      {count > 0 && (
+        <span className="absolute right-0.5 top-0.5 min-w-4 rounded-full bg-foreground px-1 text-center text-[0.6rem] leading-4 text-primary-foreground tabular-nums">
+          {count}
+        </span>
+      )}
+    </Link>
   );
 }

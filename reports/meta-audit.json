@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-09T16:08:30.480Z",
+  "generatedAt": "2026-08-09T23:11:32.032Z",
   "summary": {
-    "routesAudited": 11,
+    "routesAudited": 14,
     "languages": [
       "zh",
       "en",
@@ -23,12 +23,17 @@
         "ogTitle",
         "ogDescription"
       ],
-      "approxChecks": 132
+      "approxChecks": 168
     }
   },
   "routes": {
     "/about": {
       "file": "src/routes/about.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/cart": {
+      "file": "src/routes/cart.tsx",
       "ok": true,
       "issues": []
     },
@@ -74,6 +79,16 @@
     },
     "/privacy": {
       "file": "src/routes/privacy.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/shop.$slug": {
+      "file": "src/routes/shop.$slug.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/shop.index": {
+      "file": "src/routes/shop.index.tsx",
       "ok": true,
       "issues": []
     },
