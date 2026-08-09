@@ -23,6 +23,10 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell.index'
+import { Route as AdminShellStringsRouteImport } from './routes/admin/_shell.strings'
+import { Route as AdminShellSettingsRouteImport } from './routes/admin/_shell.settings'
+import { Route as AdminShellPhonesRouteImport } from './routes/admin/_shell.phones'
+import { Route as AdminShellPagesRouteImport } from './routes/admin/_shell.pages'
 import { Route as AdminShellNewsRouteImport } from './routes/admin/_shell.news'
 import { Route as AdminShellJourneysRouteImport } from './routes/admin/_shell.journeys'
 import { Route as AdminShellExhibitionsRouteImport } from './routes/admin/_shell.exhibitions'
@@ -30,6 +34,7 @@ import { Route as AdminShellEventsRouteImport } from './routes/admin/_shell.even
 import { Route as AdminShellCuratedRouteImport } from './routes/admin/_shell.curated'
 import { Route as AdminShellCollaborationsRouteImport } from './routes/admin/_shell.collaborations'
 import { Route as AdminShellCategoriesRouteImport } from './routes/admin/_shell.categories'
+import { Route as AdminShellPagesSlugRouteImport } from './routes/admin/_shell.pages.$slug'
 
 const VisitRoute = VisitRouteImport.update({
   id: '/visit',
@@ -101,6 +106,26 @@ const AdminShellIndexRoute = AdminShellIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellStringsRoute = AdminShellStringsRouteImport.update({
+  id: '/strings',
+  path: '/strings',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellSettingsRoute = AdminShellSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellPhonesRoute = AdminShellPhonesRouteImport.update({
+  id: '/phones',
+  path: '/phones',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellPagesRoute = AdminShellPagesRouteImport.update({
+  id: '/pages',
+  path: '/pages',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellNewsRoute = AdminShellNewsRouteImport.update({
   id: '/news',
   path: '/news',
@@ -137,6 +162,11 @@ const AdminShellCategoriesRoute = AdminShellCategoriesRouteImport.update({
   path: '/categories',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellPagesSlugRoute = AdminShellPagesSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => AdminShellPagesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -159,7 +189,12 @@ export interface FileRoutesByFullPath {
   '/admin/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
+  '/admin/pages': typeof AdminShellPagesRouteWithChildren
+  '/admin/phones': typeof AdminShellPhonesRoute
+  '/admin/settings': typeof AdminShellSettingsRoute
+  '/admin/strings': typeof AdminShellStringsRoute
   '/admin/': typeof AdminShellIndexRoute
+  '/admin/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -181,7 +216,12 @@ export interface FileRoutesByTo {
   '/admin/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
+  '/admin/pages': typeof AdminShellPagesRouteWithChildren
+  '/admin/phones': typeof AdminShellPhonesRoute
+  '/admin/settings': typeof AdminShellSettingsRoute
+  '/admin/strings': typeof AdminShellStringsRoute
   '/admin': typeof AdminShellIndexRoute
+  '/admin/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -205,7 +245,12 @@ export interface FileRoutesById {
   '/admin/_shell/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/_shell/journeys': typeof AdminShellJourneysRoute
   '/admin/_shell/news': typeof AdminShellNewsRoute
+  '/admin/_shell/pages': typeof AdminShellPagesRouteWithChildren
+  '/admin/_shell/phones': typeof AdminShellPhonesRoute
+  '/admin/_shell/settings': typeof AdminShellSettingsRoute
+  '/admin/_shell/strings': typeof AdminShellStringsRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
+  '/admin/_shell/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -230,7 +275,12 @@ export interface FileRouteTypes {
     | '/admin/exhibitions'
     | '/admin/journeys'
     | '/admin/news'
+    | '/admin/pages'
+    | '/admin/phones'
+    | '/admin/settings'
+    | '/admin/strings'
     | '/admin/'
+    | '/admin/pages/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -252,7 +302,12 @@ export interface FileRouteTypes {
     | '/admin/exhibitions'
     | '/admin/journeys'
     | '/admin/news'
+    | '/admin/pages'
+    | '/admin/phones'
+    | '/admin/settings'
+    | '/admin/strings'
     | '/admin'
+    | '/admin/pages/$slug'
   id:
     | '__root__'
     | '/'
@@ -275,7 +330,12 @@ export interface FileRouteTypes {
     | '/admin/_shell/exhibitions'
     | '/admin/_shell/journeys'
     | '/admin/_shell/news'
+    | '/admin/_shell/pages'
+    | '/admin/_shell/phones'
+    | '/admin/_shell/settings'
+    | '/admin/_shell/strings'
     | '/admin/_shell/'
+    | '/admin/_shell/pages/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -394,6 +454,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellIndexRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/strings': {
+      id: '/admin/_shell/strings'
+      path: '/strings'
+      fullPath: '/admin/strings'
+      preLoaderRoute: typeof AdminShellStringsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/settings': {
+      id: '/admin/_shell/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminShellSettingsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/phones': {
+      id: '/admin/_shell/phones'
+      path: '/phones'
+      fullPath: '/admin/phones'
+      preLoaderRoute: typeof AdminShellPhonesRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/pages': {
+      id: '/admin/_shell/pages'
+      path: '/pages'
+      fullPath: '/admin/pages'
+      preLoaderRoute: typeof AdminShellPagesRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/news': {
       id: '/admin/_shell/news'
       path: '/news'
@@ -443,8 +531,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellCategoriesRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/pages/$slug': {
+      id: '/admin/_shell/pages/$slug'
+      path: '/$slug'
+      fullPath: '/admin/pages/$slug'
+      preLoaderRoute: typeof AdminShellPagesSlugRouteImport
+      parentRoute: typeof AdminShellPagesRoute
+    }
   }
 }
+
+interface AdminShellPagesRouteChildren {
+  AdminShellPagesSlugRoute: typeof AdminShellPagesSlugRoute
+}
+
+const AdminShellPagesRouteChildren: AdminShellPagesRouteChildren = {
+  AdminShellPagesSlugRoute: AdminShellPagesSlugRoute,
+}
+
+const AdminShellPagesRouteWithChildren = AdminShellPagesRoute._addFileChildren(
+  AdminShellPagesRouteChildren,
+)
 
 interface AdminShellRouteChildren {
   AdminShellCategoriesRoute: typeof AdminShellCategoriesRoute
@@ -454,6 +561,10 @@ interface AdminShellRouteChildren {
   AdminShellExhibitionsRoute: typeof AdminShellExhibitionsRoute
   AdminShellJourneysRoute: typeof AdminShellJourneysRoute
   AdminShellNewsRoute: typeof AdminShellNewsRoute
+  AdminShellPagesRoute: typeof AdminShellPagesRouteWithChildren
+  AdminShellPhonesRoute: typeof AdminShellPhonesRoute
+  AdminShellSettingsRoute: typeof AdminShellSettingsRoute
+  AdminShellStringsRoute: typeof AdminShellStringsRoute
   AdminShellIndexRoute: typeof AdminShellIndexRoute
 }
 
@@ -465,6 +576,10 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellExhibitionsRoute: AdminShellExhibitionsRoute,
   AdminShellJourneysRoute: AdminShellJourneysRoute,
   AdminShellNewsRoute: AdminShellNewsRoute,
+  AdminShellPagesRoute: AdminShellPagesRouteWithChildren,
+  AdminShellPhonesRoute: AdminShellPhonesRoute,
+  AdminShellSettingsRoute: AdminShellSettingsRoute,
+  AdminShellStringsRoute: AdminShellStringsRoute,
   AdminShellIndexRoute: AdminShellIndexRoute,
 }
 

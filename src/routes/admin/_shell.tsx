@@ -1,14 +1,18 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   CalendarDays,
+  FileText,
   Handshake,
   ImageIcon,
   LayoutDashboard,
   LogOut,
   Newspaper,
+  Phone,
+  Settings,
   ShoppingBag,
   Tags,
   Tent,
+  Type,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -60,6 +64,10 @@ const NAV_ITEMS = [
   { to: "/admin/curated", label: "選品", icon: ShoppingBag },
   { to: "/admin/collaborations", label: "合作", icon: Handshake },
   { to: "/admin/categories", label: "活動分類", icon: Tags },
+  { to: "/admin/pages", label: "頁面文案", icon: FileText },
+  { to: "/admin/settings", label: "全站設定", icon: Settings },
+  { to: "/admin/strings", label: "介面文字", icon: Type },
+  { to: "/admin/phones", label: "聯絡電話", icon: Phone },
 ] as const;
 
 function AdminShell() {
