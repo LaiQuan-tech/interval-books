@@ -44,9 +44,15 @@ const PAGE = {
     ja: "小計に送料は含まれません。",
   },
   checkoutNote: {
-    zh: "線上結帳尚未開放。想確認品項或詢問寄送，歡迎來信或到店裡找我們。",
-    en: "Online checkout is not open yet. To confirm an item or ask about shipping, write to us or come by the shop.",
-    ja: "オンライン決済はまだご利用いただけません。ご購入やお届けのご相談は、メールまたは店頭までお願いいたします。",
+    zh: "運費會在下一步依寄送方式計算。線上付款尚未開放，訂單成立後我們會與你聯繫付款方式。",
+    en: "Shipping is worked out at the next step, once you pick a delivery method. Online payment is not open yet — we will arrange it with you after the order is placed.",
+    ja: "送料は次のステップでお届け方法に応じて計算されます。オンライン決済は未開放のため、ご注文後に個別にご案内いたします。",
+  },
+  checkout: { zh: "前往結帳", en: "Checkout", ja: "ご購入手続きへ" },
+  checkoutBlocked: {
+    zh: "請先移除無法購買的品項",
+    en: "Remove the unavailable items first",
+    ja: "ご購入いただけない商品を削除してください",
   },
   delisted: {
     zh: "此商品已下架",
@@ -108,6 +114,7 @@ function Cart() {
   // Until localStorage has been read, render exactly what the server rendered.
   const items = hydrated ? storedItems : NO_ITEMS;
   const subtotal = hydrated ? storedSubtotal : 0;
+  const canCheckout = items.length > 0 && items.every((i) => !i.unavailable);
 
   useEffect(() => {
     // Never reconcile against a failed read: every line would look de-listed.
@@ -241,7 +248,24 @@ function Cart() {
 
               <div className="rule my-7" />
 
-              <p className="text-sm leading-relaxed text-muted-foreground">
+              {/* An unavailable line cannot be ordered, and the checkout would
+                  only reject the whole cart on arrival — so the way forward is
+                  blocked here, where the remove button is, rather than one page
+                  later where it is not. */}
+              {canCheckout ? (
+                <Link
+                  to="/checkout"
+                  className="block w-full border border-foreground bg-foreground px-5 py-4 text-center text-xs tracking-widest text-primary-foreground transition-opacity hover:opacity-85"
+                >
+                  {t(PAGE.checkout)}
+                </Link>
+              ) : (
+                <p className="border border-clay px-5 py-4 text-center text-xs tracking-widest text-clay">
+                  {t(PAGE.checkoutBlocked)}
+                </p>
+              )}
+
+              <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
                 {t(PAGE.checkoutNote)}
               </p>
 

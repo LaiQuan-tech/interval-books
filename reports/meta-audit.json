@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-09T23:11:32.032Z",
+  "generatedAt": "2026-08-09T23:50:01.186Z",
   "summary": {
-    "routesAudited": 14,
+    "routesAudited": 16,
     "languages": [
       "zh",
       "en",
@@ -23,7 +23,7 @@
         "ogTitle",
         "ogDescription"
       ],
-      "approxChecks": 168
+      "approxChecks": 192
     }
   },
   "routes": {
@@ -34,6 +34,16 @@
     },
     "/cart": {
       "file": "src/routes/cart.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/checkout.complete": {
+      "file": "src/routes/checkout.complete.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/checkout.index": {
+      "file": "src/routes/checkout.index.tsx",
       "ok": true,
       "issues": []
     },

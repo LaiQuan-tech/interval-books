@@ -22,7 +22,9 @@ import { Route as CartRouteImport } from './routes/cart'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShopIndexRouteImport } from './routes/shop.index'
+import { Route as CheckoutIndexRouteImport } from './routes/checkout.index'
 import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
+import { Route as CheckoutCompleteRouteImport } from './routes/checkout.complete'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell.index'
@@ -105,9 +107,19 @@ const ShopIndexRoute = ShopIndexRouteImport.update({
   path: '/shop/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CheckoutIndexRoute = CheckoutIndexRouteImport.update({
+  id: '/checkout/',
+  path: '/checkout/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShopSlugRoute = ShopSlugRouteImport.update({
   id: '/shop/$slug',
   path: '/shop/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CheckoutCompleteRoute = CheckoutCompleteRouteImport.update({
+  id: '/checkout/complete',
+  path: '/checkout/complete',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
@@ -207,7 +219,9 @@ export interface FileRoutesByFullPath {
   '/visit': typeof VisitRoute
   '/admin': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
+  '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/checkout/': typeof CheckoutIndexRoute
   '/shop/': typeof ShopIndexRoute
   '/admin/categories': typeof AdminShellCategoriesRoute
   '/admin/collaborations': typeof AdminShellCollaborationsRoute
@@ -238,7 +252,9 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/visit': typeof VisitRoute
   '/admin/login': typeof AdminLoginRoute
+  '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/checkout': typeof CheckoutIndexRoute
   '/shop': typeof ShopIndexRoute
   '/admin/categories': typeof AdminShellCategoriesRoute
   '/admin/collaborations': typeof AdminShellCollaborationsRoute
@@ -271,7 +287,9 @@ export interface FileRoutesById {
   '/visit': typeof VisitRoute
   '/admin/_shell': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
+  '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/checkout/': typeof CheckoutIndexRoute
   '/shop/': typeof ShopIndexRoute
   '/admin/_shell/categories': typeof AdminShellCategoriesRoute
   '/admin/_shell/collaborations': typeof AdminShellCollaborationsRoute
@@ -305,7 +323,9 @@ export interface FileRouteTypes {
     | '/visit'
     | '/admin'
     | '/admin/login'
+    | '/checkout/complete'
     | '/shop/$slug'
+    | '/checkout/'
     | '/shop/'
     | '/admin/categories'
     | '/admin/collaborations'
@@ -336,7 +356,9 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/visit'
     | '/admin/login'
+    | '/checkout/complete'
     | '/shop/$slug'
+    | '/checkout'
     | '/shop'
     | '/admin/categories'
     | '/admin/collaborations'
@@ -368,7 +390,9 @@ export interface FileRouteTypes {
     | '/visit'
     | '/admin/_shell'
     | '/admin/login'
+    | '/checkout/complete'
     | '/shop/$slug'
+    | '/checkout/'
     | '/shop/'
     | '/admin/_shell/categories'
     | '/admin/_shell/collaborations'
@@ -401,7 +425,9 @@ export interface RootRouteChildren {
   VisitRoute: typeof VisitRoute
   AdminShellRoute: typeof AdminShellRouteWithChildren
   AdminLoginRoute: typeof AdminLoginRoute
+  CheckoutCompleteRoute: typeof CheckoutCompleteRoute
   ShopSlugRoute: typeof ShopSlugRoute
+  CheckoutIndexRoute: typeof CheckoutIndexRoute
   ShopIndexRoute: typeof ShopIndexRoute
 }
 
@@ -498,11 +524,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShopIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/checkout/': {
+      id: '/checkout/'
+      path: '/checkout'
+      fullPath: '/checkout/'
+      preLoaderRoute: typeof CheckoutIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/shop/$slug': {
       id: '/shop/$slug'
       path: '/shop/$slug'
       fullPath: '/shop/$slug'
       preLoaderRoute: typeof ShopSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/checkout/complete': {
+      id: '/checkout/complete'
+      path: '/checkout/complete'
+      fullPath: '/checkout/complete'
+      preLoaderRoute: typeof CheckoutCompleteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/login': {
@@ -683,7 +723,9 @@ const rootRouteChildren: RootRouteChildren = {
   VisitRoute: VisitRoute,
   AdminShellRoute: AdminShellRouteWithChildren,
   AdminLoginRoute: AdminLoginRoute,
+  CheckoutCompleteRoute: CheckoutCompleteRoute,
   ShopSlugRoute: ShopSlugRoute,
+  CheckoutIndexRoute: CheckoutIndexRoute,
   ShopIndexRoute: ShopIndexRoute,
 }
 export const routeTree = rootRouteImport
