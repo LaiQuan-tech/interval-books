@@ -74,19 +74,28 @@ export function payuniMerId(): string {
 }
 
 /**
- * PayUni 是否可用。
+ * PayUni 是否可用 —— 「可用」的定義是「付款結果一定回得來」，不只是「金鑰有填」。
  *
- * ⚠️ WEBHOOK_SECRET 也算在內，不是湊數的：少了它 payuniNotifyUrl() 會回 null，
- * 建立交易時就不會帶 NotifyURL —— 客人真的被扣款成功，但我們永遠收不到通知，
- * 訂單卡在 pending，庫存還會被 0006 的逾時回收函式當成未付款收回去。
- * 寧可整個不開放刷卡，也不要開放一個會卡單的刷卡。
+ * ⚠️ 最後一條 payuniNotifyUrl() !== null 是整個檔案最容易被誤刪的一行，它同時
+ * 擋住兩種設定失誤：
+ *   * 缺 PAYUNI_WEBHOOK_SECRET
+ *   * SITE_URL 沒設 / 設成 localhost / 設了非 80,443 的 port
+ * 兩者的後果一樣：建立交易時不會帶 NotifyURL，客人真的被扣款成功，我們卻永遠
+ * 收不到通知 —— 訂單卡在 pending，30 分鐘後還會被 0006 的逾時回收當成未付款
+ * 取消掉，變成「錢收了、庫存也還回去了」。而且 SITE_URL 錯掉時連 ReturnURL 都
+ * 是死的，客人付完款會落在一個開不起來的網址上。
+ *
+ * 這種設定錯誤在測試環境不會被發現（本機本來就收不到通知），所以只能靠這裡
+ * fail-safe：寧可整個不開放刷卡、退回「由我們聯繫付款」，也不要開放一個
+ * 會吃掉客人的錢又取消訂單的刷卡。
  */
 export function payuniConfigured(): boolean {
   return Boolean(
     payuniMerId() &&
       process.env.PAYUNI_HASH_KEY &&
       process.env.PAYUNI_HASH_IV &&
-      process.env.PAYUNI_WEBHOOK_SECRET,
+      process.env.PAYUNI_WEBHOOK_SECRET &&
+      payuniNotifyUrl() !== null,
   );
 }
 

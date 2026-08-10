@@ -240,10 +240,17 @@ checkThrows("金額為負 → throw", () =>
   buildUppForm({ merTradeNo: "IB-1", amount: -5, prodDesc: "x", returnUrl: "https://e.test" }),
 );
 
+// ── 9. 設定失誤時必須 fail-safe 關閉刷卡 ──────────────────────────────────
+// 這一組是「客人付了錢、我們卻收不到通知」那個災難的守門測試，見 payuniConfigured()。
+console.log("\n[9] 設定失誤 → 關閉刷卡（fail-safe）");
 // NotifyURL 只接受 80/443：本機 dev port 應該回 null（而不是送一個打不進來的網址）。
 process.env.SITE_URL = "http://localhost:8080";
 check("非 80/443 port → payuniNotifyUrl() 回 null", payuniNotifyUrl(), null);
+check("非 80/443 port → payuniConfigured() 為 false", payuniConfigured(), false);
+delete process.env.SITE_URL;
+check("SITE_URL 未設定（退回 localhost）→ payuniConfigured() 為 false", payuniConfigured(), false);
 process.env.SITE_URL = "https://example.test";
+checkTrue("SITE_URL 正確時恢復可用", payuniConfigured());
 delete process.env.PAYUNI_WEBHOOK_SECRET;
 check("缺 webhook secret → payuniNotifyUrl() 回 null", payuniNotifyUrl(), null);
 check("缺 webhook secret → payuniConfigured() 為 false", payuniConfigured(), false);
