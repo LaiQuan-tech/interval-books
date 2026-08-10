@@ -27,12 +27,14 @@
  *   2. insert orders                                            (undo: delete)
  *   3. insert order_items                                       (undo: cascade)
  *   4. insert order_addresses                                   (undo: cascade)
+ *  4b. insert invoices (the shopper's invoice choice)            (undo: cascade)
  *   5. reserve seats, one reserve_product_seat() per booking     (undo: CAS)
  *   6. atomic_deduct_stock() for every stock-managed line        (no undo needed)
  *   7. record the payment intent and build the PayUni form       (no writes to undo)
  *
- * Deleting the orders row cascades to order_items and order_addresses (both
- * declare `on delete cascade`), so undoing 2–4 is a single delete. Step 6 is
+ * Deleting the orders row cascades to order_items, order_addresses and invoices
+ * (all three declare `on delete cascade`), so undoing 2–4b is a single delete.
+ * Step 6 is
  * last on purpose: it is all-or-nothing inside one function call, so if it
  * raises, no stock moved, and there is no later step that could fail after it
  * succeeded. That is what makes "restore the stock" a case that cannot arise.
@@ -73,6 +75,7 @@ import {
   type ProductTypeForOrder,
   type ShippingMethod,
 } from "@/lib/checkout";
+import { normalizeInvoiceChoice } from "@/lib/invoice-format";
 
 /** Columns checkout needs from public.products. Price is re-read, never trusted. */
 const PRODUCT_COLUMNS =
@@ -482,6 +485,33 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
       });
       if (addressError) throw new CheckoutError("order_failed");
     }
+
+    // ---- step 4b: invoices (發票開法) ---------------------------------------
+    // 客人在結帳時選的開法。寫在這裡而不是等開票時再問，理由有兩個：
+    //
+    //   * 開票是**付款成功之後**才發生的（webhook → invoice-issuer），那時候客人
+    //     早就離開表單了。這一列是唯一一次能問到「這張發票要開給誰」的機會。
+    //   * 0007 的 claim_invoice_issue() 會在缺列時補一列預設值（personal / 無載具）。
+    //     所以沒有這一步不會壞掉 —— 它只是會**一律開 B2C 個人發票**，公司戶永遠拿不
+    //     到可以報帳的發票，而且沒有任何錯誤訊息會說出這件事。
+    //
+    // 放在 try 裡（步驟 2–4 的可回復區間內）是刻意的：發票開錯抬頭要作廢重開，而作廢
+    // 重開的成本比「這次結帳失敗、請再試一次」高得多。寧可整筆退回。
+    //
+    // ⚠️ normalizeInvoiceChoice() 的回傳只有六個欄位，沒有一個是金額。發票欄位不參與
+    // 上面任何一行的計算 —— subtotal / shippingFee / total 在這一步之前就算完了，而且
+    // 是從 public.products 算的。
+    const invoice = normalizeInvoiceChoice(payload.invoice);
+    const { error: invoiceError } = await db.from("invoices").insert({
+      order_id: order.id,
+      invoice_type: invoice.type,
+      tax_id: invoice.taxId,
+      company_title: invoice.companyTitle,
+      carrier_type: invoice.carrierType,
+      carrier_number: invoice.carrierNumber,
+      love_code: invoice.loveCode,
+    });
+    if (invoiceError) throw new CheckoutError("order_failed");
 
     // ---- step 5: seats ------------------------------------------------------
     // Sorted so concurrent multi-booking orders take the row locks in the same

@@ -16,6 +16,16 @@
  */
 import { z } from "zod";
 import type { Lang, Localized } from "@/i18n/types";
+import {
+  CARRIER_MOBILE,
+  CARRIER_NPC,
+  INVOICE_TYPES,
+  isValidLoveCode,
+  isValidMobileCarrier,
+  isValidNpcCarrier,
+  isValidTaxId,
+  type InvoiceType,
+} from "@/lib/invoice-format";
 
 /** Mirrors orders.shipping_method's CHECK in 0005_commerce_orders.sql. */
 export type ShippingMethod = "home" | "cvs" | "pickup" | "none";
@@ -262,7 +272,101 @@ const MSG = {
   street: { zh: "請輸入詳細地址", en: "Please enter a street address", ja: "住所をご入力ください" },
   tooLong: { zh: "內容過長", en: "That is too long", ja: "内容が長すぎます" },
   noteLong: { zh: "備註最多 500 字", en: "Notes are limited to 500 characters", ja: "備考は 500 文字までです" },
+  taxId: {
+    zh: "請輸入 8 碼統一編號",
+    en: "Please enter the 8-digit business number",
+    ja: "8 桁の統一番号をご入力ください",
+  },
+  taxIdInvalid: {
+    zh: "統一編號檢核碼不正確，請再確認一次",
+    en: "That business number fails its check digit — please check it again",
+    ja: "統一番号のチェックディジットが正しくありません。ご確認ください",
+  },
+  carrierMobile: {
+    zh: "手機條碼載具為 / 開頭共 8 碼（可含 0-9、A-Z、+、-、.）",
+    en: "A mobile barcode is 8 characters starting with / (0-9, A-Z, +, -, . allowed)",
+    ja: "携帯バーコードは / で始まる 8 文字です（0-9、A-Z、+、-、. が使えます）",
+  },
+  carrierNpc: {
+    zh: "自然人憑證載具為 2 個大寫英文字母 + 14 個數字",
+    en: "A citizen digital certificate is 2 capital letters followed by 14 digits",
+    ja: "自然人証明書は大文字 2 字 + 数字 14 桁です",
+  },
+  loveCode: {
+    zh: "愛心碼為 3–7 位數字",
+    en: "A donation code is 3–7 digits",
+    ja: "愛心コードは 3〜7 桁の数字です",
+  },
 } satisfies Record<string, Localized>;
+
+/**
+ * 發票開法的欄位規則。
+ *
+ * ⚠️ 這個 schema 裡沒有任何金額欄位，而且不可以加。發票決定的是「這張稅務憑證的抬頭
+ * 與載具」，不是「客人要付多少錢」——金額一律由 src/server/repos/orders.ts 從
+ * public.products 重算。checkoutPayloadSchema 的註解說的「這裡沒有一個欄位動得了錢」
+ * 在加了發票之後仍然成立，靠的就是這件事。
+ *
+ * 三種開法各自只驗自己那組欄位，錯誤用 superRefine 掛在**該欄位的 path 上**，
+ * react-hook-form 才會把訊息印在那個輸入框旁邊，而不是變成一個沒有出處的表單層錯誤
+ * （或更糟：handleSubmit 靜默地不送出，畫面上什麼都沒有）。
+ */
+function invoiceSchema(t: Translate) {
+  return z
+    .object({
+      type: z.enum(INVOICE_TYPES).default("personal"),
+      taxId: z.string().trim().max(20, t(MSG.tooLong)).optional().nullable(),
+      companyTitle: z.string().trim().max(60, t(MSG.tooLong)).optional().nullable(),
+      carrierType: z.string().trim().max(20, t(MSG.tooLong)).optional().nullable(),
+      carrierNumber: z.string().trim().max(64, t(MSG.tooLong)).optional().nullable(),
+      loveCode: z.string().trim().max(7, t(MSG.tooLong)).optional().nullable(),
+    })
+    .superRefine((value, ctx) => {
+      if (value.type === "company") {
+        const taxId = (value.taxId ?? "").trim();
+        if (!/^\d{8}$/.test(taxId)) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["taxId"], message: t(MSG.taxId) });
+        } else if (!isValidTaxId(taxId)) {
+          // 檢核碼是與「8 碼數字」分開的一則訊息：客人打滿 8 碼之後看到「請輸入 8 碼」
+          // 會以為是自己數錯了，而真正的問題是其中一碼打錯。
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["taxId"],
+            message: t(MSG.taxIdInvalid),
+          });
+        }
+        return;
+      }
+
+      if (value.type === "donate") {
+        if (!isValidLoveCode(value.loveCode)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["loveCode"],
+            message: t(MSG.loveCode),
+          });
+        }
+        return;
+      }
+
+      // personal：載具是選填的，沒選就什麼都不驗。選了類型才驗號碼。
+      const carrierType = (value.carrierType ?? "").trim();
+      if (carrierType === CARRIER_MOBILE && !isValidMobileCarrier(value.carrierNumber)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["carrierNumber"],
+          message: t(MSG.carrierMobile),
+        });
+      }
+      if (carrierType === CARRIER_NPC && !isValidNpcCarrier(value.carrierNumber)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["carrierNumber"],
+          message: t(MSG.carrierNpc),
+        });
+      }
+    });
+}
 
 /**
  * One schema definition, rendered in whichever language is asked for.
@@ -326,6 +430,13 @@ export function checkoutFormSchema({
     // so a request that skips the browser cannot skip the address.
     address: (requireAddress ? strictAddress : looseAddress).optional().nullable(),
     note: z.string().trim().max(500, t(MSG.noteLong)).optional().nullable(),
+    /**
+     * 發票開法。`.optional()` 是刻意的向後相容：這個欄位是在金流之後才加的，一個
+     * 還在跑舊 bundle 的分頁送上來的 payload 沒有它，那種請求應該照舊建立訂單並開
+     * 一張 B2C 個人發票，而不是整筆結帳失敗。伺服器端用 normalizeInvoiceChoice()
+     * 補上預設值。
+     */
+    invoice: invoiceSchema(t).optional().nullable(),
   });
 }
 
@@ -349,6 +460,21 @@ export type CheckoutFormValues = {
     street?: string | null;
   } | null;
   note?: string | null;
+  /**
+   * Optional for the same reason `address` is loose: this is the *input* shape
+   * react-hook-form binds to, and it has to be at least as permissive as the
+   * schema's input or the resolver will not type-check. The form always mounts
+   * it with `type: "personal"`; the server fills the gap for anyone who does not
+   * send it (see normalizeInvoiceChoice).
+   */
+  invoice?: {
+    type?: InvoiceType;
+    taxId?: string | null;
+    companyTitle?: string | null;
+    carrierType?: string | null;
+    carrierNumber?: string | null;
+    loveCode?: string | null;
+  } | null;
 };
 
 /** One cart line as the browser is permitted to describe it: what, and how many. */
@@ -364,6 +490,14 @@ export const checkoutItemSchema = z.object({
  * product name, no stock figure. There is no field here a shopper could edit to
  * change what they are charged, because none of those numbers make the trip —
  * they are all read out of the database on the server side.
+ *
+ * ⚠️ The invoice block added by `checkoutFormSchema` does not change that, and
+ * it is worth being explicit because a tax document is the one place a money
+ * field would look like it belongs. It carries a type, a business number, a
+ * carrier and a donation code — and nothing else. zod strips unknown keys, so a
+ * payload that bolts `total` onto `invoice` (or onto the root) loses it during
+ * parsing and never reaches src/server/repos/orders.ts, which prices the cart
+ * from public.products regardless. scripts/invoice-selftest.mjs asserts this.
  */
 export const checkoutPayloadSchema = checkoutFormSchema({
   t: (m) => m.zh,

@@ -9,11 +9,16 @@
  * 0006_order_expiry.sql 已經示範過這個坑：`expire_unpaid_orders()` 寫得再好，沒有
  * 排程呼叫它就是一段死碼。所以這條路徑存在的意義只有一個 —— 讓外部排程有地方打。
  *
- * ⚠️ 目前還沒有排程在打它。上線待辦（擇一）：
- *   * Vercel Cron：在 vercel.json 加
- *     `{"crons":[{"path":"/api/tasks/invoices?k=<TASKS_SECRET>","schedule":"*\/10 * * * *"}]}`
- *   * Railway worker（下一階段的規劃）：幾分鐘一次 POST 這條路徑。
- * 在其中之一存在之前，開票失敗的訂單要靠人看 invoice_backlog() 才會被發現。
+ * 排程已經接上了：supabase/migrations/0008_invoice_cron.sql 用 pg_cron + pg_net，
+ * 每 10 分鐘（分鐘 3,13,23,33,43,53）POST 這條路徑一次。密鑰存在 Supabase Vault，
+ * 不在 cron.job.command 裡 —— 詳見那支 migration 的檔頭。
+ *
+ * ⚠️ 不用 Vercel Cron 的理由寫在這裡，免得之後有人「順手」加回去：這個 Vercel 帳號是
+ * hobby 方案，**Vercel Cron 一天只能跑一次**。對「開票失敗要盡快重試」而言，一天一次
+ * 等於沒有重試。
+ *
+ * ⚠️ 「排程有跑」不等於「打得到這裡」。pg_net 是非同步的，cron.job_run_details 只證明
+ * 請求被排進佇列。真正的答案在 net._http_response 的 status_code。
  *
  * ── 安全性 ────────────────────────────────────────────────────────────────
  * 與 PayUni webhook 同一套：密鑰在 query string（`?k=`），缺密鑰 503、不符 404，

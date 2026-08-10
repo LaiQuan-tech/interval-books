@@ -138,6 +138,43 @@ const PAGE = {
     en: "Online payment is not open yet — we will contact you about payment once the order is placed.",
     ja: "オンライン決済は現在ご利用いただけません。ご注文後にお支払い方法をご連絡いたします。",
   },
+  invoiceSection: { zh: "電子發票", en: "Invoice", ja: "電子インボイス" },
+  invoiceIntro: {
+    zh: "付款完成後會自動開立電子發票，並以電子信箱通知。統編與載具送出後就不能改，請先確認。",
+    en: "An e-invoice is issued automatically once payment clears, and emailed to you. A business number or carrier cannot be changed after submitting, so please check it now.",
+    ja: "お支払い完了後に電子インボイスを自動発行し、メールでお知らせします。統一番号・キャリアは送信後に変更できませんのでご確認ください。",
+  },
+  invoicePersonal: { zh: "個人（含載具）", en: "Personal", ja: "個人（キャリア対応）" },
+  invoiceCompany: { zh: "公司（統一編號）", en: "Company (business number)", ja: "法人（統一番号）" },
+  invoiceDonate: { zh: "捐贈發票", en: "Donate the invoice", ja: "インボイスを寄付" },
+  invoicePersonalNote: {
+    zh: "不指定載具時，發票會由我們保管並以電子信箱寄送通知。",
+    en: "With no carrier chosen, we hold the invoice for you and send the details by email.",
+    ja: "キャリアを指定しない場合、インボイスは当店で保管し、内容をメールでお送りします。",
+  },
+  invoiceCompanyNote: {
+    zh: "開立統編發票後就不會再有載具，這張發票會直接寄到你的電子信箱。",
+    en: "A business-number invoice carries no mobile carrier; we email it to you directly.",
+    ja: "統一番号ありのインボイスにキャリアは付きません。メールで直接お送りします。",
+  },
+  invoiceDonateNote: {
+    zh: "捐贈之後這張發票就不屬於你了，無法再兌獎或折讓退回。",
+    en: "Once donated, the invoice is no longer yours — it cannot be redeemed or returned.",
+    ja: "寄付後のインボイスはお客様のものではなくなり、換金や返却はできません。",
+  },
+  carrierLabel: { zh: "載具類型", en: "Carrier", ja: "キャリアの種類" },
+  carrierNone: { zh: "不指定（寄送電子信箱）", en: "None — email it to me", ja: "指定しない（メール送付）" },
+  carrierMobile: { zh: "手機條碼", en: "Mobile barcode", ja: "携帯バーコード" },
+  carrierNpc: { zh: "自然人憑證", en: "Citizen digital certificate", ja: "自然人証明書" },
+  carrierNumber: { zh: "載具號碼", en: "Carrier number", ja: "キャリア番号" },
+  taxId: { zh: "統一編號", en: "Business number", ja: "統一番号" },
+  companyTitle: { zh: "公司抬頭（選填）", en: "Company name (optional)", ja: "会社名（任意）" },
+  loveCode: { zh: "愛心碼", en: "Donation code", ja: "愛心コード" },
+  loveCodeNote: {
+    zh: "常見的愛心碼例如 25885（家扶基金會）、8585（伊甸社會福利基金會）。",
+    en: "Common codes include 25885 (TFCF) and 8585 (Eden Social Welfare Foundation).",
+    ja: "よく使われるコード：25885（家扶基金会）、8585（伊甸社会福祉基金会）。",
+  },
   unavailableWarning: {
     zh: "購物車中有無法購買的品項，請先回到購物車移除。",
     en: "Your cart holds something that can no longer be bought. Please remove it in the cart first.",
@@ -273,8 +310,41 @@ function Checkout() {
         street: "",
       },
       note: "",
+      // 預設個人、無載具 —— 這是絕大多數客人的情況，也是不做任何選擇時最不會出錯的
+      // 一種（發票開得出來、寄得到信箱、之後還能補登載具）。
+      invoice: {
+        type: "personal",
+        taxId: "",
+        companyTitle: "",
+        carrierType: "",
+        carrierNumber: "",
+        loveCode: "",
+      },
     },
   });
+
+  /**
+   * 切換發票類型時，把另外兩種的欄位清空。
+   *
+   * 不清空的話，一個先填了統編、又改選捐贈的客人，會把統編一起送上來。伺服器端的
+   * normalizeInvoiceChoice() 本來就會丟掉不屬於該類型的欄位，所以那不會開錯發票 ——
+   * 但那些值仍然會離開瀏覽器，而「使用者已經在畫面上取消的輸入不應該被送出」是一條
+   * 值得自己遵守的規矩，尤其這裡是統一編號。
+   */
+  const invoiceType = form.watch("invoice.type") ?? "personal";
+  function selectInvoiceType(next: "personal" | "company" | "donate") {
+    form.setValue("invoice.type", next, { shouldValidate: false });
+    if (next !== "company") {
+      form.setValue("invoice.taxId", "");
+      form.setValue("invoice.companyTitle", "");
+    }
+    if (next !== "personal") {
+      form.setValue("invoice.carrierType", "");
+      form.setValue("invoice.carrierNumber", "");
+    }
+    if (next !== "donate") form.setValue("invoice.loveCode", "");
+    form.clearErrors("invoice");
+  }
 
   async function onSubmit(values: CheckoutFormValues) {
     if (buyable.length === 0) return;
@@ -605,6 +675,177 @@ function Checkout() {
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     {payWith === "card" ? t(PAGE.payCardNote) : t(PAGE.payOfflineNote)}
                   </p>
+                )}
+              </fieldset>
+
+              {/*
+                電子發票。三選一，預設個人。
+                ⚠️ 這一整段不影響訂單金額：送出的欄位只有開法、統編、載具與愛心碼，
+                金額由伺服器從 public.products 重算（見 src/lib/checkout.ts）。
+              */}
+              <fieldset className="space-y-4">
+                <legend className="eyebrow text-xl">{t(PAGE.invoiceSection)}</legend>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {t(PAGE.invoiceIntro)}
+                </p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {(["personal", "company", "donate"] as const).map((kind) => {
+                    const selected = invoiceType === kind;
+                    return (
+                      <label
+                        key={kind}
+                        className={`flex cursor-pointer items-baseline gap-3 border p-4 transition-colors ${
+                          selected ? "border-foreground" : "border-border hover:border-foreground/40"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="invoiceType"
+                          value={kind}
+                          checked={selected}
+                          onChange={() => selectInvoiceType(kind)}
+                          className="accent-current"
+                        />
+                        <span className="text-sm">
+                          {kind === "personal"
+                            ? t(PAGE.invoicePersonal)
+                            : kind === "company"
+                              ? t(PAGE.invoiceCompany)
+                              : t(PAGE.invoiceDonate)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {invoiceType === "personal" && (
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="invoice.carrierType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t(PAGE.carrierLabel)}</FormLabel>
+                          <FormControl>
+                            <select
+                              {...field}
+                              value={field.value ?? ""}
+                              onChange={(e) => {
+                                field.onChange(e);
+                                // 換載具類型時舊號碼一定不合新格式，留著只會讓客人看到
+                                // 一則指著他沒改過的欄位的錯誤。
+                                form.setValue("invoice.carrierNumber", "");
+                                form.clearErrors("invoice.carrierNumber");
+                              }}
+                              className="h-9 w-full border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:text-sm"
+                            >
+                              <option value="">{t(PAGE.carrierNone)}</option>
+                              <option value="3J0002">{t(PAGE.carrierMobile)}</option>
+                              <option value="CQ0001">{t(PAGE.carrierNpc)}</option>
+                            </select>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    {(form.watch("invoice.carrierType") ?? "") !== "" && (
+                      <FormField
+                        control={form.control}
+                        name="invoice.carrierNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t(PAGE.carrierNumber)}</FormLabel>
+                            <FormControl>
+                              <Input
+                                autoComplete="off"
+                                placeholder={
+                                  form.watch("invoice.carrierType") === "3J0002"
+                                    ? "/ABC+123"
+                                    : "AB12345678901234"
+                                }
+                                {...field}
+                                value={field.value ?? ""}
+                                onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                    <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">
+                      {t(PAGE.invoicePersonalNote)}
+                    </p>
+                  </div>
+                )}
+
+                {invoiceType === "company" && (
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="invoice.taxId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t(PAGE.taxId)}</FormLabel>
+                          <FormControl>
+                            <Input
+                              inputMode="numeric"
+                              autoComplete="off"
+                              maxLength={8}
+                              placeholder="12345675"
+                              {...field}
+                              value={field.value ?? ""}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="invoice.companyTitle"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t(PAGE.companyTitle)}</FormLabel>
+                          <FormControl>
+                            <Input autoComplete="organization" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">
+                      {t(PAGE.invoiceCompanyNote)}
+                    </p>
+                  </div>
+                )}
+
+                {invoiceType === "donate" && (
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="invoice.loveCode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t(PAGE.loveCode)}</FormLabel>
+                          <FormControl>
+                            <Input
+                              inputMode="numeric"
+                              autoComplete="off"
+                              maxLength={7}
+                              placeholder="25885"
+                              {...field}
+                              value={field.value ?? ""}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">
+                      {t(PAGE.loveCodeNote)} {t(PAGE.invoiceDonateNote)}
+                    </p>
+                  </div>
                 )}
               </fieldset>
 

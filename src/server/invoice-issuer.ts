@@ -41,6 +41,7 @@ import {
   getOrderForInvoice,
   invoiceBacklog,
 } from "@/server/repos/invoices";
+import { isValidCarrier, isValidLoveCode } from "@/lib/invoice-format";
 
 export type IssueOutcome =
   | { ok: true; invoiceNumber: string; adopted: boolean }
@@ -102,6 +103,15 @@ export function sumInvoiceLines(lines: InvoiceLine[]): number {
  * 統編格式不對時**退回 B2C 開立**而不是失敗：一張抬頭不完美的發票，永遠好過一張
  * 因為客人打錯統編就永遠開不出來的發票（那個失敗是永久性的，只能人工介入）。
  * 客人要改抬頭可以走折讓／作廢重開，那是有補救路徑的；沒有發票沒有補救路徑。
+ *
+ * 載具與愛心碼適用同一條規則。它們的錯誤碼（3040132 載具號碼不存在、愛心碼不存在）
+ * 都被 isPermanentAmegoError() 判為永久失敗，所以一個打錯的載具會讓 retry_count 一路
+ * 燒到上限，而客人只是想把發票存進手機而已。這裡在送出前先驗一次格式，不合格就丟掉
+ * 那個欄位照常開票，並把原因寫進 warning 讓 log 看得見。
+ *
+ * ⚠️ 前端（src/lib/checkout.ts 的 invoiceSchema）與寫入時（normalizeInvoiceChoice）
+ * 都各驗過一次，所以這裡照理走不到。留著是因為 invoices 那一列也可能來自舊訂單、
+ * 人工修改或 0007 補建的預設列 —— 開票是這條路徑的最後一關。
  */
 export function resolveBuyer(
   prefs: {
@@ -145,22 +155,50 @@ export function resolveBuyer(
     };
   }
 
-  if (prefs?.invoiceType === "donate" && (prefs.loveCode ?? "").trim()) {
+  if (prefs?.invoiceType === "donate") {
+    const loveCode = (prefs.loveCode ?? "").trim();
+    if (isValidLoveCode(loveCode)) {
+      return {
+        taxId: null,
+        buyerName: order.customerName || "消費者",
+        carrierType: null,
+        carrierId: null,
+        loveCode,
+        warning: null,
+      };
+    }
+    // 與統編同一個判斷：格式不對就退回個人發票。送出去只會拿到 Amego 的永久失敗，
+    // 而那代表這張訂單再也開不出發票 —— 客人捐不成，也拿不到發票。
     return {
       taxId: null,
       buyerName: order.customerName || "消費者",
       carrierType: null,
       carrierId: null,
-      loveCode: (prefs.loveCode ?? "").trim(),
-      warning: null,
+      loveCode: null,
+      warning: `愛心碼 ${loveCode || "(空)"} 格式不正確，已改開個人發票`,
+    };
+  }
+
+  const carrierType = (prefs?.carrierType ?? "").trim() || null;
+  const carrierId = (prefs?.carrierNumber ?? "").trim() || null;
+  if (carrierType && !isValidCarrier(carrierType, carrierId)) {
+    // 載具號碼不存在會拿到 3040132，同樣是永久失敗。丟掉載具照 B2C 開，客人的發票
+    // 仍然開得出來（只是沒歸到載具裡），這是有補救路徑的那一邊。
+    return {
+      taxId: null,
+      buyerName: order.customerName || "消費者",
+      carrierType: null,
+      carrierId: null,
+      loveCode: null,
+      warning: `載具 ${carrierType}/${carrierId ?? "(空)"} 格式不正確，已改開一般個人發票`,
     };
   }
 
   return {
     taxId: null,
     buyerName: order.customerName || "消費者",
-    carrierType: (prefs?.carrierType ?? "").trim() || null,
-    carrierId: (prefs?.carrierNumber ?? "").trim() || null,
+    carrierType,
+    carrierId,
     loveCode: null,
     warning: null,
   };
