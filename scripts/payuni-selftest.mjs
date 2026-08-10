@@ -150,9 +150,9 @@ ctBuf[0] ^= 0xff; // 竄改密文第一個 byte
 const tampered = Buffer.from(`${ctBuf.toString("base64")}:::${tagB64}`).toString("hex");
 checkThrows("密文被竄改 → decryptInfo throw", () => decryptInfo(tampered, KEY, IV));
 
-const badTag = Buffer.from(
-  `${ctB64}:::${Buffer.from("0".repeat(16)).toString("base64")}`,
-).toString("hex");
+const badTag = Buffer.from(`${ctB64}:::${Buffer.from("0".repeat(16)).toString("base64")}`).toString(
+  "hex",
+);
 checkThrows("authTag 錯誤 → decryptInfo throw", () => decryptInfo(badTag, KEY, IV));
 checkThrows("非法 hex → decryptInfo throw", () => decryptInfo("zzzz", KEY, IV));
 checkThrows("缺少 ::: 分隔 → decryptInfo throw", () =>
@@ -212,7 +212,11 @@ check(
   form.fields.HashInfo,
   hashInfo(form.fields.EncryptInfo, KEY, IV),
 );
-check("四個欄位剛好", Object.keys(form.fields).sort().join(","), "EncryptInfo,HashInfo,MerID,Version");
+check(
+  "四個欄位剛好",
+  Object.keys(form.fields).sort().join(","),
+  "EncryptInfo,HashInfo,MerID,Version",
+);
 
 // 表單內容解回來確認金額與導回網址真的進去了。
 const inner = decryptInfo(form.fields.EncryptInfo, KEY, IV);
@@ -231,7 +235,12 @@ check(
 check("只開信用卡", inner.Credit, "1");
 
 checkThrows("MerTradeNo 含非法字元 → throw", () =>
-  buildUppForm({ merTradeNo: "IB/2026#0001", amount: 100, prodDesc: "x", returnUrl: "https://e.test" }),
+  buildUppForm({
+    merTradeNo: "IB/2026#0001",
+    amount: 100,
+    prodDesc: "x",
+    returnUrl: "https://e.test",
+  }),
 );
 checkThrows("金額為 0 → throw", () =>
   buildUppForm({ merTradeNo: "IB-1", amount: 0, prodDesc: "x", returnUrl: "https://e.test" }),
@@ -257,6 +266,9 @@ check("缺 webhook secret → payuniConfigured() 為 false", payuniConfigured(),
 
 // ── 結果 ──────────────────────────────────────────────────────────────────
 console.log(`\n${"─".repeat(52)}`);
+// 機器可讀的收尾，讓 scripts/run-selftests.mjs 能證明「這個檔案真的跑了幾個 case」
+// ——而不是只證明「它 exit 0」。空殼測試也會 exit 0。
+console.log(`##SELFTEST## file=scripts/payuni-selftest.mjs pass=${pass} fail=${fail}`);
 if (fail === 0) {
   console.log(`\x1b[32m✓ 全部通過：${pass} passed, 0 failed\x1b[0m\n`);
   process.exit(0);

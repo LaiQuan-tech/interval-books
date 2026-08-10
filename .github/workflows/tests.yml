@@ -1,0 +1,77 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 這個 workflow 是 blocking 的，而且刻意保持成這樣：
+#
+#   * 沒有任何 `continue-on-error` —— 有一個就等於「測試紅了但 CI 綠燈」。
+#   * step 上沒有任何 `if:` —— 條件式最常見的下場是條件寫錯、整個 step 被跳過，
+#     而跳過的 step 在 CI 畫面上長得跟通過一樣。
+#   * 沒有 `--passWithNoTests` 之類的旗標。realreal 有過 4 支測試檔因為 glob 沒對到
+#     而被靜默跳過、CI 一路綠燈的前例；scripts/run-selftests.mjs 的檔數／case 數
+#     對帳就是為了讓那件事沒辦法再發生一次，這裡不要用任何會繞過它的跑法。
+#
+# Amego 的端到端（真的開一張發票再作廢）**不在這裡**：那會對第三方系統產生真實副作用，
+# 每次 push 都去開一張測試發票既不禮貌也會讓 CI 依賴外部服務的可用性。它在
+# scripts/amego-live-test.mjs，需要 AMEGO_LIVE=1 手動執行。
+#
+# `npm run lint` 也不在這裡，而且這是刻意的、不是漏掉：這個 repo 目前 `eslint .` 有
+# 245 個既有的 prettier 格式錯誤（分佈在 src/server/repos/*、src/routes/* 等本次沒動到
+# 的檔案），把它加進來會讓這個 workflow 從第一天就是紅的，而一個永遠紅的 job 等於沒有
+# job。要接 lint 的話，先用一次 `prettier --write .` 把既有債清掉，再把它加成獨立的
+# step —— 不要在這裡加 continue-on-error 假裝它綠了。
+
+jobs:
+  selftests:
+    name: Self-tests (PayUni + Amego)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 與 meta-audit.yml 同樣的理由：Vercel 用 npm run build，package-lock.json 才是
+      # 真正被維護的 lockfile；Node 24 的 npm 11 才解得動這個 lockfile。
+      # 另外 scripts/*-selftest.mjs 直接 import .ts 原始碼（Node 原生型別剝離），
+      # 需要 Node >= 22.6。
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run self-tests (blocking)
+        run: npm test
+
+      - name: TypeScript
+        run: ./node_modules/.bin/tsc --noEmit
+
+  # CI 設定本身也會漂移：有人為了讓紅燈變綠而加一個 continue-on-error，是最容易發生
+  # 也最難在 review 中被看見的一種。這個 job 直接解析 YAML 把它擋掉。
+  ci-integrity:
+    name: CI settings integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # check-ci.mjs 用真正的 YAML parser（devDependency `yaml`）解析 workflow，
+      # 而不是 grep —— 註解掉的 `# continue-on-error` 不該算數。
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Assert tests workflow has no escape hatches
+        run: node scripts/check-ci.mjs

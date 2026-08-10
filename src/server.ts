@@ -16,13 +16,19 @@
  * dist/esm/planning.js），沒有這個檔案時才退回框架的預設 entry。
  *
  * 所以這裡的規矩是：
- *   * 只攔 PAYUNI_WEBHOOK_PATH 這一條路徑，其他一律原封不動交回 startFetch。
- *   * webhook 的實作在 src/server/payuni-webhook.ts，用 dynamic import 載入，
- *     service_role client 不會在這個模組載入時就被拉進來。
- *   * 要再加第二條 raw HTTP 路徑時，先確認它真的不能用 createServerFn 表達。
+ *   * 只攔下面那張表列出的路徑，其他一律原封不動交回 startFetch。
+ *   * 每條路徑的實作都用 dynamic import 載入，service_role client 不會在這個模組
+ *     載入時就被拉進來。
+ *   * 要再加路徑時，先確認它真的不能用 createServerFn 表達。
+ *
+ * 目前掛在這裡的兩條，理由各自不同：
+ *   PAYUNI_WEBHOOK_PATH  外部金流商送 form-urlencoded POST，打不到框架的 RPC 協定。
+ *   INVOICE_TASK_PATH    外部排程（Vercel Cron / Railway worker）要有地方定時打，
+ *                        用來補開失敗的發票。同樣不是瀏覽器發起的請求。
  */
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { PAYUNI_WEBHOOK_PATH } from "@/server/payuni";
+import { INVOICE_TASK_PATH } from "@/server/task-endpoints";
 
 const startFetch = createStartHandler(defaultStreamHandler);
 
@@ -38,6 +44,11 @@ export default {
     if (pathname === PAYUNI_WEBHOOK_PATH) {
       const { handlePayuniWebhook } = await import("@/server/payuni-webhook");
       return handlePayuniWebhook(request);
+    }
+
+    if (pathname === INVOICE_TASK_PATH) {
+      const { handleInvoiceTask } = await import("@/server/task-endpoints");
+      return handleInvoiceTask(request);
     }
 
     return (startFetch as (req: Request, ...a: unknown[]) => Promise<Response>)(request, ...rest);

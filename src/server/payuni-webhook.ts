@@ -22,6 +22,11 @@
  *      事件搶不到 insert，直接 ack 不做任何事（不會重複加值、重複開發票）。
  *   4. 金額比對 —— 收到的金額與 orders.total 不符一律不標 paid，記錄並告警。
  *
+ * ── 付款之後（開發票）──────────────────────────────────────────────────
+ * 標記 paid 成功之後會就地開一次電子發票（src/server/invoice-issuer.ts）。那一步的
+ * 失敗**絕不**改變回給 PayUni 的答案 —— 開發票掛掉卻回 5xx，換來的是同一則通知被
+ * 無止盡重送。失敗留在 invoices / order_post_payment_log，由 /api/tasks/invoices 補。
+ *
  * ── ack 格式（尚待憑證實測）──────────────────────────────────────────────
  * 官方文件查不到「要回什麼給 PayUni 才算收到」。目前一律回 HTTP 200 純文字 "OK"。
  * 若實測發現 PayUni 持續重送，請改成官方要求的字面值。在確認之前重送是安全的 ——
@@ -223,6 +228,23 @@ export async function handlePayuniWebhook(req: Request): Promise<Response> {
       await annotateWebhookEvent(eventKey, { notify, refused: result.reason });
       return text(`OK (${result.reason})`);
     }
+
+    // ---------- 付款確認之後：開發票 ----------
+    // 只在「這一次真的把訂單推成 paid」時觸發（result.changed）。重送的通知在上面就
+    // 被去重擋掉了,already_paid 也不會走到這裡。
+    //
+    // ⚠️ 這一步的失敗**不可以**影響回給 PayUni 的答案。docs/alignment-audit.md 已經
+    // 寫過理由:開發票掛掉卻回 5xx,金流商就會不斷重送同一則通知。開票的重試由
+    // invoices.status + order_post_payment_log 記著,交給 /api/tasks/invoices 補。
+    // triggerInvoiceAfterPayment 自己有逾時保護且從不 throw,所以這裡不需要 try。
+    const { triggerInvoiceAfterPayment } = await import("@/server/invoice-issuer");
+    const invoice = await triggerInvoiceAfterPayment(order.id);
+    if (!invoice.ok) {
+      console.warn(
+        `[payuni] order=${orderNo} 已標記付款成功,但發票尚未開出(${invoice.reason})——已列入補開清單`,
+      );
+    }
+
     return text("OK");
   }
 
