@@ -28,6 +28,7 @@ import {
   AMEGO_CODE_DUPLICATE_ORDER,
   amegoConfigured,
   findInvoiceByOrderId,
+  isCarrierRejection,
   isPermanentAmegoError,
   isValidTaxId,
   issueInvoice,
@@ -297,7 +298,7 @@ async function issueWithClaim(orderId: string, attempt: number): Promise<IssueOu
   const buyer = resolveBuyer(prefs, order);
   if (buyer.warning) console.warn(`[amego] order=${order.orderNo} ${buyer.warning}`);
 
-  const result = await issueInvoice({
+  let result = await issueInvoice({
     orderId: order.orderNo,
     taxId: buyer.taxId,
     buyerName: buyer.buyerName,
@@ -307,6 +308,47 @@ async function issueWithClaim(orderId: string, attempt: number): Promise<IssueOu
     loveCode: buyer.loveCode,
     lines,
   });
+
+  // ---- 載具被 Amego 退回 → 拿掉載具再開一次 ---------------------------------
+  // 「載具號碼不存在」（3040132）是本地驗不到的：格式再正確，號碼在財政部那邊查無
+  // 此號就是查無此號。實測確認過這條路徑會發生（IB-202600000042，載具 /ABC1234
+  // 格式完全合法）。
+  //
+  // 不處理的話結局是：isPermanentAmegoError(3040132) = true → retry_count 直接推到
+  // 上限 → 這張訂單**永遠沒有發票**，而客人只是把手機條碼打錯一碼。所以這裡退一步
+  // 重開一張沒有載具的 B2C 發票 —— 憑證開得出來，客人事後還能拿發票號碼去財政部
+  // 平台自己歸戶；反過來則沒有任何補救路徑。
+  //
+  // 只退這一步，不再往下退（沒有載具的那一張再失敗就是真的失敗），所以不會變成迴圈。
+  // 重開用的是同一個 OrderId，安全性由 Amego 的唯一性保證：第一次真的沒開成功（業務
+  // 錯誤，沒有配號），萬一其實開了，第二次會拿到 3040171，而那條路徑在下面被當成
+  // 「已經開過」認領回來，不會產生第二張。
+  //
+  // ⚠️ 這種情況下 invoices.carrier_type 仍然留著客人**當初要求**的載具，而實際開出去
+  // 的那張沒有載具 —— 兩者不一致就是「被降級過」的痕跡。要清查的話：把
+  // invoices.carrier_type is not null 的單拿去 invoice_query，回來的 carrier_type
+  // 是空字串的就是這一類。
+  if (
+    !result.ok &&
+    result.kind === "business" &&
+    isCarrierRejection(result.code) &&
+    (buyer.carrierType || buyer.carrierId)
+  ) {
+    console.warn(
+      `[amego] order=${order.orderNo} 載具 ${buyer.carrierType}/${buyer.carrierId} 被 Amego 退回` +
+        `（${result.code} ${result.msg}），改開無載具的個人發票`,
+    );
+    result = await issueInvoice({
+      orderId: order.orderNo,
+      taxId: buyer.taxId,
+      buyerName: buyer.buyerName,
+      buyerEmail: order.customerEmail || null,
+      carrierType: null,
+      carrierId: null,
+      loveCode: buyer.loveCode,
+      lines,
+    });
+  }
 
   if (result.ok && result.invoice?.invoiceNumber) {
     const finished = await finishInvoiceIssue({

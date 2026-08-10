@@ -68,6 +68,32 @@ export const AMEGO_CODE_NOT_FOUND = 71;
 /** OrderId 重複 —— 代表這張訂單已經開過發票了，是冪等訊號。 */
 export const AMEGO_CODE_DUPLICATE_ORDER = 3040171;
 
+/**
+ * 載具號碼不存在。
+ *
+ * ⚠️ 這個碼不是「格式不對」，是「這個載具在財政部那邊查無此號」——本地的格式檢查
+ * （src/lib/invoice-format.ts）永遠擋不到它，只有 Amego 知道。實測：測試環境對
+ * **任何**載具都回這個碼（手機條碼 /ABC1234、/AAA0001、自然人憑證
+ * AB12345678901234 全部一樣），正式環境則只有真的不存在的號碼會中。
+ *
+ * 它被 isPermanentAmegoError() 判為永久失敗是對的（重試同一個載具永遠是同一個答案），
+ * 但「永久失敗」在這裡不可以等於「這張訂單沒有發票」——見 isCarrierRejection()。
+ */
+export const AMEGO_CODE_CARRIER_NOT_FOUND = 3040132;
+
+/**
+ * 這個錯誤是不是「只要把載具拿掉就開得出來」。
+ *
+ * 分出這一類的理由：客人打錯載具的代價不該是「完全沒有發票」。載具只決定這張發票
+ * 存在哪裡，不決定它存不存在；拿掉載具照 B2C 開，客人至少拿得到憑證，而且之後還能
+ * 拿發票號碼去財政部平台自己歸戶。反過來把它當成一般的永久失敗，retry_count 直接
+ * 推到上限，這張訂單就要等人工介入才有發票 —— 而人工介入的觸發條件是「有人去看
+ * invoice_backlog()」。
+ */
+export function isCarrierRejection(code: number | null): boolean {
+  return code === AMEGO_CODE_CARRIER_NOT_FOUND;
+}
+
 /** 無統編時的買方統編固定值（不是空字串）。 */
 export const ANONYMOUS_BUYER_ID = "0000000000";
 /** 無統編時的買方名稱。⚠️ 不可填 0/00/000/0000，會被擋 3040123。 */

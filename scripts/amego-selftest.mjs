@@ -47,6 +47,7 @@ try {
 
 const {
   AMEGO_DEFAULT_BASE,
+  AMEGO_CODE_CARRIER_NOT_FOUND,
   AMEGO_CODE_DUPLICATE_ORDER,
   AMEGO_CODE_NOT_FOUND,
   AMEGO_CODE_SIGN,
@@ -64,6 +65,7 @@ const {
   buildIssuePayload,
   computeInvoiceAmounts,
   findInvoiceByOrderId,
+  isCarrierRejection,
   isPermanentAmegoError,
   isValidTaxId,
   issueInvoice,
@@ -369,6 +371,39 @@ checkTrue("3040122 統編格式錯誤是永久失敗", isPermanentAmegoError(304
 checkTrue("3040132 載具不存在是永久失敗", isPermanentAmegoError(3040132));
 checkTrue("3040178 TotalAmount 計算錯誤是永久失敗", isPermanentAmegoError(3040178));
 checkTrue("未知錯誤碼保守當永久失敗（停下來讓人看見）", isPermanentAmegoError(9999999));
+
+// 「永久失敗」不等於「這張訂單沒有發票」。3040132 是唯一一個可以靠**拿掉載具**
+// 救回來的碼：載具只決定發票存在哪裡，不決定它存不存在。這一組守著那個分類 ——
+// 分錯的後果是客人打錯一碼手機條碼就永遠拿不到發票（實測發生過，IB-202600000042）。
+checkTrue("3040132 載具不存在 → 可用「拿掉載具重開」救回", isCarrierRejection(3040132));
+check("isCarrierRejection 用的就是那個常數", AMEGO_CODE_CARRIER_NOT_FOUND, 3040132);
+checkFalse("3040122 統編格式錯不屬於這一類（拿掉載具也沒用）", isCarrierRejection(3040122));
+checkFalse("3040178 金額算錯不屬於這一類", isCarrierRejection(3040178));
+checkFalse("3040171 OrderId 重複不屬於這一類（那是冪等訊號）", isCarrierRejection(3040171));
+checkFalse("傳輸層失敗（code=null）不屬於這一類", isCarrierRejection(null));
+checkTrue("而且它仍然是永久失敗（重試同一個載具永遠同一個答案）", isPermanentAmegoError(3040132));
+
+// 降級開立時送出去的 payload 真的不帶載具 —— 分類對了但 payload 還帶著載具的話，
+// 第二次會拿到一模一樣的 3040132。
+{
+  const withCarrier = buildIssuePayload({
+    orderId: "IB-1",
+    lines: [{ description: "書", quantity: 1, unitPrice: 210, amount: 210 }],
+    carrierType: "3J0002",
+    carrierId: "/ABC1234",
+  });
+  const without = buildIssuePayload({
+    orderId: "IB-1",
+    lines: [{ description: "書", quantity: 1, unitPrice: 210, amount: 210 }],
+    carrierType: null,
+    carrierId: null,
+  });
+  check("帶載具時 payload 有 CarrierType", withCarrier.CarrierType, "3J0002");
+  checkTrue("拿掉載具後 payload 沒有 CarrierType", !("CarrierType" in without));
+  checkTrue("拿掉載具後 payload 沒有 CarrierId1", !("CarrierId1" in without));
+  check("兩者的 TotalAmount 完全一樣（降級不動金額）", without.TotalAmount, withCarrier.TotalAmount);
+  check("兩者的 OrderId 一樣（靠 Amego 的唯一性防重複開立）", without.OrderId, withCarrier.OrderId);
+}
 
 // ── 8. HTTP 200 + 業務錯誤碼 = 失敗 ───────────────────────────────────────
 // 這一組是整支測試的重點：Amego **所有**回應都是 HTTP 200。把 res.ok 當成功，
