@@ -13,16 +13,29 @@
  * name, no email, no phone, no address, and the token is never echoed. A URL
  * ends up in browser history and over the shoulder of the person next to you;
  * it should not be a key to somebody's home address.
+ *
+ * WHY THE PAYMENT STATE IS RE-READ AND NOT TAKEN FROM THE URL
+ * ----------------------------------------------------------
+ * This is also PayUni's ReturnURL — the page the shopper lands on after paying
+ * — so the gateway appends its own parameters on the way back. None of them are
+ * read here. "Paid" is whatever the database says when this page asks it, which
+ * is the only version of the answer that a shopper cannot edit in the address
+ * bar. The gateway's real report arrives out of band at the webhook
+ * (src/server/payuni-webhook.ts); this page just waits for it to land.
  */
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Check } from "lucide-react";
+import { Check, Clock, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { PRODUCT_TYPE_LABELS } from "@/components/shop/labels";
-import { useT } from "@/i18n/LanguageContext";
+import { Button } from "@/components/ui/button";
+import { useLang, useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { useCart } from "@/lib/cart";
-import { fetchOrderConfirmation } from "@/lib/checkout-fns";
+import { checkoutErrorText, type OrderConfirmation } from "@/lib/checkout";
+import { fetchOrderConfirmation, retryPayment } from "@/lib/checkout-fns";
+import { submitPaymentForm } from "@/lib/payment-redirect";
 import { formatPrice } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
 
@@ -55,6 +68,26 @@ const PAGE = {
     en: "This order has not been paid yet. Until online payment opens, we will arrange it with you directly.",
     ja: "このご注文はまだお支払いいただいておりません。オンライン決済の開始まで、個別にご案内いたします。",
   },
+  titlePaid: { zh: "付款完成", en: "Payment complete", ja: "お支払い完了" },
+  titleWaiting: { zh: "等待付款結果", en: "Waiting for payment", ja: "お支払いの確認中" },
+  paid: {
+    zh: "已收到你的付款，謝謝。我們會盡快為你備貨並通知寄送進度。",
+    en: "We have received your payment — thank you. We will prepare your order and let you know when it ships.",
+    ja: "お支払いを確認いたしました。ありがとうございます。準備が整い次第、発送のご連絡をいたします。",
+  },
+  waiting: {
+    zh: "還在等金流回覆付款結果，這通常只需要幾秒。這一頁會自動更新，購物車會先幫你保留著。",
+    en: "We are still waiting for the payment result — this usually takes a few seconds. This page updates itself, and your cart is kept in the meantime.",
+    ja: "決済結果の確認中です。通常は数秒で完了します。このページは自動で更新され、その間カートは保持されます。",
+  },
+  failed: {
+    zh: "這次付款沒有完成。訂單與購物車都還在，你可以直接重新付款。",
+    en: "That payment did not go through. Your order and your cart are both still here — you can try paying again.",
+    ja: "お支払いが完了しませんでした。ご注文もカートもそのままですので、再度お支払いいただけます。",
+  },
+  retry: { zh: "重新付款", en: "Try paying again", ja: "もう一度支払う" },
+  retrying: { zh: "前往付款頁…", en: "Opening the payment page…", ja: "決済ページへ移動中…" },
+  backToCart: { zh: "回到購物車", en: "Back to cart", ja: "カートへ戻る" },
   notFound: {
     zh: "找不到這筆訂單。連結可能不完整，或訂單並未成立。",
     en: "We could not find that order. The link may be incomplete, or the order was never created.",
@@ -86,12 +119,21 @@ export const Route = createFileRoute("/checkout/complete")({
   component: CheckoutComplete,
 });
 
+/** How long to keep asking the server whether the gateway has reported in. */
+const POLL_INTERVAL_MS = 4000;
+const POLL_MAX_ATTEMPTS = 30; // ≈2 minutes, then stop and let the shopper reload
+
 function CheckoutComplete() {
   const t = useT();
-  const { order } = Route.useLoaderData();
+  const { lang } = useLang();
+  const { token } = Route.useSearch();
+  const { order: initialOrder } = Route.useLoaderData();
   const { ui } = useSiteContent();
   const clear = useCart((s) => s.clear);
   const cleared = useRef(false);
+
+  const [order, setOrder] = useState<OrderConfirmation | null>(initialOrder);
+  const [retrying, setRetrying] = useState(false);
 
   useDocumentMeta({
     title: PAGE.metaTitle,
@@ -100,19 +142,82 @@ function CheckoutComplete() {
   });
 
   /**
-   * Empty the cart only once the order has actually been read back.
+   * Empty the cart only once the order no longer owes anybody money.
    *
-   * Realreal originally cleared unconditionally on mount and stranded anyone
-   * whose payment failed in front of an empty cart with no way to retry. The
-   * same trap applies here in a milder form: if this page is reached with a bad
-   * token, the order may not exist, and throwing away the cart would destroy
-   * the only record of what the shopper wanted.
+   * THIS CONDITION IS THE WHOLE POINT — do not simplify it back to `if (order)`.
+   * Arriving here does not mean the shopper paid: with a gateway in the flow
+   * there is now a middle state ("order created, payment not settled") that did
+   * not exist before, and it is reached by anyone who closes PayUni's page or
+   * has a card declined. Clearing the cart in that state is what sent Realreal's
+   * shoppers to an empty cart with an unpaid order and no way to retry.
+   *
+   * `awaitingPayment` is computed on the server from the order's own columns
+   * (see getOrderByToken) — never from a URL parameter the gateway controls —
+   * and is false both for a settled card order and for an offline order, which
+   * has no payment step to wait for.
    */
   useEffect(() => {
-    if (!order || cleared.current) return;
+    if (!order || order.awaitingPayment || cleared.current) return;
     cleared.current = true;
     clear();
   }, [order, clear]);
+
+  /**
+   * While the gateway still owes us an answer, ask the server again.
+   *
+   * The shopper is usually back here before PayUni's server-to-server
+   * notification has been processed, so the first read almost always says
+   * "pending". Polling turns that into a page that resolves itself instead of
+   * one that needs a manual refresh. Bounded on purpose: an order that is still
+   * unsettled after two minutes needs a human, not more requests.
+   */
+  useEffect(() => {
+    if (!token || !order) return;
+    if (!order.awaitingPayment || order.paymentStatus !== "pending") return;
+
+    let attempts = 0;
+    let stopped = false;
+    const timer = setInterval(() => {
+      if (stopped) return;
+      attempts += 1;
+      if (attempts > POLL_MAX_ATTEMPTS) {
+        clearInterval(timer);
+        return;
+      }
+      void fetchOrderConfirmation({ data: { token } })
+        .then((fresh) => {
+          if (!stopped && fresh) setOrder(fresh);
+        })
+        .catch(() => {
+          /* transient; the next tick tries again */
+        });
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [token, order]);
+
+  /** Re-issues the PayUni form for an order whose payment did not complete. */
+  const onRetry = useCallback(async () => {
+    if (!token) return;
+    setRetrying(true);
+    try {
+      const result = await retryPayment({ data: { token } });
+      if (!result.ok) {
+        toast.error(checkoutErrorText(result.code, lang));
+        setRetrying(false);
+        return;
+      }
+      // Navigating away — leave `retrying` true so the button cannot be
+      // pressed twice while the browser is on its way to PayUni.
+      submitPaymentForm(result.payment);
+    } catch (err) {
+      toast.error(checkoutErrorText(err, lang));
+      setRetrying(false);
+    }
+  }, [token, lang]);
 
   if (!order) {
     return (
@@ -133,26 +238,56 @@ function CheckoutComplete() {
     );
   }
 
+  // Three shapes of the same page, chosen from the server's answer only.
+  const isPaid = order.paymentStatus === "paid";
+  const isFailed = order.awaitingPayment && order.paymentStatus === "failed";
+  const isWaiting = order.awaitingPayment && order.paymentStatus === "pending";
+
+  const StatusIcon = isPaid ? Check : isFailed ? TriangleAlert : isWaiting ? Clock : Check;
+  const heading = isPaid
+    ? PAGE.titlePaid
+    : isWaiting
+      ? PAGE.titleWaiting
+      : isFailed
+        ? PAGE.titleWaiting
+        : PAGE.title;
+  const statusCopy = isPaid
+    ? PAGE.paid
+    : isFailed
+      ? PAGE.failed
+      : isWaiting
+        ? PAGE.waiting
+        : PAGE.paymentPending;
+
   return (
     <PageShell>
       <PageHeader
         eyebrow={`Order  ／  ${t(PAGE.eyebrowSuffix)}`}
-        title={t(PAGE.title)}
+        title={t(heading)}
         intro={t(PAGE.intro)}
       />
 
       <section className="container-editorial pb-32 max-w-2xl">
         <div className="flex items-center gap-4 border border-foreground p-6">
-          <Check className="h-5 w-5 shrink-0" aria-hidden="true" />
+          <StatusIcon className="h-5 w-5 shrink-0" aria-hidden="true" />
           <div className="min-w-0">
             <p className="eyebrow text-xl">{t(PAGE.orderNo)}</p>
             <p className="mt-1 font-serif text-2xl tabular-nums break-all">{order.orderNo}</p>
           </div>
         </div>
 
-        <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
-          {t(PAGE.paymentPending)}
-        </p>
+        <p className="mt-6 text-sm leading-relaxed text-muted-foreground">{t(statusCopy)}</p>
+
+        {order.awaitingPayment && (
+          <div className="mt-6 flex flex-wrap items-center gap-4">
+            <Button type="button" onClick={onRetry} disabled={retrying}>
+              {retrying ? t(PAGE.retrying) : t(PAGE.retry)}
+            </Button>
+            <Link to="/cart" className="text-xs tracking-widest underline underline-offset-4">
+              {t(PAGE.backToCart)}
+            </Link>
+          </div>
+        )}
 
         <div className="mt-12 border border-border p-7 md:p-8">
           <p className="eyebrow text-xl">{t(PAGE.summary)}</p>

@@ -23,6 +23,37 @@ export type ShippingMethod = "home" | "cvs" | "pickup" | "none";
 /** Mirrors order_items.product_type's CHECK in 0005_commerce_orders.sql. */
 export type ProductTypeForOrder = "goods" | "book" | "event" | "journey";
 
+/**
+ * What the shopper may ask to pay with.
+ *
+ * A subset of orders.payment_method's CHECK ('card','atm','cvs_cod','test_paid'):
+ * only the card path is wired to PayUni, and `offline` is not a payment_method
+ * at all — it writes NULL and means "we will arrange payment with you", which is
+ * what this shop did before the gateway existed and what it falls back to when
+ * PayUni is not configured.
+ *
+ * ⚠️ This field must never influence money. Prices, shipping and the total are
+ * re-read from public.products on the server (see src/server/repos/orders.ts);
+ * choosing a payment method changes where the shopper is sent next and nothing
+ * else.
+ */
+export const PAYMENT_METHODS = ["card", "offline"] as const;
+export type PaymentMethodChoice = (typeof PAYMENT_METHODS)[number];
+
+/**
+ * A gateway hand-off, as the browser must perform it.
+ *
+ * ⚠️ PayUni has no "create the trade server-side and get a redirect URL" flow —
+ * the trade only comes into existence when the *browser* POSTs these fields to
+ * `action`. So this is a form to build and submit, not a URL to navigate to.
+ * Do not "simplify" it into a redirect; there is nothing to redirect to.
+ */
+export type PaymentHandoff = {
+  kind: "form";
+  action: string;
+  fields: Record<string, string>;
+};
+
 // -----------------------------------------------------------------------------
 // Shipping
 // -----------------------------------------------------------------------------
@@ -118,7 +149,9 @@ export type CheckoutErrorCode =
   | "insufficient_stock"
   | "no_seats_left"
   | "shipping_address_required"
-  | "order_failed";
+  | "order_failed"
+  | "payment_unavailable"
+  | "payment_already_settled";
 
 export class CheckoutError extends Error {
   readonly code: CheckoutErrorCode;
@@ -159,6 +192,16 @@ export const CHECKOUT_ERROR_COPY: Record<CheckoutErrorCode, Localized> = {
     zh: "訂單建立失敗，請稍後再試。若持續發生，歡迎來信告訴我們。",
     en: "We could not create the order. Please try again shortly, or write to us if it keeps happening.",
     ja: "ご注文を作成できませんでした。しばらくしてからお試しいただくか、解決しない場合はご連絡ください。",
+  },
+  payment_unavailable: {
+    zh: "線上付款暫時無法使用。訂單已經保留，我們會直接與你聯繫付款方式。",
+    en: "Online payment is temporarily unavailable. Your order is held and we will arrange payment with you directly.",
+    ja: "オンライン決済を一時的にご利用いただけません。ご注文はお預かりしておりますので、お支払い方法は個別にご案内いたします。",
+  },
+  payment_already_settled: {
+    zh: "這筆訂單已經不需要再付款了。",
+    en: "This order no longer needs to be paid.",
+    ja: "このご注文は、これ以上のお支払いは不要です。",
   },
 };
 
@@ -330,6 +373,18 @@ export const checkoutPayloadSchema = checkoutFormSchema({
   locale: z.enum(["zh", "en", "ja"]),
   /** Per-attempt UUID; orders.idempotency_key is unique, so a double-submit replays. */
   idempotencyKey: z.string().uuid(),
+  /**
+   * Where to send the shopper next — NOT what to charge them.
+   *
+   * This is the one field added to this schema since the gateway landed, and
+   * it was worth restating the rule for: there is still no price, subtotal,
+   * total, shipping fee or discount here. The server prices the cart from
+   * public.products and then asks PayUni for exactly that number, so a payload
+   * edited in transit can change the destination of the redirect and nothing
+   * about the amount. Defaults to `offline` so an old client that does not
+   * send it behaves exactly as it did before.
+   */
+  paymentMethod: z.enum(PAYMENT_METHODS).default("offline"),
 });
 
 export type CheckoutPayload = z.infer<typeof checkoutPayloadSchema>;
@@ -339,6 +394,19 @@ export type OrderConfirmation = {
   orderNo: string;
   status: string;
   paymentStatus: string;
+  /** NULL when nothing was sent to a gateway — see PAYMENT_METHODS. */
+  paymentMethod: string | null;
+  /**
+   * True while this order is still waiting on a gateway result.
+   *
+   * The confirmation page uses this for two things, both of which used to be
+   * wrong: whether to keep polling, and — critically — whether it is safe to
+   * empty the cart. Clearing an unpaid order's cart is how Realreal stranded
+   * shoppers whose payment failed in front of an empty cart with nothing to
+   * retry. Derived on the server from the order's own columns; never from a
+   * URL parameter the gateway might have set.
+   */
+  awaitingPayment: boolean;
   subtotal: number;
   shippingFee: number;
   discount: number;

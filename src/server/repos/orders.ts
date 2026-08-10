@@ -29,6 +29,7 @@
  *   4. insert order_addresses                                   (undo: cascade)
  *   5. reserve seats, one reserve_product_seat() per booking     (undo: CAS)
  *   6. atomic_deduct_stock() for every stock-managed line        (no undo needed)
+ *   7. record the payment intent and build the PayUni form       (no writes to undo)
  *
  * Deleting the orders row cascades to order_items and order_addresses (both
  * declare `on delete cascade`), so undoing 2–4 is a single delete. Step 6 is
@@ -43,8 +44,22 @@
  * read-modify-write on seats_taken is exactly the oversell bug that
  * atomic_deduct_stock() exists to prevent.
  *
+ * Step 7 is outside that scheme on purpose: it happens after the order is
+ * durable, and its only write (the payments row) is an audit record. If it
+ * fails, the order still exists and the shopper can pay again from the
+ * confirmation page — which is strictly better than deleting an order whose
+ * stock has already been deducted.
+ *
  * Net effect: a failed checkout leaves **no** orders row, hence no order_items
  * and no order_addresses, and leaves stock and seats where they were.
+ *
+ * WHAT HAPPENS TO THE STOCK IF NOBODY EVER PAYS
+ * ---------------------------------------------
+ * Stock and seats are taken here, at order time, before a single dollar has
+ * moved — so an abandoned payment page holds inventory that nobody can buy.
+ * Giving it back is NOT this file's job and must not be added to it: it is
+ * public.expire_unpaid_orders() in 0006_order_expiry.sql, which cancels and
+ * restores in one transaction. This file only ever takes.
  */
 import "@tanstack/react-start/server-only";
 import { supabaseAdmin } from "@/server/supabase-admin";
@@ -54,6 +69,7 @@ import {
   computeShippingFee,
   type CheckoutPayload,
   type OrderConfirmation,
+  type PaymentHandoff,
   type ProductTypeForOrder,
   type ShippingMethod,
 } from "@/lib/checkout";
@@ -90,6 +106,11 @@ export type PlacedOrder = {
   /** Unguessable lookup key. Returned exactly once, here — never by a status read. */
   publicToken: string;
   total: number;
+  /**
+   * The PayUni form the browser has to POST, or null when this order is not
+   * going to a gateway at all. See PaymentHandoff for why it is a form.
+   */
+  payment: PaymentHandoff | null;
 };
 
 /** Shaped by src/lib/checkout.ts so the route and the repo cannot drift. */
@@ -254,16 +275,102 @@ async function deleteOrder(orderId: string): Promise<void> {
 // -----------------------------------------------------------------------------
 
 /**
+ * Builds the PayUni hand-off for an order that still needs paying.
+ *
+ * Shared by createOrder (first attempt) and the "pay again" path, so the two
+ * cannot drift: both send the same MerTradeNo (= order_no) and the same
+ * ReturnURL, which is what lets the webhook match a notification back to an
+ * order by a single column.
+ *
+ * ⚠️ The ReturnURL has to be built here, at order time, carrying public_token.
+ * The gateway sends back only its own parameters, so if the token is not baked
+ * into the URL now there is nothing on the confirmation page to look the order
+ * up with.
+ *
+ * Returns null rather than throwing when PayUni is not configured: an
+ * unconfigured gateway must degrade to the pre-gateway behaviour (order held,
+ * payment arranged by hand), never to a failed checkout.
+ */
+async function buildPayuniHandoff(order: {
+  id: string;
+  order_no: string;
+  public_token: string;
+  total: number;
+}): Promise<PaymentHandoff | null> {
+  const { buildUppForm, payuniConfigured, payuniReturnUrl } = await import("@/server/payuni");
+  if (!payuniConfigured()) {
+    console.warn("[checkout] PayUni 未設定完成,退回「不經金流」流程");
+    return null;
+  }
+  try {
+    const { action, fields } = buildUppForm({
+      merTradeNo: order.order_no,
+      amount: order.total,
+      prodDesc: `小時光書店訂單 ${order.order_no}`,
+      returnUrl: payuniReturnUrl(order.public_token),
+    });
+    const { recordPaymentIntent } = await import("@/server/repos/payments");
+    await recordPaymentIntent(order);
+    return { kind: "form", action, fields };
+  } catch (err) {
+    console.error("[checkout] buildPayuniHandoff failed", order.order_no, err);
+    return null;
+  }
+}
+
+/**
+ * Re-issues the gateway form for an order that was created but never paid.
+ *
+ * Keyed on public_token for the same reason the confirmation read is: order_no
+ * is sequential and guessable, and this returns a live payment form.
+ *
+ * The same MerTradeNo is deliberately reused — this is the *same* trade being
+ * attempted again, not a new one, and reusing it keeps webhook matching and the
+ * unique payments row intact.
+ * TODO(憑證實測): PayUni 文件寫「MerTradeNo 10 分鐘內不可重複」。那條規則是針對
+ * 不同交易;同一筆未完成交易重送應為正常重試路徑,但沒有商店憑證無法實測確認。
+ * 若沙盒回「訂單重複」,改成 `${order_no}-R<n>` 並把 payments.gateway_tx_id 一起更新。
+ */
+export async function reissuePayment(token: string): Promise<PaymentHandoff | null> {
+  const { data } = await supabaseAdmin()
+    .from("orders")
+    .select("id, order_no, public_token, total, status, payment_status")
+    .eq("public_token", token)
+    .maybeSingle();
+  if (!data) return null;
+
+  const order = data as unknown as {
+    id: string;
+    order_no: string;
+    public_token: string;
+    total: number;
+    status: string;
+    payment_status: string;
+  };
+
+  // Only an order that is still waiting may be paid. A paid, cancelled or
+  // shipped order must never be handed a live payment form.
+  if (order.status !== "pending" || order.payment_status === "paid") return null;
+
+  return buildPayuniHandoff(order);
+}
+
+/**
  * Creates a pending, unpaid order.
  *
- * `status` and `payment_status` are both left at their 'pending' defaults and
- * `payment_method` at NULL: this is where PayUni will attach, and until it does
+ * `status` and `payment_status` are both left at their 'pending' defaults:
  * an order here means "we have your details and your stock is held", not "you
  * have paid". Nothing in this file may ever set payment_status = 'paid'; that
- * belongs to the webhook path, which is the only party that knows.
+ * belongs to src/server/repos/payments.ts, reached only from the webhook, which
+ * is the only party that knows.
+ *
+ * `payment_method` is written at order time only for the card path, so that
+ * "this order was sent to a gateway" is visible in the row itself rather than
+ * having to be inferred from the payments table.
  */
 export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder> {
   const db = supabaseAdmin();
+  const wantsCard = payload.paymentMethod === "card";
 
   // ---- step 0: has this exact attempt already succeeded? --------------------
   // This has to come before the availability pre-check, not after. A replay is
@@ -312,6 +419,9 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
       discount,
       total,
       shipping_method: shippingMethod,
+      // NULL for the offline path — orders.payment_method's CHECK has no
+      // 'offline' value, and NULL is exactly what "no gateway involved" means.
+      payment_method: wantsCard ? "card" : null,
       idempotency_key: payload.idempotencyKey,
       locale: payload.locale,
       note: payload.note ?? null,
@@ -407,23 +517,56 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
     throw err instanceof CheckoutError ? err : new CheckoutError("order_failed");
   }
 
-  return { orderNo: order.order_no, publicToken: order.public_token, total: order.total };
+  // ---- step 7: payment hand-off ---------------------------------------------
+  // After the order is durable, never before: if this throws we still want the
+  // order to exist so the shopper can retry payment rather than lose the lot.
+  const payment = wantsCard ? await buildPayuniHandoff(order) : null;
+
+  return {
+    orderNo: order.order_no,
+    publicToken: order.public_token,
+    total: order.total,
+    payment,
+  };
 }
 
 /**
- * Only ever called after a 23505 on idempotency_key, so "not found" here means
- * the conflict was on some other unique column and the caller should report a
- * plain failure rather than invent a success.
+ * Called both as the first thing createOrder does (the replay short-circuit)
+ * and after a 23505 on idempotency_key, so "not found" here means the conflict
+ * was on some other unique column and the caller should report a plain failure
+ * rather than invent a success.
+ *
+ * A replay rebuilds the gateway form rather than returning null for it: the
+ * double-clicked submit that produced the replay is exactly the case where the
+ * shopper is still sitting there waiting to be sent to PayUni.
  */
 async function findByIdempotencyKey(key: string): Promise<PlacedOrder | null> {
   const { data } = await supabaseAdmin()
     .from("orders")
-    .select("order_no, public_token, total")
+    .select("id, order_no, public_token, total, status, payment_status, payment_method")
     .eq("idempotency_key", key)
     .maybeSingle();
   if (!data) return null;
-  const row = data as unknown as { order_no: string; public_token: string; total: number };
-  return { orderNo: row.order_no, publicToken: row.public_token, total: row.total };
+  const row = data as unknown as {
+    id: string;
+    order_no: string;
+    public_token: string;
+    total: number;
+    status: string;
+    payment_status: string;
+    payment_method: string | null;
+  };
+
+  const stillOwed = row.status === "pending" && row.payment_status !== "paid";
+  const payment =
+    row.payment_method === "card" && stillOwed ? await buildPayuniHandoff(row) : null;
+
+  return {
+    orderNo: row.order_no,
+    publicToken: row.public_token,
+    total: row.total,
+    payment,
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -445,7 +588,7 @@ export async function getOrderByToken(token: string): Promise<OrderSummary | nul
   const { data, error } = await db
     .from("orders")
     .select(
-      "id, order_no, status, payment_status, subtotal, shipping_fee, discount, total, shipping_method, created_at",
+      "id, order_no, status, payment_status, payment_method, subtotal, shipping_fee, discount, total, shipping_method, created_at",
     )
     .eq("public_token", token)
     .maybeSingle();
@@ -456,6 +599,7 @@ export async function getOrderByToken(token: string): Promise<OrderSummary | nul
     order_no: string;
     status: string;
     payment_status: string;
+    payment_method: string | null;
     subtotal: number;
     shipping_fee: number;
     discount: number;
@@ -488,6 +632,20 @@ export async function getOrderByToken(token: string): Promise<OrderSummary | nul
     orderNo: o.order_no,
     status: o.status,
     paymentStatus: o.payment_status,
+    paymentMethod: o.payment_method,
+    /**
+     * "A gateway owes us an answer about this order."
+     *
+     * Computed here, from the row, rather than in the browser from a URL
+     * parameter — the gateway controls what it appends to the return URL, and
+     * this value decides whether the cart is thrown away. `pending` covers the
+     * shopper who is still on PayUni's page; `failed` covers the one who came
+     * back after a declined card and may retry. Both must keep their cart.
+     */
+    awaitingPayment:
+      o.payment_method !== null &&
+      o.status === "pending" &&
+      (o.payment_status === "pending" || o.payment_status === "failed"),
     subtotal: o.subtotal,
     shippingFee: o.shipping_fee,
     discount: o.discount,

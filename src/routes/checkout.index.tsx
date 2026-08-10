@@ -1,16 +1,28 @@
 /**
- * /checkout — collect who this is going to, then create the order.
- *
- * Payment is not here. This page ends at "the order exists and your stock is
- * held"; PayUni attaches later, at which point this route gains a redirect
- * rather than a rewrite (see the note on placeOrder's result below).
+ * /checkout — collect who this is going to, create the order, hand off to PayUni.
  *
  * The totals rendered here are advisory. Every number is recomputed on the
  * server from public.products before anything is written, so what this panel
  * shows and what the order says can only differ if the catalogue changed
- * mid-checkout — in which case the server's answer is the correct one.
+ * mid-checkout — in which case the server's answer is the correct one. The same
+ * goes for the amount PayUni is asked for: it is the server's `total`, never
+ * the one on screen.
+ *
+ * WHAT HAPPENS ON SUBMIT
+ * ----------------------
+ * placeOrder() returns either a `payment` form or null.
+ *   * form → build it in the DOM and submit it. PayUni's integrated payment
+ *     page only exists as the result of a browser POST; there is no URL to
+ *     redirect to (see src/lib/payment-redirect.ts).
+ *   * null → the pre-gateway behaviour: the order stands and we contact the
+ *     shopper about payment. This is what an unconfigured PAYUNI_* environment
+ *     falls back to, so a missing key degrades to "order held", never to
+ *     "checkout broken".
+ *
+ * The cart is NOT cleared here and NOT cleared on arrival at the confirmation
+ * page — only once payment is actually settled. See checkout.complete.tsx.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -39,7 +51,8 @@ import {
   type CheckoutFormValues,
   type OfferedShippingMethod,
 } from "@/lib/checkout";
-import { placeOrder } from "@/lib/checkout-fns";
+import { fetchPaymentOptions, placeOrder } from "@/lib/checkout-fns";
+import { submitPaymentForm } from "@/lib/payment-redirect";
 import { fetchActiveProducts, formatPrice } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
 
@@ -100,7 +113,31 @@ const PAGE = {
   shipping: { zh: "運費", en: "Shipping", ja: "送料" },
   total: { zh: "應付總額", en: "Total", ja: "合計" },
   submit: { zh: "送出訂單", en: "Place order", ja: "注文を確定する" },
+  submitPay: { zh: "前往付款", en: "Continue to payment", ja: "お支払いへ進む" },
   submitting: { zh: "訂單建立中…", en: "Creating your order…", ja: "ご注文を作成中…" },
+  redirecting: {
+    zh: "正在前往付款頁，請不要關閉或重新整理…",
+    en: "Taking you to the payment page — please do not close or refresh…",
+    ja: "決済ページへ移動しています。閉じたり更新したりしないでください…",
+  },
+  paymentSection: { zh: "付款方式", en: "Payment", ja: "お支払い方法" },
+  payCard: { zh: "信用卡線上付款", en: "Pay by card", ja: "クレジットカード決済" },
+  payCardNote: {
+    zh: "送出後會前往統一金流 PayUni 的付款頁完成刷卡。付款成功才會扣除購物車。",
+    en: "You will be taken to PayUni's secure page to pay by card. Your cart is only emptied once payment succeeds.",
+    ja: "送信後、PayUni の決済ページでお支払いいただきます。カートはお支払い完了後に空になります。",
+  },
+  payOffline: { zh: "由我們與你聯繫付款", en: "Arrange payment with us", ja: "個別にお支払いをご案内" },
+  payOfflineNote: {
+    zh: "訂單會先成立並保留品項，我們會以電子信箱與你聯繫付款方式。",
+    en: "Your order is created and the items are held; we will email you about payment.",
+    ja: "ご注文を確定し商品をお取り置きしたうえで、お支払い方法をメールでご案内します。",
+  },
+  paymentUnavailable: {
+    zh: "線上付款目前未開放，訂單成立後我們會直接與你聯繫付款方式。",
+    en: "Online payment is not open yet — we will contact you about payment once the order is placed.",
+    ja: "オンライン決済は現在ご利用いただけません。ご注文後にお支払い方法をご連絡いたします。",
+  },
   unavailableWarning: {
     zh: "購物車中有無法購買的品項，請先回到購物車移除。",
     en: "Your cart holds something that can no longer be bought. Please remove it in the cart first.",
@@ -119,7 +156,12 @@ const NO_ITEMS: CartLine[] = [];
 export const Route = createFileRoute("/checkout/")({
   // Same read as /cart: the catalogue decides prices, purchase limits and —
   // uniquely here — whether anything in the cart needs posting at all.
-  loader: async () => ({ catalogue: await fetchActiveProducts() }),
+  // paymentOptions is a single boolean read at request time, so adding the
+  // PayUni keys to the deployment turns the card option on without a rebuild.
+  loader: async () => ({
+    catalogue: await fetchActiveProducts(),
+    paymentOptions: await fetchPaymentOptions(),
+  }),
   head: () => ({
     meta: [
       { title: PAGE.metaTitle.zh },
@@ -137,7 +179,7 @@ function Checkout() {
   const t = useT();
   const { lang } = useLang();
   const navigate = useNavigate();
-  const { catalogue } = Route.useLoaderData();
+  const { catalogue, paymentOptions } = Route.useLoaderData();
   const { ui } = useSiteContent();
 
   useDocumentMeta({
@@ -153,6 +195,21 @@ function Checkout() {
 
   const [submitting, setSubmitting] = useState(false);
   const [method, setMethod] = useState<OfferedShippingMethod>("home");
+
+  // Card when it is available, otherwise the pre-gateway flow. Held outside
+  // react-hook-form because it is not a validated field — it steers where the
+  // browser goes next and has no bearing on what the order costs.
+  const cardAvailable = paymentOptions.cardAvailable;
+  const [payWith, setPayWith] = useState<"card" | "offline">(
+    paymentOptions.cardAvailable ? "card" : "offline",
+  );
+  /**
+   * Set once the PayUni form has been submitted; the page is navigating away.
+   * Mirrored in a ref because the `finally` block runs in the same tick as the
+   * setState and would otherwise still read the old value.
+   */
+  const [redirecting, setRedirecting] = useState(false);
+  const redirectingRef = useRef(false);
 
   // One key per visit to this page. orders.idempotency_key is unique, so a
   // double-clicked submit (or a retried request) replays the first order
@@ -238,6 +295,10 @@ function Checkout() {
           address: requireAddress ? values.address : null,
           locale: lang,
           idempotencyKey,
+          // Steers the next hop only. The amount PayUni is asked for is
+          // recomputed server-side from public.products; nothing in this
+          // payload can change it.
+          paymentMethod: cardAvailable ? payWith : "offline",
         },
       });
 
@@ -246,15 +307,28 @@ function Checkout() {
         return;
       }
 
-      // The cart is cleared on the confirmation page, once the order has been
-      // read back — not here. Realreal learned this the hard way: clearing at
-      // submit time leaves a shopper whose next step fails staring at an empty
-      // cart with no way back.
+      // The cart is NOT cleared here, and not on arrival at the confirmation
+      // page either — only once payment is settled. Clearing it now would send
+      // anyone whose card is declined back to an empty cart with an unpaid
+      // order they cannot retry, which is the exact bug Realreal shipped.
+      if (result.payment) {
+        // Navigating away: keep the button disabled and say what is happening,
+        // because the browser will sit on this page for a beat before PayUni's
+        // page paints. Deliberately no `finally` reset — see below.
+        redirectingRef.current = true;
+        setRedirecting(true);
+        submitPaymentForm(result.payment);
+        return;
+      }
+
       await navigate({ to: "/checkout/complete", search: { token: result.publicToken } });
     } catch (err) {
       toast.error(checkoutErrorText(err, lang));
     } finally {
-      setSubmitting(false);
+      // Leaves `submitting` true on the PayUni path on purpose: the form has
+      // been submitted and the page is on its way out, so re-enabling the
+      // button would only invite a second order.
+      if (!redirectingRef.current) setSubmitting(false);
     }
   }
 
@@ -494,6 +568,46 @@ function Checkout() {
                 </p>
               )}
 
+              <fieldset className="space-y-4">
+                <legend className="eyebrow text-xl">{t(PAGE.paymentSection)}</legend>
+                {cardAvailable ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {(["card", "offline"] as const).map((p) => {
+                      const selected = payWith === p;
+                      return (
+                        <label
+                          key={p}
+                          className={`flex cursor-pointer items-baseline gap-3 border p-4 transition-colors ${
+                            selected ? "border-foreground" : "border-border hover:border-foreground/40"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value={p}
+                            checked={selected}
+                            onChange={() => setPayWith(p)}
+                            className="accent-current"
+                          />
+                          <span className="text-sm">
+                            {p === "card" ? t(PAGE.payCard) : t(PAGE.payOffline)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="border border-border p-5 text-sm leading-relaxed text-muted-foreground">
+                    {t(PAGE.paymentUnavailable)}
+                  </p>
+                )}
+                {cardAvailable && (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {payWith === "card" ? t(PAGE.payCardNote) : t(PAGE.payOfflineNote)}
+                  </p>
+                )}
+              </fieldset>
+
               <fieldset className="space-y-5">
                 <legend className="eyebrow text-xl">{t(PAGE.noteSection)}</legend>
                 <FormField
@@ -511,13 +625,26 @@ function Checkout() {
                 />
               </fieldset>
 
-              <Button
-                type="submit"
-                className="w-full sm:w-auto"
-                disabled={submitting || hasUnavailable || buyable.length === 0}
-              >
-                {submitting ? t(PAGE.submitting) : t(PAGE.submit)}
-              </Button>
+              <div className="space-y-3">
+                <Button
+                  type="submit"
+                  className="w-full sm:w-auto"
+                  disabled={submitting || redirecting || hasUnavailable || buyable.length === 0}
+                >
+                  {redirecting
+                    ? t(PAGE.redirecting)
+                    : submitting
+                      ? t(PAGE.submitting)
+                      : cardAvailable && payWith === "card"
+                        ? t(PAGE.submitPay)
+                        : t(PAGE.submit)}
+                </Button>
+                {redirecting && (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {t(PAGE.redirecting)}
+                  </p>
+                )}
+              </div>
             </form>
           </Form>
         </div>
