@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-09T23:50:01.186Z",
+  "generatedAt": "2026-08-15T10:56:24.877Z",
   "summary": {
-    "routesAudited": 16,
+    "routesAudited": 17,
     "languages": [
       "zh",
       "en",
@@ -23,7 +23,7 @@
         "ogTitle",
         "ogDescription"
       ],
-      "approxChecks": 192
+      "approxChecks": 204
     }
   },
   "routes": {
@@ -89,6 +89,11 @@
     },
     "/privacy": {
       "file": "src/routes/privacy.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/publications": {
+      "file": "src/routes/publications.tsx",
       "ok": true,
       "issues": []
     },

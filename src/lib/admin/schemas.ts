@@ -310,15 +310,61 @@ export const inventoryListingSchema = z.object({
   summary: localizedSchema,
   description: localizedSchema,
   price: z.number().int("價格必須是整數，不接受小數").min(0, "價格不可為負數"),
-  units_per_sale: z
-    .number()
-    .int("每件出貨數必須是整數")
-    .min(1, "每件出貨數至少是 1"),
+  units_per_sale: z.number().int("每件出貨數必須是整數").min(1, "每件出貨數至少是 1"),
   product_type: z.enum(["goods", "book"]),
   status: z.enum(["draft", "active"]),
+  /** 上架頁不填；/admin/publications 連結刊物時會把封面帶進來。 */
+  image_key: z.string().trim().optional().nullable(),
 });
 
 export type InventoryListingFormValues = z.infer<typeof inventoryListingSchema>;
+
+// ---------------------------------------------------------------------------
+// 地方刊物展
+// ---------------------------------------------------------------------------
+/**
+ * 一本刊物可編輯的欄位。
+ *
+ * sheet / seq / slug 不在裡面：它們是回頭對照原始 Excel 的鍵，改了就再也對不回去。
+ * region 允許空字串 —— 原始資料裡真的有「日本全國」這種不是地名的寫法，強迫填
+ * 一個縣市只會逼人編造。
+ */
+export const publicationSchema = z.object({
+  id: z.string().trim().min(1),
+  title: localizedSchema,
+  publisher: localizedSchema,
+  intro: localizedSchema,
+  region: z.string().trim().max(200),
+  issues: z.string().trim().max(500).optional().nullable(),
+  // 空字串代表「原始資料沒有網址」，所以不能用 z.string().url() 硬擋。
+  external_url: z
+    .string()
+    .trim()
+    .max(1000)
+    .refine((v) => v === "" || /^https?:\/\//.test(v), "請輸入完整網址（含 https://）或留空")
+    .optional()
+    .nullable(),
+  cover_image_key: z.string().trim().optional().nullable(),
+  is_published: z.boolean(),
+  sort_order: z.number().int("排序必須是整數"),
+});
+
+export type PublicationFormValues = z.infer<typeof publicationSchema>;
+
+/**
+ * 把一本刊物連到進銷存的一個品項。
+ *
+ * price 最低 1：0 元商品在結帳、發票與金流三個地方都是特例，而「還沒定價」的
+ * 正確表達方式是**不要連結**，不是連了填 0。
+ */
+export const publicationLinkSchema = z.object({
+  publication_id: z.string().trim().min(1),
+  inv_product_id: z.string().trim().uuid("請從清單選一個進銷存品項"),
+  price: z.number().int("價格必須是整數，不接受小數").min(1, "請填入售價（至少 1 元）"),
+  units_per_sale: z.number().int("每件出貨數必須是整數").min(1, "每件出貨數至少是 1"),
+});
+
+export type PublicationLinkFormValues = z.infer<typeof publicationLinkSchema>;
 
 // ---------------------------------------------------------------------------
 // 門市 POS
@@ -358,8 +404,14 @@ export type PosCheckoutValues = z.infer<typeof posCheckoutSchema>;
 
 /** 銷售紀錄的篩選條件。全部下推到資料庫，不在前端 filter。 */
 export const salesFilterSchema = z.object({
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
   channel: z.enum(["all", "pos", "online"]),
   keyword: z.string().trim().max(100).nullable(),
   reconciled: z.enum(["all", "yes", "no"]),

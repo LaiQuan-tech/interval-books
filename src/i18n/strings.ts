@@ -9,6 +9,7 @@ export const UI = {
     home: { zh: "首頁", en: "Home", ja: "ホーム" },
     events: { zh: "活動", en: "Events", ja: "イベント" },
     exhibitions: { zh: "展覽", en: "Exhibitions", ja: "展覧" },
+    publications: { zh: "地方刊物展", en: "Publications", ja: "地域の刊行物" },
     journeys: { zh: "策旅", en: "Journeys", ja: "旅" },
     curated: { zh: "主理人的選品", en: "Curated", ja: "店主の選品" },
     shop: { zh: "選購", en: "Shop", ja: "ショップ" },

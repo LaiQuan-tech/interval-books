@@ -313,6 +313,54 @@ export async function fetchActiveProducts(): Promise<ShopListResult> {
 }
 
 /**
+ * The subset of the catalogue referenced by a specific set of ids.
+ *
+ * Exists for /publications, where 126 exhibits are on the page but only the
+ * handful that carry a publications.product_id are purchasable. Pulling the
+ * whole catalogue there would grow with the shop rather than with the exhibit
+ * list, and re-mapping rows by hand at the call site would fork toProduct() —
+ * which is the one place that decides what a malformed row means.
+ *
+ * An empty `ids` is not a query: PostgREST would happily return the empty set,
+ * but a round-trip to learn nothing is still a round-trip on every page load.
+ */
+export async function fetchActiveProductsByIds(ids: string[]): Promise<ShopListResult> {
+  const unique = [...new Set(ids)].filter((id) => id.length > 0);
+  if (unique.length === 0) return { products: [], unavailable: false };
+
+  const db = supabase;
+  if (!db) {
+    logFailure("products", "Supabase is not configured");
+    return { products: [], unavailable: true };
+  }
+  try {
+    const { data, error } = await db
+      .from("products")
+      .select(COLUMNS)
+      .eq("status", "active")
+      .in("id", unique)
+      .order("sort_order", { ascending: true })
+      .order("id", { ascending: true });
+
+    if (error || !Array.isArray(data)) {
+      logFailure("products", error?.message ?? "unexpected response shape");
+      return { products: [], unavailable: true };
+    }
+
+    const products: ShopProduct[] = [];
+    for (const row of data as unknown as Row[]) {
+      const p = toProduct(row);
+      if (p) products.push(p);
+    }
+    await attachAvailability(products);
+    return { products, unavailable: false };
+  } catch (err) {
+    logFailure("products", err instanceof Error ? err.message : String(err));
+    return { products: [], unavailable: true };
+  }
+}
+
+/**
  * One product by its public slug. `product: null` with `unavailable: false`
  * means the slug really does not exist (or is not active) and the caller should
  * render a 404; `unavailable: true` means we could not tell.

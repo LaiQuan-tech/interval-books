@@ -1,5 +1,13 @@
-import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
+  createFileRoute,
+  Link,
+  Outlet,
+  redirect,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
+import {
+  BookOpen,
   Boxes,
   CalendarDays,
   FileText,
@@ -101,6 +109,7 @@ const NAV_GROUPS = [
       { to: "/admin/news", label: "最新消息", icon: Newspaper, staff: false },
       { to: "/admin/events", label: "活動", icon: CalendarDays, staff: false },
       { to: "/admin/exhibitions", label: "展覽", icon: ImageIcon, staff: false },
+      { to: "/admin/publications", label: "地方刊物展", icon: BookOpen, staff: false },
       // lucide's `Route` icon would collide with this file's `export const Route`.
       { to: "/admin/journeys", label: "策旅", icon: Tent, staff: false },
       { to: "/admin/curated", label: "選品", icon: ShoppingBag, staff: false },

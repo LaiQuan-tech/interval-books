@@ -434,12 +434,25 @@ if (!TOKEN) {
   const ecom = (
     await q(`
     select (select count(*)::int from public.products) products,
+           (select count(*)::int from public.product_inventory_links) links,
            (select count(*)::int from public.orders) orders,
            (select count(*)::int from public.order_items) order_items,
            (select count(*)::int from public.payments) payments,
-           (select count(*)::int from public.invoices) invoices`)
+           (select count(*)::int from public.invoices) invoices,
+           (select count(*)::int from public.products p
+              join public.product_inventory_links l on l.product_id = p.id
+             where p.stock is not null) linked_with_stock`)
   )[0];
-  for (const [k, v] of Object.entries(ecom)) check(`public.${k} 仍為 0`, v, 0);
+  // 交易面的四張表仍必須是 0：庫存匯入不該生出任何一筆訂單、付款或發票。
+  for (const k of ["orders", "order_items", "payments", "invoices"]) {
+    check(`public.${k} 仍為 0`, ecom[k], 0);
+  }
+  // products 不再是 0 —— 0015 之後 /admin/publications 與 /admin/inventory-listing
+  // 都會**刻意**建型錄商品，「一件都沒有」已經不是可以守的不變式。這裡守的是它背後
+  // 真正要緊的那一條：有庫存連結的商品，型錄庫存必須是 NULL，否則同一件貨會有兩個
+  // 數字、兩條扣庫存的路徑（0011 §10 的 products_linked_stock_guard 就是為此存在）。
+  check("有庫存連結卻仍帶型錄庫存的商品", ecom.linked_with_stock, 0);
+  console.log(`    （目前 public.products=${ecom.products}，其中 ${ecom.links} 件連到進銷存）`);
 
   console.log("\n[13] anon key 打不到 inv.*（這是整個安全模型的最終證據）");
   const { url, key } = readAnonCreds();

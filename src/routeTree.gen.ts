@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VisitRouteImport } from './routes/visit'
+import { Route as PublicationsRouteImport } from './routes/publications'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as JourneysRouteImport } from './routes/journeys'
@@ -33,6 +34,7 @@ import { Route as AdminShellStringsRouteImport } from './routes/admin/_shell.str
 import { Route as AdminShellStockAlertsRouteImport } from './routes/admin/_shell.stock-alerts'
 import { Route as AdminShellSettingsRouteImport } from './routes/admin/_shell.settings'
 import { Route as AdminShellSalesRouteImport } from './routes/admin/_shell.sales'
+import { Route as AdminShellPublicationsRouteImport } from './routes/admin/_shell.publications'
 import { Route as AdminShellProductsRouteImport } from './routes/admin/_shell.products'
 import { Route as AdminShellPosRouteImport } from './routes/admin/_shell.pos'
 import { Route as AdminShellPhonesRouteImport } from './routes/admin/_shell.phones'
@@ -50,6 +52,11 @@ import { Route as AdminShellPagesSlugRouteImport } from './routes/admin/_shell.p
 const VisitRoute = VisitRouteImport.update({
   id: '/visit',
   path: '/visit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PublicationsRoute = PublicationsRouteImport.update({
+  id: '/publications',
+  path: '/publications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -167,6 +174,11 @@ const AdminShellSalesRoute = AdminShellSalesRouteImport.update({
   path: '/sales',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellPublicationsRoute = AdminShellPublicationsRouteImport.update({
+  id: '/publications',
+  path: '/publications',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellProductsRoute = AdminShellProductsRouteImport.update({
   id: '/products',
   path: '/products',
@@ -247,6 +259,7 @@ export interface FileRoutesByFullPath {
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
+  '/publications': typeof PublicationsRoute
   '/visit': typeof VisitRoute
   '/admin': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
@@ -267,6 +280,7 @@ export interface FileRoutesByFullPath {
   '/admin/phones': typeof AdminShellPhonesRoute
   '/admin/pos': typeof AdminShellPosRoute
   '/admin/products': typeof AdminShellProductsRoute
+  '/admin/publications': typeof AdminShellPublicationsRoute
   '/admin/sales': typeof AdminShellSalesRoute
   '/admin/settings': typeof AdminShellSettingsRoute
   '/admin/stock-alerts': typeof AdminShellStockAlertsRoute
@@ -286,6 +300,7 @@ export interface FileRoutesByTo {
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
+  '/publications': typeof PublicationsRoute
   '/visit': typeof VisitRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/pending': typeof AdminPendingRoute
@@ -305,6 +320,7 @@ export interface FileRoutesByTo {
   '/admin/phones': typeof AdminShellPhonesRoute
   '/admin/pos': typeof AdminShellPosRoute
   '/admin/products': typeof AdminShellProductsRoute
+  '/admin/publications': typeof AdminShellPublicationsRoute
   '/admin/sales': typeof AdminShellSalesRoute
   '/admin/settings': typeof AdminShellSettingsRoute
   '/admin/stock-alerts': typeof AdminShellStockAlertsRoute
@@ -325,6 +341,7 @@ export interface FileRoutesById {
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
+  '/publications': typeof PublicationsRoute
   '/visit': typeof VisitRoute
   '/admin/_shell': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
@@ -345,6 +362,7 @@ export interface FileRoutesById {
   '/admin/_shell/phones': typeof AdminShellPhonesRoute
   '/admin/_shell/pos': typeof AdminShellPosRoute
   '/admin/_shell/products': typeof AdminShellProductsRoute
+  '/admin/_shell/publications': typeof AdminShellPublicationsRoute
   '/admin/_shell/sales': typeof AdminShellSalesRoute
   '/admin/_shell/settings': typeof AdminShellSettingsRoute
   '/admin/_shell/stock-alerts': typeof AdminShellStockAlertsRoute
@@ -366,6 +384,7 @@ export interface FileRouteTypes {
     | '/journeys'
     | '/news'
     | '/privacy'
+    | '/publications'
     | '/visit'
     | '/admin'
     | '/admin/login'
@@ -386,6 +405,7 @@ export interface FileRouteTypes {
     | '/admin/phones'
     | '/admin/pos'
     | '/admin/products'
+    | '/admin/publications'
     | '/admin/sales'
     | '/admin/settings'
     | '/admin/stock-alerts'
@@ -405,6 +425,7 @@ export interface FileRouteTypes {
     | '/journeys'
     | '/news'
     | '/privacy'
+    | '/publications'
     | '/visit'
     | '/admin/login'
     | '/admin/pending'
@@ -424,6 +445,7 @@ export interface FileRouteTypes {
     | '/admin/phones'
     | '/admin/pos'
     | '/admin/products'
+    | '/admin/publications'
     | '/admin/sales'
     | '/admin/settings'
     | '/admin/stock-alerts'
@@ -443,6 +465,7 @@ export interface FileRouteTypes {
     | '/journeys'
     | '/news'
     | '/privacy'
+    | '/publications'
     | '/visit'
     | '/admin/_shell'
     | '/admin/login'
@@ -463,6 +486,7 @@ export interface FileRouteTypes {
     | '/admin/_shell/phones'
     | '/admin/_shell/pos'
     | '/admin/_shell/products'
+    | '/admin/_shell/publications'
     | '/admin/_shell/sales'
     | '/admin/_shell/settings'
     | '/admin/_shell/stock-alerts'
@@ -483,6 +507,7 @@ export interface RootRouteChildren {
   JourneysRoute: typeof JourneysRoute
   NewsRoute: typeof NewsRoute
   PrivacyRoute: typeof PrivacyRoute
+  PublicationsRoute: typeof PublicationsRoute
   VisitRoute: typeof VisitRoute
   AdminShellRoute: typeof AdminShellRouteWithChildren
   AdminLoginRoute: typeof AdminLoginRoute
@@ -500,6 +525,13 @@ declare module '@tanstack/react-router' {
       path: '/visit'
       fullPath: '/visit'
       preLoaderRoute: typeof VisitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/publications': {
+      id: '/publications'
+      path: '/publications'
+      fullPath: '/publications'
+      preLoaderRoute: typeof PublicationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -663,6 +695,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellSalesRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/publications': {
+      id: '/admin/_shell/publications'
+      path: '/publications'
+      fullPath: '/admin/publications'
+      preLoaderRoute: typeof AdminShellPublicationsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/products': {
       id: '/admin/_shell/products'
       path: '/products'
@@ -782,6 +821,7 @@ interface AdminShellRouteChildren {
   AdminShellPhonesRoute: typeof AdminShellPhonesRoute
   AdminShellPosRoute: typeof AdminShellPosRoute
   AdminShellProductsRoute: typeof AdminShellProductsRoute
+  AdminShellPublicationsRoute: typeof AdminShellPublicationsRoute
   AdminShellSalesRoute: typeof AdminShellSalesRoute
   AdminShellSettingsRoute: typeof AdminShellSettingsRoute
   AdminShellStockAlertsRoute: typeof AdminShellStockAlertsRoute
@@ -802,6 +842,7 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellPhonesRoute: AdminShellPhonesRoute,
   AdminShellPosRoute: AdminShellPosRoute,
   AdminShellProductsRoute: AdminShellProductsRoute,
+  AdminShellPublicationsRoute: AdminShellPublicationsRoute,
   AdminShellSalesRoute: AdminShellSalesRoute,
   AdminShellSettingsRoute: AdminShellSettingsRoute,
   AdminShellStockAlertsRoute: AdminShellStockAlertsRoute,
@@ -825,6 +866,7 @@ const rootRouteChildren: RootRouteChildren = {
   JourneysRoute: JourneysRoute,
   NewsRoute: NewsRoute,
   PrivacyRoute: PrivacyRoute,
+  PublicationsRoute: PublicationsRoute,
   VisitRoute: VisitRoute,
   AdminShellRoute: AdminShellRouteWithChildren,
   AdminLoginRoute: AdminLoginRoute,

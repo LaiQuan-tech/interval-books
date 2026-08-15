@@ -58,6 +58,11 @@ export type ListingInput = {
   units_per_sale: number;
   product_type: "goods" | "book";
   status: "draft" | "active";
+  /**
+   * 選填。上架頁自己不填（那一頁沒有圖片欄位），但地方刊物那一頁有現成的封面 ——
+   * 讓它一併帶進來，才不會出現「展覽頁看得到封面、商品頁是預設圖」這種落差。
+   */
+  image_key?: string | null;
 };
 
 /**
@@ -115,6 +120,7 @@ export async function createInventoryListing(input: ListingInput): Promise<{ pro
     price: input.price,
     stock: null, // ← 見上面
     capacity: null,
+    image_key: input.image_key ?? null,
     requires_shipping: true,
     status: input.status,
     sort_order: 0,

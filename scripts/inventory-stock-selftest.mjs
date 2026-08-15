@@ -324,6 +324,7 @@ if (!TOKEN) {
         (select count(*)::int from public.stock_reservations) reservations,
         (select count(*)::int from public.stock_oversold_alerts) alerts,
         (select count(*)::int from public.orders) orders,
+        (select count(*)::int from public.product_inventory_links) links,
         (select count(*)::int from inv.sales where product_id is null) orphan_sales`),
   );
   console.log(
@@ -764,7 +765,9 @@ if (!TOKEN) {
     check("stock_reservations 回到基準線", after.reservations, baseline.reservations);
     check("stock_oversold_alerts 回到基準線", after.alerts, baseline.alerts);
     check("orders 回到基準線", after.orders, baseline.orders);
-    check("product_inventory_links 清空", after.links, 0);
+    // 比基準線而不是 0：0015 之後正式資料本來就有連結（地方刊物展上架的那幾本），
+    // 這一條要驗的是「這支測試自己造的連結收乾淨了」，不是「這張表是空的」。
+    check("product_inventory_links 回到基準線", after.links, baseline.links);
     // sales.product_id 是 ON DELETE SET NULL，所以「刪品項時忘了先刪 sales」的後果
     // 是留下一列指向 NULL 的孤兒 —— 總筆數不變，不會有任何錯誤訊息，而報表從此少一
     // 筆有品項的銷售。所以這一條不能只看總數。
