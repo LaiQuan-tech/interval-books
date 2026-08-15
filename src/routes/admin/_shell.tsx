@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
+  Boxes,
   CalendarDays,
   FileText,
   Handshake,
@@ -55,21 +56,49 @@ export const Route = createFileRoute("/admin/_shell")({
   component: AdminShell,
 });
 
-const NAV_ITEMS = [
-  { to: "/admin", label: "儀表板", icon: LayoutDashboard },
-  { to: "/admin/news", label: "最新消息", icon: Newspaper },
-  { to: "/admin/events", label: "活動", icon: CalendarDays },
-  { to: "/admin/exhibitions", label: "展覽", icon: ImageIcon },
-  // lucide's `Route` icon would collide with this file's `export const Route`.
-  { to: "/admin/journeys", label: "策旅", icon: Tent },
-  { to: "/admin/curated", label: "選品", icon: ShoppingBag },
-  { to: "/admin/collaborations", label: "合作", icon: Handshake },
-  { to: "/admin/categories", label: "活動分類", icon: Tags },
-  { to: "/admin/pages", label: "頁面文案", icon: FileText },
-  { to: "/admin/settings", label: "全站設定", icon: Settings },
-  { to: "/admin/strings", label: "介面文字", icon: Type },
-  { to: "/admin/phones", label: "聯絡電話", icon: Phone },
-  { to: "/admin/products", label: "商品", icon: Package },
+/**
+ * The sidebar, in three groups.
+ *
+ * Splitting what used to be one thirteen-item list is not decoration: the three
+ * groups are three different systems with three different sources of truth.
+ * 內容管理 edits CMS tables, 電商 edits public.products and the orders that come
+ * out of it, and 進銷存 edits inv.* — the shop's real inventory, which came from
+ * a separate application in migration 0009. Someone looking for "why does the
+ * site say sold out" needs to know which of the three to open, and a flat list
+ * does not tell them.
+ */
+const NAV_GROUPS = [
+  {
+    label: "內容管理",
+    items: [
+      { to: "/admin", label: "儀表板", icon: LayoutDashboard },
+      { to: "/admin/news", label: "最新消息", icon: Newspaper },
+      { to: "/admin/events", label: "活動", icon: CalendarDays },
+      { to: "/admin/exhibitions", label: "展覽", icon: ImageIcon },
+      // lucide's `Route` icon would collide with this file's `export const Route`.
+      { to: "/admin/journeys", label: "策旅", icon: Tent },
+      { to: "/admin/curated", label: "選品", icon: ShoppingBag },
+      { to: "/admin/collaborations", label: "合作", icon: Handshake },
+      { to: "/admin/categories", label: "活動分類", icon: Tags },
+      { to: "/admin/pages", label: "頁面文案", icon: FileText },
+    ],
+  },
+  {
+    label: "電商",
+    items: [{ to: "/admin/products", label: "商品", icon: Package }],
+  },
+  {
+    label: "進銷存",
+    items: [{ to: "/admin/inventory-listing", label: "上架", icon: Boxes }],
+  },
+  {
+    label: "站台設定",
+    items: [
+      { to: "/admin/settings", label: "全站設定", icon: Settings },
+      { to: "/admin/strings", label: "介面文字", icon: Type },
+      { to: "/admin/phones", label: "聯絡電話", icon: Phone },
+    ],
+  },
 ] as const;
 
 function AdminShell() {
@@ -91,23 +120,29 @@ function AdminShell() {
           <p className="text-xs leading-tight text-muted-foreground">管理後台</p>
         </SidebarHeader>
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>內容管理</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {NAV_ITEMS.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton asChild tooltip={item.label} isActive={pathname === item.to}>
-                      <Link to={item.to}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {NAV_GROUPS.map((group) => (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip={item.label}
+                        isActive={pathname === item.to}
+                      >
+                        <Link to={item.to}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
         </SidebarContent>
         <SidebarFooter className="gap-2 px-3 py-3">
           <p className="truncate text-xs text-muted-foreground">{admin.email}</p>

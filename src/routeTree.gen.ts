@@ -35,6 +35,7 @@ import { Route as AdminShellPhonesRouteImport } from './routes/admin/_shell.phon
 import { Route as AdminShellPagesRouteImport } from './routes/admin/_shell.pages'
 import { Route as AdminShellNewsRouteImport } from './routes/admin/_shell.news'
 import { Route as AdminShellJourneysRouteImport } from './routes/admin/_shell.journeys'
+import { Route as AdminShellInventoryListingRouteImport } from './routes/admin/_shell.inventory-listing'
 import { Route as AdminShellExhibitionsRouteImport } from './routes/admin/_shell.exhibitions'
 import { Route as AdminShellEventsRouteImport } from './routes/admin/_shell.events'
 import { Route as AdminShellCuratedRouteImport } from './routes/admin/_shell.curated'
@@ -172,6 +173,12 @@ const AdminShellJourneysRoute = AdminShellJourneysRouteImport.update({
   path: '/journeys',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellInventoryListingRoute =
+  AdminShellInventoryListingRouteImport.update({
+    id: '/inventory-listing',
+    path: '/inventory-listing',
+    getParentRoute: () => AdminShellRoute,
+  } as any)
 const AdminShellExhibitionsRoute = AdminShellExhibitionsRouteImport.update({
   id: '/exhibitions',
   path: '/exhibitions',
@@ -228,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/admin/curated': typeof AdminShellCuratedRoute
   '/admin/events': typeof AdminShellEventsRoute
   '/admin/exhibitions': typeof AdminShellExhibitionsRoute
+  '/admin/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
@@ -261,6 +269,7 @@ export interface FileRoutesByTo {
   '/admin/curated': typeof AdminShellCuratedRoute
   '/admin/events': typeof AdminShellEventsRoute
   '/admin/exhibitions': typeof AdminShellExhibitionsRoute
+  '/admin/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
@@ -296,6 +305,7 @@ export interface FileRoutesById {
   '/admin/_shell/curated': typeof AdminShellCuratedRoute
   '/admin/_shell/events': typeof AdminShellEventsRoute
   '/admin/_shell/exhibitions': typeof AdminShellExhibitionsRoute
+  '/admin/_shell/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/_shell/journeys': typeof AdminShellJourneysRoute
   '/admin/_shell/news': typeof AdminShellNewsRoute
   '/admin/_shell/pages': typeof AdminShellPagesRouteWithChildren
@@ -332,6 +342,7 @@ export interface FileRouteTypes {
     | '/admin/curated'
     | '/admin/events'
     | '/admin/exhibitions'
+    | '/admin/inventory-listing'
     | '/admin/journeys'
     | '/admin/news'
     | '/admin/pages'
@@ -365,6 +376,7 @@ export interface FileRouteTypes {
     | '/admin/curated'
     | '/admin/events'
     | '/admin/exhibitions'
+    | '/admin/inventory-listing'
     | '/admin/journeys'
     | '/admin/news'
     | '/admin/pages'
@@ -399,6 +411,7 @@ export interface FileRouteTypes {
     | '/admin/_shell/curated'
     | '/admin/_shell/events'
     | '/admin/_shell/exhibitions'
+    | '/admin/_shell/inventory-listing'
     | '/admin/_shell/journeys'
     | '/admin/_shell/news'
     | '/admin/_shell/pages'
@@ -615,6 +628,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellJourneysRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/inventory-listing': {
+      id: '/admin/_shell/inventory-listing'
+      path: '/inventory-listing'
+      fullPath: '/admin/inventory-listing'
+      preLoaderRoute: typeof AdminShellInventoryListingRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/exhibitions': {
       id: '/admin/_shell/exhibitions'
       path: '/exhibitions'
@@ -678,6 +698,7 @@ interface AdminShellRouteChildren {
   AdminShellCuratedRoute: typeof AdminShellCuratedRoute
   AdminShellEventsRoute: typeof AdminShellEventsRoute
   AdminShellExhibitionsRoute: typeof AdminShellExhibitionsRoute
+  AdminShellInventoryListingRoute: typeof AdminShellInventoryListingRoute
   AdminShellJourneysRoute: typeof AdminShellJourneysRoute
   AdminShellNewsRoute: typeof AdminShellNewsRoute
   AdminShellPagesRoute: typeof AdminShellPagesRouteWithChildren
@@ -694,6 +715,7 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellCuratedRoute: AdminShellCuratedRoute,
   AdminShellEventsRoute: AdminShellEventsRoute,
   AdminShellExhibitionsRoute: AdminShellExhibitionsRoute,
+  AdminShellInventoryListingRoute: AdminShellInventoryListingRoute,
   AdminShellJourneysRoute: AdminShellJourneysRoute,
   AdminShellNewsRoute: AdminShellNewsRoute,
   AdminShellPagesRoute: AdminShellPagesRouteWithChildren,

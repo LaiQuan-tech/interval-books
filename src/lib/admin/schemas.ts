@@ -292,3 +292,30 @@ export const productSchema = z
   });
 
 export type ProductFormValues = z.infer<typeof productSchema>;
+
+/**
+ * 上架表單：把一個進銷存品項變成型錄商品。
+ *
+ * 刻意**沒有** stock 欄位。上架後這件商品的庫存由 inv.products 管，
+ * public.products.stock 必須是 NULL —— 0011 有一個 trigger 會擋下任何非 NULL 的值。
+ * 表單裡不放這個欄位，是為了讓「這個數字不存在」這件事在 UI 上就成立，
+ * 而不是等到送出才被資料庫罵。
+ *
+ * product_type 只留 goods / book：event 與 journey 是有名額的預約，不走實體庫存。
+ */
+export const inventoryListingSchema = z.object({
+  inv_product_id: z.string().trim().uuid("請從清單選一個進銷存品項"),
+  slug: z.string().trim().min(1, "請輸入網址代稱"),
+  title: localizedSchema,
+  summary: localizedSchema,
+  description: localizedSchema,
+  price: z.number().int("價格必須是整數，不接受小數").min(0, "價格不可為負數"),
+  units_per_sale: z
+    .number()
+    .int("每件出貨數必須是整數")
+    .min(1, "每件出貨數至少是 1"),
+  product_type: z.enum(["goods", "book"]),
+  status: z.enum(["draft", "active"]),
+});
+
+export type InventoryListingFormValues = z.infer<typeof inventoryListingSchema>;

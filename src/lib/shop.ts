@@ -79,6 +79,20 @@ export type ShopProduct = {
   imageKey: string | null;
   requiresShipping: boolean;
   sortOrder: number;
+  /**
+   * How many of this product can actually be bought right now, read from
+   * public.product_availability (migration 0011) and **capped at 10**.
+   *
+   * This is the only number the storefront gets for a product whose stock lives
+   * in the shop's inventory system: those rows have products.stock = NULL by
+   * construction, so `stock` above cannot answer the question. The cap is
+   * deliberate — exact stock is commercial information, and "10" here means
+   * "10 or more", which is all a shopper needs.
+   *
+   * null when the availability read failed or was not attempted; callers must
+   * fall back to `stock` rather than treating null as "sold out".
+   */
+  availableCapped: number | null;
 };
 
 export type ShopListResult = {
@@ -166,11 +180,55 @@ function toProduct(r: Row): ShopProduct | null {
     imageKey: nullableStr(r.image_key),
     requiresShipping: r.requires_shipping !== false,
     sortOrder: int(r.sort_order, 0),
+    availableCapped: null,
   };
 }
 
 function logFailure(what: string, message: string) {
   console.warn(`[shop] ${what} unavailable — ${message}`);
+}
+
+/**
+ * Reads public.product_availability for the given ids and writes the answer
+ * onto the products in place.
+ *
+ * Best effort on purpose. A failure here leaves `availableCapped` at null and
+ * remainingFor() falls back to products.stock — which for an inventory-backed
+ * product means "not stock-managed", i.e. the shop stays open rather than
+ * showing everything as sold out because one extra read blinked. The real
+ * guard is reserve_inventory_stock() at checkout; this is display only.
+ *
+ * The view is readable by anon and exposes exactly three columns. It has no
+ * path to inv.products — anon does not even hold USAGE on that schema.
+ */
+async function attachAvailability(products: ShopProduct[]): Promise<void> {
+  const db = supabase;
+  if (!db || products.length === 0) return;
+  try {
+    const { data, error } = await db
+      .from("product_availability")
+      .select("product_id, available_capped")
+      .in(
+        "product_id",
+        products.map((p) => p.id),
+      );
+    if (error || !Array.isArray(data)) {
+      logFailure("availability", error?.message ?? "unexpected response shape");
+      return;
+    }
+    const byId = new Map<string, number>();
+    for (const row of data as unknown as Row[]) {
+      const id = typeof row.product_id === "string" ? row.product_id : null;
+      const cap = nullableInt(row.available_capped);
+      if (id !== null && cap !== null) byId.set(id, cap);
+    }
+    for (const p of products) {
+      const cap = byId.get(p.id);
+      if (cap !== undefined) p.availableCapped = cap;
+    }
+  } catch (err) {
+    logFailure("availability", err instanceof Error ? err.message : String(err));
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -181,18 +239,30 @@ function logFailure(what: string, message: string) {
  * How many units may still be added, or null when the product is not
  * quantity-limited at all.
  *
- * goods/book are limited by `stock`, where NULL means "not stock-managed" and
- * so is genuinely unlimited. event/journey are limited by remaining seats;
- * `capacity` is NOT NULL for those types (products_capacity_shape in 0004), so
- * the null branch there only fires on malformed data and errs towards "no
- * limit known" rather than blocking a sale.
+ * event/journey are limited by remaining seats; `capacity` is NOT NULL for those
+ * types (products_capacity_shape in 0004), so the null branch there only fires
+ * on malformed data and errs towards "no limit known" rather than blocking a
+ * sale.
+ *
+ * goods/book have two sources and the order between them is load-bearing:
+ *
+ *   `stock` wins when it is set. Those products are managed entirely by
+ *   public.products and atomic_deduct_stock(), exactly as before 0011 — reading
+ *   the capped view for them would silently turn a stock of 40 into "10 left".
+ *
+ *   `availableCapped` is used only when `stock` is NULL. That covers products
+ *   sold out of the shop's real inventory (0011 forces their catalog stock to
+ *   NULL so the two numbers can never disagree) and products that are not
+ *   stock-managed at all, for which the view reports the cap — i.e. "plenty",
+ *   which is the same thing the old `null` return meant to a shopper.
  */
 export function remainingFor(p: ShopProduct): number | null {
   if (p.productType === "event" || p.productType === "journey") {
     if (p.capacity === null) return null;
     return Math.max(0, p.capacity - p.seatsTaken);
   }
-  return p.stock;
+  if (p.stock !== null) return p.stock;
+  return p.availableCapped;
 }
 
 /** True when nothing more can be added. `remaining === null` is never sold out. */
@@ -234,6 +304,7 @@ export async function fetchActiveProducts(): Promise<ShopListResult> {
       const p = toProduct(row);
       if (p) products.push(p);
     }
+    await attachAvailability(products);
     return { products, unavailable: false };
   } catch (err) {
     logFailure("products", err instanceof Error ? err.message : String(err));
@@ -265,7 +336,9 @@ export async function fetchActiveProductBySlug(slug: string): Promise<ShopProduc
       return { product: null, unavailable: true };
     }
     if (!data) return { product: null, unavailable: false };
-    return { product: toProduct(data as unknown as Row), unavailable: false };
+    const product = toProduct(data as unknown as Row);
+    if (product) await attachAvailability([product]);
+    return { product, unavailable: false };
   } catch (err) {
     logFailure(`products/${slug}`, err instanceof Error ? err.message : String(err));
     return { product: null, unavailable: true };

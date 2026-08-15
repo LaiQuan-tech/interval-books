@@ -229,7 +229,22 @@ export async function handlePayuniWebhook(req: Request): Promise<Response> {
       return text(`OK (${result.reason})`);
     }
 
-    // ---------- 付款確認之後：開發票 ----------
+    // ---------- 付款確認之後（1）：把庫存保留轉成真正的銷售 ----------
+    // 順序在開發票之前，理由是「貨」比「憑證」急：發票開不出來有補開排程，庫存沒扣
+    // 卻會讓下一個客人買到同一本已經賣掉的書。
+    //
+    // 只在 result.changed（這一次真的把訂單推成 paid）才呼叫，與開發票同一個判準。
+    // 即使多呼叫了也不會壞 —— commit_inventory_reservations() 用 DELETE…RETURNING
+    // 當冪等 claim，第二次之後拿不到列就直接回 0（0011 §7）。
+    //
+    // ⚠️ 這一步的失敗**不可以**影響回給 PayUni 的答案，理由與開發票那段完全相同：
+    // 回 5xx 換來的是同一則通知被無止盡重送。commitInventoryForOrder 自己吞掉所有
+    // 錯誤且從不 throw，並且在庫存不足時仍會完成（錢已經收了，訂單不能卡住），
+    // 把差額寫進 stock_oversold_alerts 交給店員。
+    const { commitInventoryForOrder } = await import("@/server/repos/orders");
+    await commitInventoryForOrder(order.id);
+
+    // ---------- 付款確認之後（2）：開發票 ----------
     // 只在「這一次真的把訂單推成 paid」時觸發（result.changed）。重送的通知在上面就
     // 被去重擋掉了,already_paid 也不會走到這裡。
     //
