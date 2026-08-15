@@ -35,9 +35,17 @@ function AdminLoginPage() {
   async function onSubmit(values: LoginValues) {
     setSubmitting(true);
     try {
-      await signIn({ data: values });
+      const { role } = await signIn({ data: values });
       toast.success("登入成功");
-      await navigate({ to: "/admin" });
+      // 每個角色送去他真的看得到的第一頁。店員被送去儀表板會撞上
+      // adminFnMiddleware —— 擋得對，但不該是他每天上班第一眼看到的東西。
+      if (role === "pending") {
+        await navigate({ to: "/admin/pending" });
+      } else if (role === "staff") {
+        await navigate({ to: "/admin/pos" });
+      } else {
+        await navigate({ to: "/admin" });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "登入失敗，請稍後再試";
       toast.error(message);

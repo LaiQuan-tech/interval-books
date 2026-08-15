@@ -319,3 +319,61 @@ export const inventoryListingSchema = z.object({
 });
 
 export type InventoryListingFormValues = z.infer<typeof inventoryListingSchema>;
+
+// ---------------------------------------------------------------------------
+// 門市 POS
+// ---------------------------------------------------------------------------
+/**
+ * 結帳一車。
+ *
+ * ⚠️ 這裡的每一條規則都是 DB 端 CHECK 或 pos_checkout() 的鏡射，不是新發明的：
+ *    quantity > 0        ← inv.sales 的 positive_quantity CHECK
+ *    unit_price >= 0     ← inv.sales 的 non_negative_unit_price CHECK
+ *    items 非空          ← pos_checkout() 的 POS_EMPTY_CART
+ *
+ * 鏡射的意義是「錯誤在按鈕旁邊，而不是在 500 頁面上」。資料庫那一份仍然是真正
+ * 的守門 —— 來源系統就是因為前端 `parseFloat('')` 沒擋，讓 NaN 寫進了 unit_price。
+ */
+export const posCheckoutSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        inv_product_id: z.string().trim().uuid(),
+        quantity: z.number().int("數量必須是整數").min(1, "數量至少是 1"),
+        unit_price: z
+          .number({ invalid_type_error: "單價必須是數字" })
+          .min(0, "單價不可為負數")
+          .finite("單價必須是數字"),
+      }),
+    )
+    .min(1, "購物車是空的"),
+  payment_method_id: z.string().trim().uuid().nullable(),
+  sale_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD"),
+  notes: z.string().trim().max(500, "備註最多 500 字").nullable(),
+  /** 逃生門。true 會略過可售量下限並在 stock_oversold_alerts 留一列。 */
+  override_reservation: z.boolean(),
+});
+
+export type PosCheckoutValues = z.infer<typeof posCheckoutSchema>;
+
+/** 銷售紀錄的篩選條件。全部下推到資料庫，不在前端 filter。 */
+export const salesFilterSchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  channel: z.enum(["all", "pos", "online"]),
+  keyword: z.string().trim().max(100).nullable(),
+  reconciled: z.enum(["all", "yes", "no"]),
+  paymentMethodId: z.string().trim().uuid().nullable(),
+  page: z.number().int().min(0),
+  pageSize: z.number().int().min(1).max(200),
+});
+
+export type SalesFilterValues = z.infer<typeof salesFilterSchema>;
+
+/** 標記賣超告警已處理。說明是必填 —— 「已處理」但沒說怎麼處理等於沒處理。 */
+export const resolveAlertSchema = z.object({
+  alert_id: z.number().int().positive(),
+  note: z.string().trim().min(1, "請寫下你怎麼處理的").max(500, "最多 500 字"),
+});
+
+export type ResolveAlertValues = z.infer<typeof resolveAlertSchema>;

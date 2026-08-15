@@ -25,12 +25,16 @@ import { Route as ShopIndexRouteImport } from './routes/shop.index'
 import { Route as CheckoutIndexRouteImport } from './routes/checkout.index'
 import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
 import { Route as CheckoutCompleteRouteImport } from './routes/checkout.complete'
+import { Route as AdminPendingRouteImport } from './routes/admin/pending'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell.index'
 import { Route as AdminShellStringsRouteImport } from './routes/admin/_shell.strings'
+import { Route as AdminShellStockAlertsRouteImport } from './routes/admin/_shell.stock-alerts'
 import { Route as AdminShellSettingsRouteImport } from './routes/admin/_shell.settings'
+import { Route as AdminShellSalesRouteImport } from './routes/admin/_shell.sales'
 import { Route as AdminShellProductsRouteImport } from './routes/admin/_shell.products'
+import { Route as AdminShellPosRouteImport } from './routes/admin/_shell.pos'
 import { Route as AdminShellPhonesRouteImport } from './routes/admin/_shell.phones'
 import { Route as AdminShellPagesRouteImport } from './routes/admin/_shell.pages'
 import { Route as AdminShellNewsRouteImport } from './routes/admin/_shell.news'
@@ -123,6 +127,11 @@ const CheckoutCompleteRoute = CheckoutCompleteRouteImport.update({
   path: '/checkout/complete',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminPendingRoute = AdminPendingRouteImport.update({
+  id: '/admin/pending',
+  path: '/admin/pending',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
   id: '/admin/login',
   path: '/admin/login',
@@ -143,14 +152,29 @@ const AdminShellStringsRoute = AdminShellStringsRouteImport.update({
   path: '/strings',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellStockAlertsRoute = AdminShellStockAlertsRouteImport.update({
+  id: '/stock-alerts',
+  path: '/stock-alerts',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellSettingsRoute = AdminShellSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellSalesRoute = AdminShellSalesRouteImport.update({
+  id: '/sales',
+  path: '/sales',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellProductsRoute = AdminShellProductsRouteImport.update({
   id: '/products',
   path: '/products',
+  getParentRoute: () => AdminShellRoute,
+} as any)
+const AdminShellPosRoute = AdminShellPosRouteImport.update({
+  id: '/pos',
+  path: '/pos',
   getParentRoute: () => AdminShellRoute,
 } as any)
 const AdminShellPhonesRoute = AdminShellPhonesRouteImport.update({
@@ -226,6 +250,7 @@ export interface FileRoutesByFullPath {
   '/visit': typeof VisitRoute
   '/admin': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
+  '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
   '/checkout/': typeof CheckoutIndexRoute
@@ -240,8 +265,11 @@ export interface FileRoutesByFullPath {
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/phones': typeof AdminShellPhonesRoute
+  '/admin/pos': typeof AdminShellPosRoute
   '/admin/products': typeof AdminShellProductsRoute
+  '/admin/sales': typeof AdminShellSalesRoute
   '/admin/settings': typeof AdminShellSettingsRoute
+  '/admin/stock-alerts': typeof AdminShellStockAlertsRoute
   '/admin/strings': typeof AdminShellStringsRoute
   '/admin/': typeof AdminShellIndexRoute
   '/admin/pages/$slug': typeof AdminShellPagesSlugRoute
@@ -260,6 +288,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/visit': typeof VisitRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
   '/checkout': typeof CheckoutIndexRoute
@@ -274,8 +303,11 @@ export interface FileRoutesByTo {
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/phones': typeof AdminShellPhonesRoute
+  '/admin/pos': typeof AdminShellPosRoute
   '/admin/products': typeof AdminShellProductsRoute
+  '/admin/sales': typeof AdminShellSalesRoute
   '/admin/settings': typeof AdminShellSettingsRoute
+  '/admin/stock-alerts': typeof AdminShellStockAlertsRoute
   '/admin/strings': typeof AdminShellStringsRoute
   '/admin': typeof AdminShellIndexRoute
   '/admin/pages/$slug': typeof AdminShellPagesSlugRoute
@@ -296,6 +328,7 @@ export interface FileRoutesById {
   '/visit': typeof VisitRoute
   '/admin/_shell': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
+  '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
   '/checkout/': typeof CheckoutIndexRoute
@@ -310,8 +343,11 @@ export interface FileRoutesById {
   '/admin/_shell/news': typeof AdminShellNewsRoute
   '/admin/_shell/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/_shell/phones': typeof AdminShellPhonesRoute
+  '/admin/_shell/pos': typeof AdminShellPosRoute
   '/admin/_shell/products': typeof AdminShellProductsRoute
+  '/admin/_shell/sales': typeof AdminShellSalesRoute
   '/admin/_shell/settings': typeof AdminShellSettingsRoute
+  '/admin/_shell/stock-alerts': typeof AdminShellStockAlertsRoute
   '/admin/_shell/strings': typeof AdminShellStringsRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
   '/admin/_shell/pages/$slug': typeof AdminShellPagesSlugRoute
@@ -333,6 +369,7 @@ export interface FileRouteTypes {
     | '/visit'
     | '/admin'
     | '/admin/login'
+    | '/admin/pending'
     | '/checkout/complete'
     | '/shop/$slug'
     | '/checkout/'
@@ -347,8 +384,11 @@ export interface FileRouteTypes {
     | '/admin/news'
     | '/admin/pages'
     | '/admin/phones'
+    | '/admin/pos'
     | '/admin/products'
+    | '/admin/sales'
     | '/admin/settings'
+    | '/admin/stock-alerts'
     | '/admin/strings'
     | '/admin/'
     | '/admin/pages/$slug'
@@ -367,6 +407,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/visit'
     | '/admin/login'
+    | '/admin/pending'
     | '/checkout/complete'
     | '/shop/$slug'
     | '/checkout'
@@ -381,8 +422,11 @@ export interface FileRouteTypes {
     | '/admin/news'
     | '/admin/pages'
     | '/admin/phones'
+    | '/admin/pos'
     | '/admin/products'
+    | '/admin/sales'
     | '/admin/settings'
+    | '/admin/stock-alerts'
     | '/admin/strings'
     | '/admin'
     | '/admin/pages/$slug'
@@ -402,6 +446,7 @@ export interface FileRouteTypes {
     | '/visit'
     | '/admin/_shell'
     | '/admin/login'
+    | '/admin/pending'
     | '/checkout/complete'
     | '/shop/$slug'
     | '/checkout/'
@@ -416,8 +461,11 @@ export interface FileRouteTypes {
     | '/admin/_shell/news'
     | '/admin/_shell/pages'
     | '/admin/_shell/phones'
+    | '/admin/_shell/pos'
     | '/admin/_shell/products'
+    | '/admin/_shell/sales'
     | '/admin/_shell/settings'
+    | '/admin/_shell/stock-alerts'
     | '/admin/_shell/strings'
     | '/admin/_shell/'
     | '/admin/_shell/pages/$slug'
@@ -438,6 +486,7 @@ export interface RootRouteChildren {
   VisitRoute: typeof VisitRoute
   AdminShellRoute: typeof AdminShellRouteWithChildren
   AdminLoginRoute: typeof AdminLoginRoute
+  AdminPendingRoute: typeof AdminPendingRoute
   CheckoutCompleteRoute: typeof CheckoutCompleteRoute
   ShopSlugRoute: typeof ShopSlugRoute
   CheckoutIndexRoute: typeof CheckoutIndexRoute
@@ -558,6 +607,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckoutCompleteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/pending': {
+      id: '/admin/pending'
+      path: '/admin/pending'
+      fullPath: '/admin/pending'
+      preLoaderRoute: typeof AdminPendingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/login': {
       id: '/admin/login'
       path: '/admin/login'
@@ -586,6 +642,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellStringsRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/stock-alerts': {
+      id: '/admin/_shell/stock-alerts'
+      path: '/stock-alerts'
+      fullPath: '/admin/stock-alerts'
+      preLoaderRoute: typeof AdminShellStockAlertsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/settings': {
       id: '/admin/_shell/settings'
       path: '/settings'
@@ -593,11 +656,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellSettingsRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/sales': {
+      id: '/admin/_shell/sales'
+      path: '/sales'
+      fullPath: '/admin/sales'
+      preLoaderRoute: typeof AdminShellSalesRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/products': {
       id: '/admin/_shell/products'
       path: '/products'
       fullPath: '/admin/products'
       preLoaderRoute: typeof AdminShellProductsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/pos': {
+      id: '/admin/_shell/pos'
+      path: '/pos'
+      fullPath: '/admin/pos'
+      preLoaderRoute: typeof AdminShellPosRouteImport
       parentRoute: typeof AdminShellRoute
     }
     '/admin/_shell/phones': {
@@ -703,8 +780,11 @@ interface AdminShellRouteChildren {
   AdminShellNewsRoute: typeof AdminShellNewsRoute
   AdminShellPagesRoute: typeof AdminShellPagesRouteWithChildren
   AdminShellPhonesRoute: typeof AdminShellPhonesRoute
+  AdminShellPosRoute: typeof AdminShellPosRoute
   AdminShellProductsRoute: typeof AdminShellProductsRoute
+  AdminShellSalesRoute: typeof AdminShellSalesRoute
   AdminShellSettingsRoute: typeof AdminShellSettingsRoute
+  AdminShellStockAlertsRoute: typeof AdminShellStockAlertsRoute
   AdminShellStringsRoute: typeof AdminShellStringsRoute
   AdminShellIndexRoute: typeof AdminShellIndexRoute
 }
@@ -720,8 +800,11 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellNewsRoute: AdminShellNewsRoute,
   AdminShellPagesRoute: AdminShellPagesRouteWithChildren,
   AdminShellPhonesRoute: AdminShellPhonesRoute,
+  AdminShellPosRoute: AdminShellPosRoute,
   AdminShellProductsRoute: AdminShellProductsRoute,
+  AdminShellSalesRoute: AdminShellSalesRoute,
   AdminShellSettingsRoute: AdminShellSettingsRoute,
+  AdminShellStockAlertsRoute: AdminShellStockAlertsRoute,
   AdminShellStringsRoute: AdminShellStringsRoute,
   AdminShellIndexRoute: AdminShellIndexRoute,
 }
@@ -745,6 +828,7 @@ const rootRouteChildren: RootRouteChildren = {
   VisitRoute: VisitRoute,
   AdminShellRoute: AdminShellRouteWithChildren,
   AdminLoginRoute: AdminLoginRoute,
+  AdminPendingRoute: AdminPendingRoute,
   CheckoutCompleteRoute: CheckoutCompleteRoute,
   ShopSlugRoute: ShopSlugRoute,
   CheckoutIndexRoute: CheckoutIndexRoute,

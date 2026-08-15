@@ -1,8 +1,22 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { Newspaper } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/admin/_shell/")({
+  /**
+   * 店員不落在這一頁。
+   *
+   * 這**不是**授權 —— 下面 loader 的 listNews() 掛著 adminFnMiddleware，店員硬打
+   * /admin 本來就拿不到資料。這裡導開是為了不要在店員的 router 裡留下一個**永遠
+   * 載不起來的 match**：留著的話，他之後在 POS 結完帳呼叫 router.invalidate()，
+   * 這個 match 會跟著重跑、丟出 401，然後 error boundary 會把已經結完帳的畫面
+   * 換成一頁「Something went wrong」。錢收了、庫存扣了，畫面卻在報錯。
+   */
+  beforeLoad: ({ context }) => {
+    if (context.user?.role === "staff") {
+      throw redirect({ to: "/admin/pos" });
+    }
+  },
   loader: async () => {
     const { listNews } = await import("@/lib/admin/fns/news");
     const news = await listNews();
