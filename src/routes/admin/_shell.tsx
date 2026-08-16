@@ -9,6 +9,7 @@ import {
 import {
   BookOpen,
   Boxes,
+  Building2,
   CalendarDays,
   ClipboardList,
   FileText,
@@ -148,6 +149,11 @@ const NAV_GROUPS = [
       // 套餐同樣是店員每天的工作（櫃檯要賣），所以 staff: true。審核那兩顆按鈕還要
       // approve_combo_sets，而那是 lib/admin/fns/inv-combos.ts 在 server 端擋的。
       { to: "/admin/inventory-combos", label: "套餐", icon: Package2, staff: true },
+      // 廠商同樣是店員每天的工作（進貨要選供應商、寄賣要對窗口），所以 staff: true。
+      // 看得到不等於看得到全部：完整的身分證字號／統編／匯款帳號要
+      // inv.vendor.pii.read，而那是 lib/admin/fns/inv-vendors.ts 在 server 端擋的，
+      // 不是這一行。稽核軌跡那一頁再更嚴一級（要 admin）。
+      { to: "/admin/inventory-vendors", label: "廠商", icon: Building2, staff: true },
       { to: "/admin/inventory-listing", label: "上架", icon: Boxes, staff: false },
     ],
   },

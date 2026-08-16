@@ -116,7 +116,11 @@ for (let n = 1; n <= 16; n += 1) {
 // 目的不是凍結號碼，是**擋住有人偷偷改既有 migration 的行為**：要改就開新號。
 // 所以往前推一格，繼續守著。0018 自己的內容由 inventory-combos-selftest 驗。
 check("0018 在（4c 加的）", migFiles.some((f) => f.startsWith("0018_")), true);
-check("沒有多出 0019（0018 是最後一號）", migFiles.some((f) => f.startsWith("0019_")), false);
+// ⚠️ 這一條的作用是「下一期的人一定要回來看這支測試」。0019（廠商／PII 治理）
+// 加進來時它就是這樣把人叫回來的 —— 那一期改了 sales_product_id_fkey 與
+// combo_set_items_product_id_fkey 的 ON DELETE 行為（SET NULL/CASCADE → RESTRICT），
+// 所以下面的清理順序與「刪商品」相關的斷言都要在 0019 的前提下重讀一次。
+check("沒有多出 0020（0019 是最後一號）", migFiles.some((f) => f.startsWith("0020_")), false);
 
 const sql = read(MIG_0017);
 const exec = strip(sql);

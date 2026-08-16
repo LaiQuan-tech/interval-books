@@ -21,14 +21,16 @@
  *     載入時就被拉進來。
  *   * 要再加路徑時，先確認它真的不能用 createServerFn 表達。
  *
- * 目前掛在這裡的兩條，理由各自不同：
- *   PAYUNI_WEBHOOK_PATH  外部金流商送 form-urlencoded POST，打不到框架的 RPC 協定。
- *   INVOICE_TASK_PATH    外部排程（Vercel Cron / Railway worker）要有地方定時打，
- *                        用來補開失敗的發票。同樣不是瀏覽器發起的請求。
+ * 目前掛在這裡的三條，理由各自不同：
+ *   PAYUNI_WEBHOOK_PATH    外部金流商送 form-urlencoded POST，打不到框架的 RPC 協定。
+ *   INVOICE_TASK_PATH      外部排程（Vercel Cron / Railway worker）要有地方定時打，
+ *                          用來補開失敗的發票。同樣不是瀏覽器發起的請求。
+ *   PURGE_SCANS_TASK_PATH  進貨單掃描圖的保留期限（0019 §9.2）。一樣是排程要打的，
+ *                          而且它會刪 storage 上的檔案 —— 那不是瀏覽器該發起的動作。
  */
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { PAYUNI_WEBHOOK_PATH } from "@/server/payuni";
-import { INVOICE_TASK_PATH } from "@/server/task-endpoints";
+import { INVOICE_TASK_PATH, PURGE_SCANS_TASK_PATH } from "@/server/task-endpoints";
 
 const startFetch = createStartHandler(defaultStreamHandler);
 
@@ -49,6 +51,11 @@ export default {
     if (pathname === INVOICE_TASK_PATH) {
       const { handleInvoiceTask } = await import("@/server/task-endpoints");
       return handleInvoiceTask(request);
+    }
+
+    if (pathname === PURGE_SCANS_TASK_PATH) {
+      const { handlePurgeScansTask } = await import("@/server/task-endpoints");
+      return handlePurgeScansTask(request);
     }
 
     return (startFetch as (req: Request, ...a: unknown[]) => Promise<Response>)(request, ...rest);

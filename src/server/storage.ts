@@ -251,3 +251,222 @@ export async function deleteSiteImage(key: string | null | undefined): Promise<v
     throw new Error(`刪除圖片失敗：${error.message}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// 廠商附件 —— 私有 bucket
+// ---------------------------------------------------------------------------
+/**
+ * 0019 §9.1 的 `vendor-attachments`。與 ocr-scans 同一種東西，但更敏感：合約掃描
+ * 檔上會有身分證影本、匯款帳戶、以及雙方簽章。
+ *
+ * 所以這裡**沒有** publicUrlForObject 的對應物。要看檔案只有一張有期限的
+ * signed URL，而且期限比 OCR 還短（見 VENDOR_ATTACHMENT_SIGNED_URL_SECONDS）。
+ *
+ * ⚠️ 來源系統的 storage policy 是 `bucket_id = 'vendor-attachments' AND
+ *    is_approved()` —— 任何一個通過註冊審核的店員都讀得到所有廠商的合約掃描檔，
+ *    而且路徑第一段雖然是 vendor_id，policy 完全沒有拿它做 scoping。那套 policy
+ *    一條都沒有搬：這個 bucket 一樣是零 storage.objects policy，只有 service_role
+ *    進得去，而「這個人能不能看這一家的附件」由 server fn 決定。
+ */
+export const VENDOR_ATTACHMENTS_BUCKET = "vendor-attachments";
+
+/** 鏡射 0019 §9.1 建 bucket 時設的 file_size_limit（合約可能是多頁掃描 PDF）。 */
+const MAX_VENDOR_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+/**
+ * signed URL 的有效期。比 OCR 的 30 分鐘短很多 —— 合約掃描檔的敏感度高一個等級，
+ * 而看一份合約不需要 30 分鐘。5 分鐘夠開起來讀，不夠貼到群組裡讓別人也點得開。
+ */
+const VENDOR_ATTACHMENT_SIGNED_URL_SECONDS = 5 * 60;
+
+/** 廠商附件的 key 前綴。與 `storage:`（公開圖）、`ocr:` 刻意都不同 —— 混用會把私有檔餵給 <img src>。 */
+const VENDOR_ATTACHMENT_KEY_PREFIX = "vendorfile:";
+
+/** 合約是 PDF，身分證影本通常是照片。與 bucket 的 allowed_mime_types 對齊。 */
+type SniffedAttachment = { extension: string; contentType: string };
+
+function sniffAttachmentFormat(bytes: Uint8Array): SniffedAttachment | null {
+  // PDF: 25 50 44 46 ("%PDF")
+  if (
+    bytes.length >= 5 &&
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46
+  ) {
+    return { extension: "pdf", contentType: "application/pdf" };
+  }
+  const image = sniffImageFormat(bytes);
+  return image ? { extension: image.extension, contentType: image.contentType } : null;
+}
+
+/**
+ * 上傳一份廠商附件，回一個 storage key。
+ *
+ * ⚠️ 與 site-images / ocr-scans 同一條規矩：`file.type` 是呼叫端說了算的，只看
+ *    magic bytes；client 送來的檔名一個字元都不會進到物件名（物件名是
+ *    crypto.randomUUID()），所以沒有路徑穿越也沒有檔名碰撞。原始檔名存在
+ *    inv.vendor_attachments.file_name，那是資料不是路徑。
+ *
+ * ⚠️ 路徑第一段是 vendorId，讓「這家的檔案」在 bucket 裡是一個資料夾 —— 解約要
+ *    整批清掉時才有下手的地方。但**那個資料夾不是授權邊界**（來源系統就是誤以為
+ *    它是），授權在 server fn。
+ */
+export async function uploadVendorAttachment(
+  vendorId: string,
+  file: File,
+): Promise<{ key: string; fileType: string; fileSize: number }> {
+  if (!/^[0-9a-f-]{36}$/.test(vendorId)) {
+    throw new ImageUploadError("廠商代碼不正確");
+  }
+  if (file.size <= 0) {
+    throw new ImageUploadError("檔案是空的");
+  }
+  if (file.size > MAX_VENDOR_ATTACHMENT_BYTES) {
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    throw new ImageUploadError(`檔案大小 ${mb}MB 超過上限 20MB`);
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sniffed = sniffAttachmentFormat(bytes);
+  if (!sniffed) {
+    throw new ImageUploadError("無法辨識的檔案格式，僅接受 PDF、JPEG、PNG 或 WebP");
+  }
+
+  const objectName = `${vendorId}/${crypto.randomUUID()}.${sniffed.extension}`;
+
+  const { error } = await supabaseAdmin()
+    .storage.from(VENDOR_ATTACHMENTS_BUCKET)
+    .upload(objectName, bytes, {
+      contentType: sniffed.contentType,
+      cacheControl: "0", // 私有檔案不快取
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`附件上傳失敗：${error.message}`);
+  }
+
+  return {
+    key: `${VENDOR_ATTACHMENT_KEY_PREFIX}${objectName}`,
+    fileType: sniffed.contentType,
+    fileSize: file.size,
+  };
+}
+
+/**
+ * `vendorfile:<uuid>/<uuid>.pdf` → `<uuid>/<uuid>.pdf`。不是廠商附件 key 就回 null。
+ *
+ * ⚠️ 這裡是路徑穿越的防線。物件名是這個模組自己產的，但這支是給「呼叫端送 key
+ *    進來」用的，所以自己驗一次形狀而不是相信上游（與 ocrObjectName 同一條）。
+ */
+export function vendorAttachmentObjectName(key: string): string | null {
+  if (!key.startsWith(VENDOR_ATTACHMENT_KEY_PREFIX)) return null;
+  const name = key.slice(VENDOR_ATTACHMENT_KEY_PREFIX.length);
+  if (!/^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(pdf|webp|jpg|png)$/.test(name)) return null;
+  return name;
+}
+
+/** 這個 key 是哪一家廠商的。授權判斷要用，所以獨立一支而不是在呼叫端切字串。 */
+export function vendorIdFromAttachmentKey(key: string): string | null {
+  const name = vendorAttachmentObjectName(key);
+  return name ? name.split("/")[0] : null;
+}
+
+/**
+ * 短效 signed URL。
+ *
+ * ⚠️ 呼叫端**必須**先確認這個 key 屬於它有權看的廠商。這一支只做形狀檢查，不做
+ *    授權 —— 授權在 fns/inv-vendors.ts 與 fns/vendor-portal.ts，那裡才拿得到
+ *    session。（形狀檢查擋不住「拿到另一家的合法 key」，那是授權要擋的事。）
+ */
+export async function signedVendorAttachmentUrl(key: string): Promise<string | null> {
+  const objectName = vendorAttachmentObjectName(key);
+  if (!objectName) return null;
+
+  const { data, error } = await supabaseAdmin()
+    .storage.from(VENDOR_ATTACHMENTS_BUCKET)
+    .createSignedUrl(objectName, VENDOR_ATTACHMENT_SIGNED_URL_SECONDS);
+
+  if (error || !data) return null;
+  return data.signedUrl;
+}
+
+/** 刪掉 storage 上的檔案。DB 那一列由 inv_delete_vendor_child() 刪，順序見呼叫端。 */
+export async function deleteVendorAttachment(key: string): Promise<void> {
+  const objectName = vendorAttachmentObjectName(key);
+  if (!objectName) return;
+
+  const { error } = await supabaseAdmin()
+    .storage.from(VENDOR_ATTACHMENTS_BUCKET)
+    .remove([objectName]);
+
+  if (error) throw new Error(`刪除附件失敗：${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// ocr-scans 的保留期限（0019 §9.2）
+// ---------------------------------------------------------------------------
+/**
+ * 刪掉超過保留期限的進貨單掃描圖。
+ *
+ * ── 為什麼用資料夾名字判斷日期，而不是物件的 created_at ──────────────────
+ * uploadOcrScan() 把圖放在 `YYYY-MM-DD/uuid.ext`，那個資料夾名字就是上傳日期
+ * （當初分資料夾的理由寫在那支函式的註解裡：「之後要清舊圖時好下手」）。用它比用
+ * storage 的 created_at 好，因為資料夾層級可以**整批列出再整批刪**，不必為了讀
+ * 每一個物件的 metadata 而把整個 bucket 走一遍。
+ *
+ * ── 保留天數由資料庫決定 ─────────────────────────────────────────────────
+ * public.ocr_scan_retention_days()。抽成函式而不是寫死在這裡，是為了讓「保留
+ * 多久」這個政策決定有一個查得到的位置（而不是散在一支排程腳本裡的一個常數）。
+ */
+export async function purgeExpiredOcrScans(options: { dryRun: boolean }): Promise<{
+  cutoff: string;
+  retentionDays: number;
+  folders: string[];
+  objectsRemoved: number;
+}> {
+  const db = supabaseAdmin();
+
+  const { data: days, error: daysError } = await db.rpc("ocr_scan_retention_days");
+  if (daysError) throw new Error(`讀取保留天數失敗：${daysError.message}`);
+  const retentionDays = Number(days ?? 180);
+
+  const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+  const cutoff = cutoffDate.toISOString().slice(0, 10);
+
+  // 第一層是日期資料夾。limit 1000 遠大於「一天一個資料夾」能累積的數量。
+  const { data: folders, error: listError } = await db.storage
+    .from(OCR_SCANS_BUCKET)
+    .list("", { limit: 1000 });
+
+  if (listError) throw new Error(`列出掃描圖失敗：${listError.message}`);
+
+  // 只認 YYYY-MM-DD 形狀的資料夾。認不出來的一律留著 —— 清理程式在看不懂的東西
+  // 面前應該停手，不是猜。
+  const expired = (folders ?? [])
+    .map((f) => f.name)
+    .filter((name) => /^\d{4}-\d{2}-\d{2}$/.test(name) && name < cutoff)
+    .sort();
+
+  if (options.dryRun) {
+    return { cutoff, retentionDays, folders: expired, objectsRemoved: 0 };
+  }
+
+  let objectsRemoved = 0;
+  for (const folder of expired) {
+    const { data: objects, error } = await db.storage
+      .from(OCR_SCANS_BUCKET)
+      .list(folder, { limit: 1000 });
+    if (error) throw new Error(`列出 ${folder} 失敗：${error.message}`);
+
+    const paths = (objects ?? []).map((o) => `${folder}/${o.name}`);
+    if (paths.length === 0) continue;
+
+    const { error: removeError } = await db.storage.from(OCR_SCANS_BUCKET).remove(paths);
+    if (removeError) throw new Error(`刪除 ${folder} 失敗：${removeError.message}`);
+    objectsRemoved += paths.length;
+  }
+
+  return { cutoff, retentionDays, folders: expired, objectsRemoved };
+}

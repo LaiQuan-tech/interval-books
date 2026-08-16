@@ -102,3 +102,54 @@ export async function handleInvoiceTask(req: Request): Promise<Response> {
   const result = await runInvoiceBacklog(20);
   return json({ ok: true, reclaimed: reclaimed.length, ...result });
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/purge-scans —— 進貨單掃描圖的保留期限（0019 §9.2）
+// ---------------------------------------------------------------------------
+/**
+ * 4c 交接留下的第五件事：`ocr-scans` 這個 private bucket 刻意保留原圖（辨識可疑時
+ * 要調得出來對照「AI 說單價 50，單子上到底寫什麼」），但進貨單上有**廠商名稱與
+ * 單價**，屬於 Phase 5 的 PII 治理範圍 —— 而在此之前**沒有任何自動清理**，圖會
+ * 一直累積下去。
+ *
+ * 政策（保留天數寫在資料庫的 public.ocr_scan_retention_days()，預設 180 天）：
+ * 辨識結果的爭議通常在當月對帳時就會浮現，一季是寬鬆的上限，半年是「連年度結算
+ * 都過了」。
+ *
+ * ⚠️ **vendor-attachments 不在這裡，而且刻意不做自動清理。** 合約是契約文件，
+ *    保留義務由稅法與契約本身決定（商業會計法五年），不該由一支排程猜。
+ *
+ * ⚠️ 這一支刪的是 **storage 物件**，不是資料庫的列 —— `ocr-scans` 裡的檔案沒有
+ *    對應的資料表（掃描 key 只出現在進貨單的欄位上）。所以它走 Storage API 的
+ *    list + remove，而不是 SQL。
+ *
+ * ⚠️ 冪等：重跑只會發現沒有東西可刪。可以安心讓排程每天打一次。
+ *
+ * 排程還沒接上 —— 這條路徑要有人打才會跑（0006 的 expire_unpaid_orders() 示範過
+ * 「寫得再好，沒有排程呼叫就是死碼」）。接法與 INVOICE_TASK_PATH 一樣：
+ * pg_cron + pg_net，密鑰存 Supabase Vault。一天一次就夠，所以 Vercel Cron 的
+ * hobby 限制（一天一次）在這條路徑上剛好不是問題。
+ */
+export const PURGE_SCANS_TASK_PATH = "/api/tasks/purge-scans";
+
+export async function handlePurgeScansTask(req: Request): Promise<Response> {
+  if (req.method !== "POST" && req.method !== "GET") return text("method not allowed", 405);
+
+  const secret = process.env.TASKS_SECRET;
+  if (!secret) return text("service unavailable", 503);
+
+  let url: URL;
+  try {
+    url = new URL(req.url);
+  } catch {
+    return text("bad request", 400);
+  }
+  if (!secretMatches(url.searchParams.get("k"), secret)) return text("not found", 404);
+
+  const { purgeExpiredOcrScans } = await import("@/server/storage");
+
+  // ?dry=1 只列出要刪什麼，不真的刪。第一次上線時要用它確認範圍。
+  const dryRun = url.searchParams.get("dry") === "1";
+  const result = await purgeExpiredOcrScans({ dryRun });
+  return json({ ok: true, dryRun, ...result });
+}

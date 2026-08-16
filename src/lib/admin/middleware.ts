@@ -9,15 +9,13 @@
 import { createMiddleware } from "@tanstack/react-start";
 import type { StaffPermission } from "@/server/auth";
 
-export const adminFnMiddleware = createMiddleware({ type: "function" }).server(
-  async ({ next }) => {
-    // Imported inside the handler so the module graph never pulls server-only
-    // code toward the client bundle.
-    const { requireAdmin } = await import("@/server/auth");
-    const admin = await requireAdmin();
-    return next({ context: { admin } });
-  },
-);
+export const adminFnMiddleware = createMiddleware({ type: "function" }).server(async ({ next }) => {
+  // Imported inside the handler so the module graph never pulls server-only
+  // code toward the client bundle.
+  const { requireAdmin } = await import("@/server/auth");
+  const admin = await requireAdmin();
+  return next({ context: { admin } });
+});
 
 /**
  * 門市那一側的授權邊界（POS、銷售紀錄、賣超告警）。
@@ -40,5 +38,28 @@ export function staffFnMiddleware(permission?: StaffPermission) {
     const { requireStaff } = await import("@/server/auth");
     const staff = await requireStaff(permission);
     return next({ context: { staff } });
+  });
+}
+
+/**
+ * 廠商自助入口那一側的授權邊界（0019）。
+ *
+ * 與上面兩支並排而不是取代它們：這是第一次有**非店員**的身分碰到 inv 的資料，
+ * 而他要看到的東西差別不在「多與少」，在「是誰的」。
+ *
+ * context.vendor.vendorId 是**唯一**合法的 vendor_id 來源。
+ *
+ * ⚠️ 每一支掛這個 middleware 的 server fn，它的 inputValidator **不可以有
+ *    vendorId 這個欄位**。要過濾哪一家，從 context 拿；client 送進來的一律不算。
+ *    這一條有測試守著（scripts/inventory-vendors-selftest.mjs 會掃 fns 檔）。
+ *
+ * ⚠️ 資料庫那一側還有第二道門：0019 §7 的每一支函式簽名都沒有 p_vendor_id
+ *    參數。就算這一層被寫壞，資料庫仍然只回那個 user 自己那一家的資料。
+ */
+export function vendorFnMiddleware() {
+  return createMiddleware({ type: "function" }).server(async ({ next }) => {
+    const { requireVendor } = await import("@/server/vendor-auth");
+    const vendor = await requireVendor();
+    return next({ context: { vendor } });
   });
 }

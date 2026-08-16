@@ -1009,3 +1009,336 @@ export const OCR_FAILURE_KINDS = [
 ] as const;
 
 export type OcrFailureKindValue = (typeof OCR_FAILURE_KINDS)[number];
+
+// ---------------------------------------------------------------------------
+// 廠商（0019）
+// ---------------------------------------------------------------------------
+// ⚠️ 這裡沒有 approval_status、approved_by、created_by、vendor_code，而且不會有。
+//    四個全部由資料庫決定（0019 §5.1），payload 裡就算送了也沒有一行程式會讀。
+//    來源的 VendorFormDialog.tsx:266 是
+//    `{ ...payload, created_by: user!.id, approval_status: getInitialApprovalStatus('vendors') }`
+//    —— 那三樣東西全部由瀏覽器說了算，而 DB 沒有任何 trigger 或 CHECK 攔它。
+//
+// ⚠️ 下面每一個 enum 都是 inv.vendors 那幾條 CHECK 的鏡射。**資料庫那一份才是
+//    值域**，這裡只是為了讓錯誤在送出之前就講中文。兩邊不一致時以資料庫為準
+//    （selftest 會逐個比對）。
+
+export const VENDOR_ENTITY_TYPES = [
+  "domestic_company",
+  "domestic_individual",
+  "foreign",
+  "foreign_individual",
+] as const;
+
+export const VENDOR_ENTITY_TYPE_LABELS: Record<(typeof VENDOR_ENTITY_TYPES)[number], string> = {
+  domestic_company: "國內公司",
+  domestic_individual: "國內個人",
+  foreign: "國外法人",
+  foreign_individual: "國外個人",
+};
+
+export const VENDOR_STATUSES = ["active", "suspended", "inactive"] as const;
+export const VENDOR_STATUS_LABELS: Record<(typeof VENDOR_STATUSES)[number], string> = {
+  active: "往來中",
+  suspended: "暫停往來",
+  inactive: "已終止",
+};
+
+export const VENDOR_VOUCHER_CATEGORIES = [
+  "invoice",
+  "receipt",
+  "official_document",
+  "labor_payment",
+  "none",
+] as const;
+export const VENDOR_EINVOICE_TYPES = ["none", "b2b", "b2c"] as const;
+export const VENDOR_PAYMENT_TERMS = ["immediate", "monthly", "negotiated"] as const;
+export const VENDOR_SETTLEMENT_TYPES = ["invoice_date", "end_of_month", "monthly"] as const;
+export const VENDOR_RESIDENCY_STATUSES = ["over_183", "under_183"] as const;
+
+/** 0–1 的小數。畫面上填的是百分比，換算在表單元件裡；值域在這裡與 inv.assert_rate() 各守一次。 */
+const rateSchema = z
+  .number({ invalid_type_error: "費率必須是數字" })
+  .min(0, "費率不可為負數")
+  .max(1, "費率不可超過 100%")
+  .finite("費率必須是數字")
+  .nullable();
+
+/** 1–31。來源只有 HTML 的 min/max，改一個 request body 就過，而 DB 也沒有 CHECK。 */
+const dayOfMonthSchema = z
+  .number({ invalid_type_error: "日期必須是數字" })
+  .int("日期必須是整數")
+  .min(1, "日期必須介於 1 與 31")
+  .max(31, "日期必須介於 1 與 31")
+  .nullable();
+
+const trimmedNullable = (max: number) => z.string().trim().max(max).nullable();
+
+export const vendorSchema = z
+  .object({
+    id: z.string().trim().uuid().nullable(),
+
+    // 分頁一：基本 + 識別
+    entity_type: z.enum(VENDOR_ENTITY_TYPES),
+    category_id: z.string().trim().uuid().nullable(),
+    name: z.string().trim().min(1, "請填供應商名稱").max(200),
+    name_en: trimmedNullable(200),
+    short_name: trimmedNullable(100),
+    representative: trimmedNullable(100),
+    is_preferred: z.boolean(),
+    notes: trimmedNullable(2000),
+    tax_id: trimmedNullable(20),
+    id_number: trimmedNullable(20),
+    foreign_id: trimmedNullable(50),
+    foreign_id_type: trimmedNullable(100),
+    residence_permit_number: trimmedNullable(50),
+    taiwan_residency_status: z.enum(VENDOR_RESIDENCY_STATUSES).nullable(),
+    country_code: trimmedNullable(3),
+
+    // 分頁二：聯絡
+    phone: trimmedNullable(50),
+    fax: trimmedNullable(50),
+    email: z
+      .union([z.literal(""), z.string().trim().email("電子郵件格式不正確").max(200)])
+      .nullable(),
+    address: trimmedNullable(500),
+    address_en: trimmedNullable(500),
+    invoice_address: trimmedNullable(500),
+
+    // 分頁三：財務 + 寄售抽成
+    default_tax_type_id: z.string().trim().uuid().nullable(),
+    default_withholding_category_id: z.string().trim().uuid().nullable(),
+    is_nhi_applicable: z.boolean(),
+    voucher_category: z.enum(VENDOR_VOUCHER_CATEGORIES),
+    einvoice_type: z.enum(VENDOR_EINVOICE_TYPES),
+    payment_terms: z.enum(VENDOR_PAYMENT_TERMS),
+    payment_terms_note: trimmedNullable(500),
+    settlement_type: z.enum(VENDOR_SETTLEMENT_TYPES),
+    settlement_start_day: dayOfMonthSchema,
+    settlement_interval_days: z.number().int().min(0).max(365).nullable(),
+    bill_due_day: dayOfMonthSchema,
+    is_consignment: z.boolean(),
+    cash_fee_rate: rateSchema,
+    domestic_card_fee_rate: rateSchema,
+    foreign_card_fee_rate: rateSchema,
+    commission_rate: rateSchema,
+
+    status: z.enum(VENDOR_STATUSES),
+  })
+  // 識別碼依實體類型必填。**這是 inv_save_vendor() 那四個 RAISE 的鏡射** —— 兩邊
+  // 都要有：這裡讓錯誤出現在對的欄位旁邊，資料庫那邊擋直接 POST 的。
+  .refine((v) => v.entity_type !== "domestic_company" || !!v.tax_id?.trim(), {
+    message: "國內公司必須填統一編號",
+    path: ["tax_id"],
+  })
+  .refine((v) => v.entity_type !== "domestic_individual" || !!v.id_number?.trim(), {
+    message: "國內個人必須填身分證字號",
+    path: ["id_number"],
+  })
+  .refine((v) => v.entity_type !== "foreign" || !!v.foreign_id?.trim(), {
+    message: "國外法人必須填國外識別碼",
+    path: ["foreign_id"],
+  })
+  .refine(
+    (v) =>
+      v.entity_type !== "foreign_individual" ||
+      !!v.foreign_id?.trim() ||
+      !!v.residence_permit_number?.trim(),
+    { message: "國外個人必須填國外識別碼或居留證號碼", path: ["foreign_id"] },
+  );
+
+export type VendorValues = z.infer<typeof vendorSchema>;
+
+export const vendorFilterSchema = z.object({
+  keyword: z.string().trim().max(100).nullable(),
+  entityType: z.enum(["all", ...VENDOR_ENTITY_TYPES]),
+  consignment: z.enum(["all", "yes", "no"]),
+  status: z.enum(["all", ...VENDOR_STATUSES]),
+  approvalStatus: z.enum(["all", "pending", "approved", "rejected"]),
+  sort: z.enum(["name_asc", "name_desc", "code_asc", "created_desc", "products_desc"]),
+});
+
+export type VendorFilterValues = z.infer<typeof vendorFilterSchema>;
+
+export const vendorBankAccountSchema = z.object({
+  id: z.string().trim().uuid().nullable(),
+  account_holder_name: z.string().trim().min(1, "請填戶名").max(100),
+  bank_code: z.string().trim().min(1, "請填銀行代碼").max(5),
+  bank_name: z.string().trim().min(1, "請填銀行名稱").max(100),
+  branch_code: trimmedNullable(10),
+  branch_name: trimmedNullable(100),
+  account_number: z.string().trim().min(1, "請填帳號").max(50),
+  account_purpose: trimmedNullable(100),
+  is_default: z.boolean(),
+  notes: trimmedNullable(500),
+  sort_order: z.number().int().min(0).max(999),
+});
+
+export type VendorBankAccountValues = z.infer<typeof vendorBankAccountSchema>;
+
+export const vendorContactSchema = z.object({
+  id: z.string().trim().uuid().nullable(),
+  name: z.string().trim().min(1, "請填聯絡人姓名").max(100),
+  job_title: trimmedNullable(100),
+  phone: trimmedNullable(50),
+  mobile: trimmedNullable(50),
+  email: z
+    .union([z.literal(""), z.string().trim().email("電子郵件格式不正確").max(200)])
+    .nullable(),
+  is_primary: z.boolean(),
+  is_finance_contact: z.boolean(),
+  notes: trimmedNullable(500),
+  sort_order: z.number().int().min(0).max(999),
+});
+
+export type VendorContactValues = z.infer<typeof vendorContactSchema>;
+
+export const VENDOR_ATTACHMENT_TYPES = ["general", "contract"] as const;
+
+export const vendorAttachmentSchema = z.object({
+  file_name: z.string().trim().min(1).max(300),
+  // `vendorfile:<vendor uuid>/<uuid>.<ext>` —— 形狀在 storage.ts#vendorAttachmentObjectName
+  // 再驗一次（那裡才是路徑穿越的防線）。
+  file_path: z.string().trim().min(1).max(500),
+  file_type: z.string().trim().min(1).max(200),
+  file_size: z
+    .number()
+    .int()
+    .min(0)
+    .max(20 * 1024 * 1024)
+    .nullable(),
+  description: trimmedNullable(500),
+  attachment_type: z.enum(VENDOR_ATTACHMENT_TYPES),
+  contract_start_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  contract_end_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  contract_version: trimmedNullable(50),
+  is_current: z.boolean(),
+});
+
+export type VendorAttachmentValues = z.infer<typeof vendorAttachmentSchema>;
+
+// ---------------------------------------------------------------------------
+// PII 查閱（0019 §4）
+// ---------------------------------------------------------------------------
+// ⚠️ fields 是白名單，而且**沒有 "*" 或 "all"**。想一次看全部就得把五個名字都列
+//    出來，而那筆稽核紀錄就會長成「這個人一次看了五個欄位」—— 那正是稽核要看見
+//    的形狀。0019 §4.2 的 v_allowed 是同一份清單。
+// ⚠️ reason 是列舉不是自由文字。自由文字最後一定變成空字串。
+
+export const VENDOR_SENSITIVE_FIELDS = [
+  "tax_id",
+  "id_number",
+  "foreign_id",
+  "residence_permit_number",
+  "bank_accounts",
+] as const;
+
+export const VENDOR_SENSITIVE_FIELD_LABELS: Record<
+  (typeof VENDOR_SENSITIVE_FIELDS)[number],
+  string
+> = {
+  tax_id: "統一編號",
+  id_number: "身分證字號",
+  foreign_id: "國外識別碼",
+  residence_permit_number: "居留證號碼",
+  bank_accounts: "匯款帳戶",
+};
+
+export const PII_ACCESS_REASONS = [
+  "reconciliation",
+  "payment",
+  "tax_filing",
+  "vendor_enquiry",
+  "self_service",
+] as const;
+
+export const PII_ACCESS_REASON_LABELS: Record<(typeof PII_ACCESS_REASONS)[number], string> = {
+  reconciliation: "對帳",
+  payment: "匯款作業",
+  tax_filing: "報稅／扣繳申報",
+  vendor_enquiry: "廠商來電查詢",
+  self_service: "廠商自助入口",
+};
+
+export const vendorSensitiveRequestSchema = z.object({
+  vendor_id: z.string().trim().uuid("請選擇廠商"),
+  fields: z
+    .array(z.enum(VENDOR_SENSITIVE_FIELDS))
+    .min(1, "請選擇要查看哪些欄位")
+    .max(VENDOR_SENSITIVE_FIELDS.length),
+  // self_service 只由廠商入口那一側自己帶，店員這一側選不到（UI 不列它，
+  // server fn 也會擋 —— 見 fns/inv-vendors.ts）。
+  reason: z.enum(PII_ACCESS_REASONS),
+});
+
+export type VendorSensitiveRequestValues = z.infer<typeof vendorSensitiveRequestSchema>;
+
+export const piiAccessLogFilterSchema = z.object({
+  vendorId: z.string().trim().uuid().nullable(),
+  actorUserId: z.string().trim().uuid().nullable(),
+  limit: z.number().int().min(1).max(500),
+});
+
+// ---------------------------------------------------------------------------
+// 廠商自助入口（0019 §7）
+// ---------------------------------------------------------------------------
+// ⚠️ **這一段的每一個 schema 都沒有 vendor_id 欄位，而且不可以有。** 過濾用的
+//    vendor_id 一律來自 session（context.vendor.vendorId），資料庫那一側的函式
+//    簽名也沒有 p_vendor_id 參數。selftest 會掃這個檔案確認這一條。
+// ⚠️ 也沒有 approval_status / stock_quantity / cost_price / product_type：
+//    四個全部由資料庫決定，廠商送了也不會被讀（0019 §7.7）。
+
+export const vendorSignInSchema = z.object({
+  email: z.string().trim().email("電子郵件格式不正確").max(200),
+  password: z.string().min(1, "請輸入密碼").max(200),
+});
+
+export const vendorProductSubmitSchema = z.object({
+  id: z.string().trim().uuid().nullable(),
+  name: z.string().trim().min(1, "請填商品名稱").max(200),
+  issue_number: trimmedNullable(50),
+  series: trimmedNullable(100),
+  publisher: trimmedNullable(100),
+  barcode: trimmedNullable(50),
+  notes: trimmedNullable(2000),
+  image_key: trimmedNullable(300),
+  selling_price: z
+    .number({ invalid_type_error: "建議售價必須是數字" })
+    .min(0, "建議售價不可為負數")
+    .max(1_000_000, "建議售價太高了")
+    .finite("建議售價必須是數字"),
+});
+
+export type VendorProductSubmitValues = z.infer<typeof vendorProductSubmitSchema>;
+
+/** 核准廠商送審的商品，可選同時上架。三語文案由**店員**填，廠商送不進來。 */
+export const vendorSubmissionApprovalSchema = z.object({
+  id: z.string().trim().uuid(),
+  approved: z.boolean(),
+  listing: z
+    .object({
+      slug: z
+        .string()
+        .trim()
+        .min(1, "請填網址代稱")
+        .max(100)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "網址代稱只能用小寫英數字與連字號"),
+      product_type: z.enum(["goods", "book"]),
+      title: localizedSchema,
+      summary: localizedSchema,
+      description: localizedSchema,
+      price: z.number().int().min(0, "定價不可為負數"),
+      units_per_sale: z.number().int().min(1).max(999),
+      image_key: trimmedNullable(300),
+      status: z.enum(["draft", "active"]),
+    })
+    .nullable(),
+});
+
+export type VendorSubmissionApprovalValues = z.infer<typeof vendorSubmissionApprovalSchema>;

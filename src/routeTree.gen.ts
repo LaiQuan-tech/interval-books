@@ -24,12 +24,17 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShopIndexRouteImport } from './routes/shop.index'
 import { Route as CheckoutIndexRouteImport } from './routes/checkout.index'
+import { Route as VendorPendingRouteImport } from './routes/vendor/pending'
+import { Route as VendorLoginRouteImport } from './routes/vendor/login'
+import { Route as VendorShellRouteImport } from './routes/vendor/_shell'
 import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
 import { Route as CheckoutCompleteRouteImport } from './routes/checkout.complete'
 import { Route as AdminPendingRouteImport } from './routes/admin/pending'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
+import { Route as VendorShellIndexRouteImport } from './routes/vendor/_shell.index'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell.index'
+import { Route as VendorShellProductsRouteImport } from './routes/vendor/_shell.products'
 import { Route as AdminShellStringsRouteImport } from './routes/admin/_shell.strings'
 import { Route as AdminShellStockAlertsRouteImport } from './routes/admin/_shell.stock-alerts'
 import { Route as AdminShellSettingsRouteImport } from './routes/admin/_shell.settings'
@@ -41,6 +46,7 @@ import { Route as AdminShellPhonesRouteImport } from './routes/admin/_shell.phon
 import { Route as AdminShellPagesRouteImport } from './routes/admin/_shell.pages'
 import { Route as AdminShellNewsRouteImport } from './routes/admin/_shell.news'
 import { Route as AdminShellJourneysRouteImport } from './routes/admin/_shell.journeys'
+import { Route as AdminShellInventoryVendorsRouteImport } from './routes/admin/_shell.inventory-vendors'
 import { Route as AdminShellInventoryPurchasesRouteImport } from './routes/admin/_shell.inventory-purchases'
 import { Route as AdminShellInventoryProductsRouteImport } from './routes/admin/_shell.inventory-products'
 import { Route as AdminShellInventoryListingRouteImport } from './routes/admin/_shell.inventory-listing'
@@ -129,6 +135,21 @@ const CheckoutIndexRoute = CheckoutIndexRouteImport.update({
   path: '/checkout/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VendorPendingRoute = VendorPendingRouteImport.update({
+  id: '/vendor/pending',
+  path: '/vendor/pending',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VendorLoginRoute = VendorLoginRouteImport.update({
+  id: '/vendor/login',
+  path: '/vendor/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VendorShellRoute = VendorShellRouteImport.update({
+  id: '/vendor/_shell',
+  path: '/vendor',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShopSlugRoute = ShopSlugRouteImport.update({
   id: '/shop/$slug',
   path: '/shop/$slug',
@@ -154,10 +175,20 @@ const AdminShellRoute = AdminShellRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VendorShellIndexRoute = VendorShellIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => VendorShellRoute,
+} as any)
 const AdminShellIndexRoute = AdminShellIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminShellRoute,
+} as any)
+const VendorShellProductsRoute = VendorShellProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => VendorShellRoute,
 } as any)
 const AdminShellStringsRoute = AdminShellStringsRouteImport.update({
   id: '/strings',
@@ -214,6 +245,12 @@ const AdminShellJourneysRoute = AdminShellJourneysRouteImport.update({
   path: '/journeys',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellInventoryVendorsRoute =
+  AdminShellInventoryVendorsRouteImport.update({
+    id: '/inventory-vendors',
+    path: '/inventory-vendors',
+    getParentRoute: () => AdminShellRoute,
+  } as any)
 const AdminShellInventoryPurchasesRoute =
   AdminShellInventoryPurchasesRouteImport.update({
     id: '/inventory-purchases',
@@ -301,6 +338,9 @@ export interface FileRoutesByFullPath {
   '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/vendor': typeof VendorShellRouteWithChildren
+  '/vendor/login': typeof VendorLoginRoute
+  '/vendor/pending': typeof VendorPendingRoute
   '/checkout/': typeof CheckoutIndexRoute
   '/shop/': typeof ShopIndexRoute
   '/admin/categories': typeof AdminShellCategoriesRoute
@@ -314,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/admin/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/inventory-products': typeof AdminShellInventoryProductsRoute
   '/admin/inventory-purchases': typeof AdminShellInventoryPurchasesRoute
+  '/admin/inventory-vendors': typeof AdminShellInventoryVendorsRoute
   '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
@@ -325,7 +366,9 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AdminShellSettingsRoute
   '/admin/stock-alerts': typeof AdminShellStockAlertsRoute
   '/admin/strings': typeof AdminShellStringsRoute
+  '/vendor/products': typeof VendorShellProductsRoute
   '/admin/': typeof AdminShellIndexRoute
+  '/vendor/': typeof VendorShellIndexRoute
   '/admin/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRoutesByTo {
@@ -346,6 +389,8 @@ export interface FileRoutesByTo {
   '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/vendor/login': typeof VendorLoginRoute
+  '/vendor/pending': typeof VendorPendingRoute
   '/checkout': typeof CheckoutIndexRoute
   '/shop': typeof ShopIndexRoute
   '/admin/categories': typeof AdminShellCategoriesRoute
@@ -359,6 +404,7 @@ export interface FileRoutesByTo {
   '/admin/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/inventory-products': typeof AdminShellInventoryProductsRoute
   '/admin/inventory-purchases': typeof AdminShellInventoryPurchasesRoute
+  '/admin/inventory-vendors': typeof AdminShellInventoryVendorsRoute
   '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
@@ -370,7 +416,9 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AdminShellSettingsRoute
   '/admin/stock-alerts': typeof AdminShellStockAlertsRoute
   '/admin/strings': typeof AdminShellStringsRoute
+  '/vendor/products': typeof VendorShellProductsRoute
   '/admin': typeof AdminShellIndexRoute
+  '/vendor': typeof VendorShellIndexRoute
   '/admin/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRoutesById {
@@ -393,6 +441,9 @@ export interface FileRoutesById {
   '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/shop/$slug': typeof ShopSlugRoute
+  '/vendor/_shell': typeof VendorShellRouteWithChildren
+  '/vendor/login': typeof VendorLoginRoute
+  '/vendor/pending': typeof VendorPendingRoute
   '/checkout/': typeof CheckoutIndexRoute
   '/shop/': typeof ShopIndexRoute
   '/admin/_shell/categories': typeof AdminShellCategoriesRoute
@@ -406,6 +457,7 @@ export interface FileRoutesById {
   '/admin/_shell/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/_shell/inventory-products': typeof AdminShellInventoryProductsRoute
   '/admin/_shell/inventory-purchases': typeof AdminShellInventoryPurchasesRoute
+  '/admin/_shell/inventory-vendors': typeof AdminShellInventoryVendorsRoute
   '/admin/_shell/journeys': typeof AdminShellJourneysRoute
   '/admin/_shell/news': typeof AdminShellNewsRoute
   '/admin/_shell/pages': typeof AdminShellPagesRouteWithChildren
@@ -417,7 +469,9 @@ export interface FileRoutesById {
   '/admin/_shell/settings': typeof AdminShellSettingsRoute
   '/admin/_shell/stock-alerts': typeof AdminShellStockAlertsRoute
   '/admin/_shell/strings': typeof AdminShellStringsRoute
+  '/vendor/_shell/products': typeof VendorShellProductsRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
+  '/vendor/_shell/': typeof VendorShellIndexRoute
   '/admin/_shell/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRouteTypes {
@@ -441,6 +495,9 @@ export interface FileRouteTypes {
     | '/admin/pending'
     | '/checkout/complete'
     | '/shop/$slug'
+    | '/vendor'
+    | '/vendor/login'
+    | '/vendor/pending'
     | '/checkout/'
     | '/shop/'
     | '/admin/categories'
@@ -454,6 +511,7 @@ export interface FileRouteTypes {
     | '/admin/inventory-listing'
     | '/admin/inventory-products'
     | '/admin/inventory-purchases'
+    | '/admin/inventory-vendors'
     | '/admin/journeys'
     | '/admin/news'
     | '/admin/pages'
@@ -465,7 +523,9 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/stock-alerts'
     | '/admin/strings'
+    | '/vendor/products'
     | '/admin/'
+    | '/vendor/'
     | '/admin/pages/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -486,6 +546,8 @@ export interface FileRouteTypes {
     | '/admin/pending'
     | '/checkout/complete'
     | '/shop/$slug'
+    | '/vendor/login'
+    | '/vendor/pending'
     | '/checkout'
     | '/shop'
     | '/admin/categories'
@@ -499,6 +561,7 @@ export interface FileRouteTypes {
     | '/admin/inventory-listing'
     | '/admin/inventory-products'
     | '/admin/inventory-purchases'
+    | '/admin/inventory-vendors'
     | '/admin/journeys'
     | '/admin/news'
     | '/admin/pages'
@@ -510,7 +573,9 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/stock-alerts'
     | '/admin/strings'
+    | '/vendor/products'
     | '/admin'
+    | '/vendor'
     | '/admin/pages/$slug'
   id:
     | '__root__'
@@ -532,6 +597,9 @@ export interface FileRouteTypes {
     | '/admin/pending'
     | '/checkout/complete'
     | '/shop/$slug'
+    | '/vendor/_shell'
+    | '/vendor/login'
+    | '/vendor/pending'
     | '/checkout/'
     | '/shop/'
     | '/admin/_shell/categories'
@@ -545,6 +613,7 @@ export interface FileRouteTypes {
     | '/admin/_shell/inventory-listing'
     | '/admin/_shell/inventory-products'
     | '/admin/_shell/inventory-purchases'
+    | '/admin/_shell/inventory-vendors'
     | '/admin/_shell/journeys'
     | '/admin/_shell/news'
     | '/admin/_shell/pages'
@@ -556,7 +625,9 @@ export interface FileRouteTypes {
     | '/admin/_shell/settings'
     | '/admin/_shell/stock-alerts'
     | '/admin/_shell/strings'
+    | '/vendor/_shell/products'
     | '/admin/_shell/'
+    | '/vendor/_shell/'
     | '/admin/_shell/pages/$slug'
   fileRoutesById: FileRoutesById
 }
@@ -579,6 +650,9 @@ export interface RootRouteChildren {
   AdminPendingRoute: typeof AdminPendingRoute
   CheckoutCompleteRoute: typeof CheckoutCompleteRoute
   ShopSlugRoute: typeof ShopSlugRoute
+  VendorShellRoute: typeof VendorShellRouteWithChildren
+  VendorLoginRoute: typeof VendorLoginRoute
+  VendorPendingRoute: typeof VendorPendingRoute
   CheckoutIndexRoute: typeof CheckoutIndexRoute
   ShopIndexRoute: typeof ShopIndexRoute
 }
@@ -690,6 +764,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckoutIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/vendor/pending': {
+      id: '/vendor/pending'
+      path: '/vendor/pending'
+      fullPath: '/vendor/pending'
+      preLoaderRoute: typeof VendorPendingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vendor/login': {
+      id: '/vendor/login'
+      path: '/vendor/login'
+      fullPath: '/vendor/login'
+      preLoaderRoute: typeof VendorLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vendor/_shell': {
+      id: '/vendor/_shell'
+      path: '/vendor'
+      fullPath: '/vendor'
+      preLoaderRoute: typeof VendorShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/shop/$slug': {
       id: '/shop/$slug'
       path: '/shop/$slug'
@@ -725,12 +820,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/vendor/_shell/': {
+      id: '/vendor/_shell/'
+      path: '/'
+      fullPath: '/vendor/'
+      preLoaderRoute: typeof VendorShellIndexRouteImport
+      parentRoute: typeof VendorShellRoute
+    }
     '/admin/_shell/': {
       id: '/admin/_shell/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminShellIndexRouteImport
       parentRoute: typeof AdminShellRoute
+    }
+    '/vendor/_shell/products': {
+      id: '/vendor/_shell/products'
+      path: '/products'
+      fullPath: '/vendor/products'
+      preLoaderRoute: typeof VendorShellProductsRouteImport
+      parentRoute: typeof VendorShellRoute
     }
     '/admin/_shell/strings': {
       id: '/admin/_shell/strings'
@@ -807,6 +916,13 @@ declare module '@tanstack/react-router' {
       path: '/journeys'
       fullPath: '/admin/journeys'
       preLoaderRoute: typeof AdminShellJourneysRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
+    '/admin/_shell/inventory-vendors': {
+      id: '/admin/_shell/inventory-vendors'
+      path: '/inventory-vendors'
+      fullPath: '/admin/inventory-vendors'
+      preLoaderRoute: typeof AdminShellInventoryVendorsRouteImport
       parentRoute: typeof AdminShellRoute
     }
     '/admin/_shell/inventory-purchases': {
@@ -920,6 +1036,7 @@ interface AdminShellRouteChildren {
   AdminShellInventoryListingRoute: typeof AdminShellInventoryListingRoute
   AdminShellInventoryProductsRoute: typeof AdminShellInventoryProductsRoute
   AdminShellInventoryPurchasesRoute: typeof AdminShellInventoryPurchasesRoute
+  AdminShellInventoryVendorsRoute: typeof AdminShellInventoryVendorsRoute
   AdminShellJourneysRoute: typeof AdminShellJourneysRoute
   AdminShellNewsRoute: typeof AdminShellNewsRoute
   AdminShellPagesRoute: typeof AdminShellPagesRouteWithChildren
@@ -946,6 +1063,7 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellInventoryListingRoute: AdminShellInventoryListingRoute,
   AdminShellInventoryProductsRoute: AdminShellInventoryProductsRoute,
   AdminShellInventoryPurchasesRoute: AdminShellInventoryPurchasesRoute,
+  AdminShellInventoryVendorsRoute: AdminShellInventoryVendorsRoute,
   AdminShellJourneysRoute: AdminShellJourneysRoute,
   AdminShellNewsRoute: AdminShellNewsRoute,
   AdminShellPagesRoute: AdminShellPagesRouteWithChildren,
@@ -962,6 +1080,20 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
 
 const AdminShellRouteWithChildren = AdminShellRoute._addFileChildren(
   AdminShellRouteChildren,
+)
+
+interface VendorShellRouteChildren {
+  VendorShellProductsRoute: typeof VendorShellProductsRoute
+  VendorShellIndexRoute: typeof VendorShellIndexRoute
+}
+
+const VendorShellRouteChildren: VendorShellRouteChildren = {
+  VendorShellProductsRoute: VendorShellProductsRoute,
+  VendorShellIndexRoute: VendorShellIndexRoute,
+}
+
+const VendorShellRouteWithChildren = VendorShellRoute._addFileChildren(
+  VendorShellRouteChildren,
 )
 
 const rootRouteChildren: RootRouteChildren = {
@@ -983,6 +1115,9 @@ const rootRouteChildren: RootRouteChildren = {
   AdminPendingRoute: AdminPendingRoute,
   CheckoutCompleteRoute: CheckoutCompleteRoute,
   ShopSlugRoute: ShopSlugRoute,
+  VendorShellRoute: VendorShellRouteWithChildren,
+  VendorLoginRoute: VendorLoginRoute,
+  VendorPendingRoute: VendorPendingRoute,
   CheckoutIndexRoute: CheckoutIndexRoute,
   ShopIndexRoute: ShopIndexRoute,
 }

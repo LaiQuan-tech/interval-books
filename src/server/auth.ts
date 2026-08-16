@@ -58,7 +58,14 @@ export class PendingApprovalError extends Error {
 /** 後台認得的角色。vendor 是 0010 為 Phase 2 保留的，目前不給進。 */
 export type BackOfficeRole = "admin" | "staff" | "pending";
 
-/** 0010 的七種 approve_*。與 staff_permissions 的 CHECK 逐字對齊。 */
+/**
+ * 0010 的七種 approve_*，加上 0019 §3.7 的 inv.vendor.pii.read。
+ * 與 staff_permissions 的 CHECK 逐字對齊 —— 那條 CHECK 才是真正的值域，這裡是鏡射。
+ *
+ * ⚠️ 前七種回答「能不能簽核」，最後一種回答「能不能看」。兩者是不同維度：一個
+ *    管收貨的店員有理由簽核進貨，沒有理由看到廠商的身分證字號。名字用點分格式
+ *    就是要讓它在清單裡一眼看得出不同類。
+ */
 export const STAFF_PERMISSIONS = [
   "approve_products",
   "approve_purchases",
@@ -67,6 +74,7 @@ export const STAFF_PERMISSIONS = [
   "approve_combo_sets",
   "approve_stock_adjustments",
   "approve_inventory_adjustments",
+  "inv.vendor.pii.read",
 ] as const;
 
 export type StaffPermission = (typeof STAFF_PERMISSIONS)[number];
@@ -121,11 +129,16 @@ async function loadAdminProfile(userId: string) {
 }
 
 /**
- * 這個人實際有哪幾種 approve_*。
+ * 這個人實際有哪幾種權限。
  *
  * admin 不查表、一律視為全有 —— 來源系統的 inv.has_permission() 第一句就是
  * `IF is_admin() THEN RETURN true`，這裡照抄那個語意。管理員身上沒有
  * staff_permissions 列是正常的，不是缺資料。
+ *
+ * ⚠️ 0019 的 inv.vendor.pii.read 也適用這一條。這家店的 admin 就是老闆，也就是
+ *    那批個資的持有人，讓他先授權給自己是儀式而不是控制。真正的控制是
+ *    public.pii_access_log —— admin 讀了一樣留紀錄，而且他刪不掉那筆紀錄
+ *    （0019 §1.3 的 trigger 連 table owner 都擋）。
  */
 async function loadStaffPermissions(userId: string, role: BackOfficeRole) {
   if (role === "admin") return [...STAFF_PERMISSIONS];
