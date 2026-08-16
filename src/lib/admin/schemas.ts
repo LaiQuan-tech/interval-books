@@ -429,3 +429,212 @@ export const resolveAlertSchema = z.object({
 });
 
 export type ResolveAlertValues = z.infer<typeof resolveAlertSchema>;
+
+// ---------------------------------------------------------------------------
+// 進銷存商品主檔
+// ---------------------------------------------------------------------------
+/**
+ * 商品類型。**三個值，不是六個**。
+ *
+ * 來源系統的 productTypes.ts 列了六種（outright / consignment / commission /
+ * own_brand / rental / secondhand），但 inv.products 的 CHECK 只認得三種：
+ *
+ *   CONSTRAINT products_product_type_check
+ *     CHECK (product_type = ANY (ARRAY['outright', 'consignment', 'rental']))
+ *
+ * 鏡射的是**資料庫**，不是來源的下拉選單。多送另外三個進去會拿到 23514，
+ * 而 23514 出現在使用者眼前的樣子是一頁 500。
+ */
+export const INV_PRODUCT_TYPES = ["outright", "consignment", "rental"] as const;
+export const INV_PRODUCT_TYPE_LABELS: Record<(typeof INV_PRODUCT_TYPES)[number], string> = {
+  outright: "買斷",
+  consignment: "寄賣",
+  rental: "租借（展示用）",
+};
+
+/**
+ * 商品表單。
+ *
+ * ⚠️ 這裡**沒有** approval_status、stock_quantity、user_id。不是漏了：
+ *    · approval_status 由 inv.initial_approval_status() 在資料庫算（fail-closed）
+ *    · stock_quantity 只能由進貨／盤點改
+ *    · user_id 取自 middleware 的 context
+ *    三者都不從 request body 拿。inv_save_product() 逐欄具名取值，所以就算有人
+ *    把這些 key 塞進 payload 也不會有任何一行程式去讀它。
+ *
+ * 價格的下限鏡射 inv.products 的 positive_cost_price / positive_selling_price。
+ */
+export const invProductSchema = z.object({
+  id: z.string().trim().uuid().nullable().optional(),
+  name: z.string().trim().min(1, "請輸入商品名稱").max(200, "商品名稱最多 200 字"),
+  issue_number: z.string().trim().max(50).nullable().optional(),
+  barcode: z.string().trim().max(64).nullable().optional(),
+  category_id: z.string().trim().uuid().nullable().optional(),
+  product_type: z.enum(INV_PRODUCT_TYPES),
+  series: z.string().trim().max(200).nullable().optional(),
+  publisher: z.string().trim().max(200).nullable().optional(),
+  vendor_id: z.string().trim().uuid().nullable().optional(),
+  selling_price: z
+    .number({ invalid_type_error: "售價必須是數字" })
+    .min(0, "售價不可為負數")
+    .finite("售價必須是數字"),
+  cost_price: z
+    .number({ invalid_type_error: "成本必須是數字" })
+    .min(0, "成本不可為負數")
+    .finite("成本必須是數字")
+    .nullable()
+    .optional(),
+  low_stock_alert: z.number().int("低庫存警示必須是整數").min(0, "不可為負數"),
+  pack_size: z.number().int("每組數量必須是整數").min(1, "每組數量至少是 1"),
+  base_product_id: z.string().trim().uuid().nullable().optional(),
+  image_key: z.string().trim().max(300).nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  /** 只在新增時看。來源新增商品預設會一起建一筆進貨，庫存靠它的 trigger 加上去。 */
+  purchase: z
+    .object({
+      quantity: z.number().int("數量必須是整數").min(1, "數量至少是 1"),
+      cost_price: z.number().min(0, "成本不可為負數").finite().nullable(),
+      vendor: z.string().trim().max(200).nullable(),
+      purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD"),
+    })
+    .nullable()
+    .optional(),
+});
+
+export type InvProductFormValues = z.infer<typeof invProductSchema>;
+
+/**
+ * 審核的七個模組。
+ *
+ * ⚠️ 這是一份**代號**清單，不是表名清單。哪一個代號對到哪一張表、哪一個狀態
+ *    欄位，只寫在 0016 的 public.inv_approve_record() 裡面（寫死的 CASE 分支，
+ *    沒有動態 SQL）。這一層的責任只是「不在這七個裡面的字串連 server fn 都進不去」。
+ *
+ * 來源的 useApprovalMutation({ table, statusField }) 是讓呼叫端自己傳表名與欄位名。
+ * 在來源那個單體前端裡它只是難維護；搬到 client/server 之後那個 table 會**從
+ * 瀏覽器送進來**，等於把 `update <任意表> set <任意欄位>` 開給任何拿得到 cookie
+ * 的人。就算今天用參數化查詢擋得住，下一個人加一段字串拼接就破了 —— 所以修法
+ * 不是「小心一點」，是讓表名根本不會出現在網路上。
+ *
+ * price_changes 不是一張表（它是 inv.products 上的另一組欄位），
+ * stock_adjustments 的狀態欄位叫 status 而不是 approval_status，通過的值是
+ * 'confirmed' 而不是 'approved'。這兩件事本身就說明了「module = 表名」行不通。
+ */
+export const APPROVAL_MODULES = [
+  "products",
+  "purchases",
+  "stock_adjustments",
+  "inventory_adjustments",
+  "combo_sets",
+  "vendors",
+  "price_changes",
+] as const;
+
+export type ApprovalModule = (typeof APPROVAL_MODULES)[number];
+
+export const APPROVAL_MODULE_LABELS: Record<ApprovalModule, string> = {
+  products: "商品新增",
+  purchases: "進貨",
+  stock_adjustments: "盤點",
+  inventory_adjustments: "庫存異動",
+  combo_sets: "套餐組合",
+  vendors: "供應商",
+  price_changes: "商品價格變更",
+};
+
+export const approveRecordSchema = z.object({
+  module: z.enum(APPROVAL_MODULES),
+  id: z.string().trim().uuid("請指定一筆有效的資料"),
+  approved: z.boolean(),
+});
+
+export type ApproveRecordValues = z.infer<typeof approveRecordSchema>;
+
+/** 送出調價。成本可以留空（代表不動它），售價必填。 */
+export const priceChangeSchema = z.object({
+  id: z.string().trim().uuid(),
+  cost_price: z.number().min(0, "成本不可為負數").finite().nullable(),
+  selling_price: z.number().min(0, "售價不可為負數").finite("售價必須是數字"),
+});
+
+export type PriceChangeValues = z.infer<typeof priceChangeSchema>;
+
+/** 商品清單的篩選條件。全部下推到資料庫，不在前端 filter。 */
+export const productFilterSchema = z.object({
+  keyword: z.string().trim().max(100).nullable(),
+  categoryId: z.string().trim().uuid().nullable(),
+  productType: z.enum(INV_PRODUCT_TYPES).nullable(),
+  vendorId: z.string().trim().uuid().nullable(),
+  approvalStatus: z.enum(["all", "pending", "approved", "rejected"]),
+  activeStatus: z.enum(["all", "active", "inactive"]),
+  priceChange: z.enum(["all", "pending"]),
+  sort: z.enum([
+    "created_at",
+    "name_asc",
+    "name_desc",
+    "issue_asc",
+    "issue_desc",
+    "stock_asc",
+    "stock_desc",
+  ]),
+  page: z.number().int().min(0),
+  pageSize: z.number().int().min(1).max(200),
+});
+
+export type ProductFilterValues = z.infer<typeof productFilterSchema>;
+
+/**
+ * Excel 匯入的一列。
+ *
+ * xlsx 的解析留在瀏覽器（純檔案處理），但解析完的資料一律走這個 schema 進
+ * server fn。瀏覽器沒有任何一條路徑碰得到資料庫。
+ */
+export const importRowSchema = z.object({
+  name: z.string().trim().min(1, "商品名稱不可為空").max(200),
+  issue_number: z.string().trim().max(50).nullable(),
+  barcode: z.string().trim().max(64).nullable(),
+  series: z.string().trim().max(200).nullable(),
+  publisher: z.string().trim().max(200).nullable(),
+  notes: z.string().trim().max(2000).nullable(),
+  selling_price: z.number().min(0, "售價不可為負數").finite(),
+  cost_price: z.number().min(0, "成本不可為負數").finite().nullable(),
+  quantity: z.number().int().min(0),
+  /** 前端比對出來的既有商品。server 會再查一次它存不存在，不存在就當成新增。 */
+  existing_product_id: z.string().trim().uuid().nullable(),
+});
+
+export const importProductsSchema = z.object({
+  // 上限與 inv_import_products() 的 IMPORT_TOO_MANY 對齊。
+  rows: z.array(importRowSchema).min(1, "沒有要匯入的資料").max(2000, "一次最多 2000 列，請分批"),
+  options: z.object({
+    create_purchase_record: z.boolean(),
+    category_id: z.string().trim().uuid().nullable(),
+    product_type: z.enum(INV_PRODUCT_TYPES),
+    vendor: z.string().trim().max(200).nullable(),
+    purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD"),
+  }),
+});
+
+export type ImportProductsValues = z.infer<typeof importProductsSchema>;
+export type ImportRowValues = z.infer<typeof importRowSchema>;
+
+/** 批次調價的三種算法。與 inv.apply_price_op() 的三個 mode 逐字對齊。 */
+const priceOpSchema = z.object({
+  mode: z.enum(["set", "percent", "amount"]),
+  value: z.number().finite("請輸入數字"),
+});
+
+export const batchUpdateSchema = z.object({
+  ids: z.array(z.string().trim().uuid()).min(1, "沒有選取任何商品").max(500, "一次最多 500 件"),
+  patch: z
+    .object({
+      category_id: z.string().trim().nullable().optional(),
+      product_type: z.enum(INV_PRODUCT_TYPES).optional(),
+      vendor_id: z.string().trim().nullable().optional(),
+      selling_price: priceOpSchema.optional(),
+      cost_price: priceOpSchema.optional(),
+    })
+    .refine((p) => Object.keys(p).length > 0, "請至少選一個要更新的欄位"),
+});
+
+export type BatchUpdateValues = z.infer<typeof batchUpdateSchema>;

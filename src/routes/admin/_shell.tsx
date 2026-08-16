@@ -17,6 +17,7 @@ import {
   LogOut,
   Newspaper,
   Package,
+  PackageSearch,
   Phone,
   Receipt,
   ScanLine,
@@ -124,7 +125,13 @@ const NAV_GROUPS = [
   },
   {
     label: "進銷存",
-    items: [{ to: "/admin/inventory-listing", label: "上架", icon: Boxes, staff: false }],
+    items: [
+      // 商品主檔是店員每天用得最重的一塊，所以 staff: true。看得到不等於改得動：
+      // 審核那幾顆按鈕還要 approve_products / approve_price_changes，而那是
+      // lib/admin/fns/inv-products.ts 在 server 端擋的，不是這一行。
+      { to: "/admin/inventory-products", label: "商品管理", icon: PackageSearch, staff: true },
+      { to: "/admin/inventory-listing", label: "上架", icon: Boxes, staff: false },
+    ],
   },
   {
     label: "站台設定",
