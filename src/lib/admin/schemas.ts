@@ -638,3 +638,220 @@ export const batchUpdateSchema = z.object({
 });
 
 export type BatchUpdateValues = z.infer<typeof batchUpdateSchema>;
+
+// ---------------------------------------------------------------------------
+// 進貨、庫存盤點、在庫異動（0017）
+// ---------------------------------------------------------------------------
+
+/**
+ * 在庫異動的六類。與 0017 加的 stock_adjustments_category_check 逐字對齊。
+ *
+ * ⚠️ 「盤點」不是另一張表，是這裡的 ADJ。0009 搬進來的 inv.inventory_adjustments
+ *    是**已凍結的舊表**（30 筆，最後一筆 2026-03-02），新的寫入一筆都不進去。
+ *    理由寫在 0017 的檔頭。
+ */
+export const INV_ADJUSTMENT_CATEGORIES = ["EXP", "PR", "SMP", "INT", "ADJ", "CMB"] as const;
+export type InvAdjustmentCategory = (typeof INV_ADJUSTMENT_CATEGORIES)[number];
+
+/** 異動單的四個狀態。與 0017 加的 stock_adjustments_status_check 逐字對齊。 */
+export const INV_ADJUSTMENT_STATUSES = ["draft", "pending_approval", "confirmed", "rejected"] as const;
+export type InvAdjustmentStatus = (typeof INV_ADJUSTMENT_STATUSES)[number];
+
+/**
+ * 盤點差異的六個原因。與 0017 加的 stock_adjustments_reason_check 逐字對齊。
+ *
+ * 來源把這六個值**串成中文字串塞進 notes**（`盤點調整（盤點誤差）：…`），所以
+ * 一年之後沒有人能回答「因為破損少掉幾本」。0017 把它做成真的欄位。
+ */
+export const INV_ADJUSTMENT_REASONS = [
+  "loss",
+  "damage",
+  "count_error",
+  "return",
+  "sample",
+  "other",
+] as const;
+export type InvAdjustmentReason = (typeof INV_ADJUSTMENT_REASONS)[number];
+
+/**
+ * 一筆進貨。
+ *
+ * ⚠️ 沒有 approval_status、remaining_quantity、user_id：
+ *    · approval_status 由 inv.initial_approval_status('purchases') 在資料庫算
+ *    · remaining_quantity 是 FIFO 的消耗欄位，只有 trigger 碰得到
+ *    · user_id 取自 middleware 的 context
+ *
+ * ⚠️ 也沒有折扣／運費／稅金／總額。inv.purchases **沒有這些欄位** —— 小計就是
+ *    `quantity × unit_cost`，而且是算出來給人看的，不寫回資料庫。
+ */
+export const invPurchaseSchema = z.object({
+  id: z.string().trim().uuid().nullable().optional(),
+  /** 編輯時忽略：換商品等於整批貨搬家，FIFO 批次也要跟著搬。要換就刪掉重開。 */
+  product_id: z.string().trim().uuid("請選擇要進貨的商品"),
+  item_name: z.string().trim().max(200, "進貨品名最多 200 字").nullable(),
+  purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD"),
+  quantity: z
+    .number({ invalid_type_error: "數量必須是數字" })
+    .int("數量必須是整數")
+    .min(1, "數量至少是 1")
+    .max(1_000_000, "數量太大了，請確認"),
+  unit_cost: z
+    .number({ invalid_type_error: "成本必須是數字" })
+    .min(0, "成本不可為負數")
+    .finite("成本必須是數字")
+    .nullable(),
+  vendor_id: z.string().trim().uuid().nullable(),
+  vendor: z.string().trim().max(200, "供應商名稱最多 200 字").nullable(),
+  publisher: z.string().trim().max(200, "出版社最多 200 字").nullable(),
+  notes: z.string().trim().max(2000, "備註最多 2000 字").nullable(),
+  expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD").nullable(),
+  expiry_alert_days: z
+    .number({ invalid_type_error: "警示天數必須是數字" })
+    .int("警示天數必須是整數")
+    .min(1, "警示天數至少是 1")
+    .max(365, "警示天數最多 365")
+    .nullable(),
+});
+
+export type InvPurchaseValues = z.infer<typeof invPurchaseSchema>;
+
+export const purchaseFilterSchema = z.object({
+  keyword: z.string().trim().max(100).nullable(),
+  categoryId: z.string().trim().uuid().nullable(),
+  vendorId: z.string().trim().uuid().nullable(),
+  productType: z.enum(INV_PRODUCT_TYPES).nullable(),
+  approvalStatus: z.enum(["all", "pending", "approved", "rejected"]),
+  /** 效期狀態。與來源的 ?expiry= 五個值逐字一致（Dashboard 的到期提醒會帶進來）。 */
+  expiryStatus: z.enum(["all", "expiring", "expired", "warning", "no_expiry"]),
+  stockStatus: z.enum(["all", "in_stock", "used_up"]),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  sort: z.enum(["purchase_date_desc", "purchase_date_asc", "created_at", "quantity_desc", "remaining_asc"]),
+  page: z.number().int().min(0),
+  pageSize: z.number().int().min(1).max(200),
+});
+
+export type PurchaseFilterValues = z.infer<typeof purchaseFilterSchema>;
+
+/** 批次改供應商／效期。patch 的兩個 key 與 inv_batch_update_purchases 逐字對齊。 */
+export const purchaseBatchUpdateSchema = z.object({
+  ids: z.array(z.string().trim().uuid()).min(1, "沒有選取任何進貨").max(500, "一次最多 500 筆"),
+  patch: z
+    .object({
+      vendor: z
+        .object({
+          vendor_id: z.string().trim().uuid().nullable(),
+          vendor: z.string().trim().max(200).nullable(),
+        })
+        .optional(),
+      expiry: z
+        .object({
+          expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+          expiry_alert_days: z.number().int().min(1).max(365).nullable(),
+        })
+        .optional(),
+    })
+    .refine((p) => Object.keys(p).length > 0, "請至少選一組要更新的欄位"),
+});
+
+export type PurchaseBatchUpdateValues = z.infer<typeof purchaseBatchUpdateSchema>;
+
+const purchaseImportRowSchema = z.object({
+  product_id: z.string().trim().uuid().nullable(),
+  name: z.string().trim().min(1, "商品名稱不可空白").max(200),
+  issue_number: z.string().trim().max(50).nullable(),
+  series: z.string().trim().max(200).nullable(),
+  barcode: z.string().trim().max(100).nullable(),
+  quantity: z.number().int("數量必須是整數").min(1, "數量至少是 1"),
+  unit_cost: z.number().min(0, "成本不可為負數").finite().nullable(),
+  vendor_id: z.string().trim().uuid().nullable(),
+  vendor: z.string().trim().max(200).nullable(),
+  purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  notes: z.string().trim().max(2000).nullable(),
+  expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  expiry_alert_days: z.number().int().min(1).max(365).nullable(),
+  product_type: z.enum(INV_PRODUCT_TYPES).nullable(),
+  category_id: z.string().trim().uuid().nullable(),
+});
+
+export const importPurchasesSchema = z.object({
+  // 上限與 inv_import_purchases() 的 IMPORT_TOO_MANY 對齊。
+  rows: z.array(purchaseImportRowSchema).min(1, "沒有要匯入的資料").max(2000, "一次最多 2000 列，請分批"),
+  options: z.object({
+    default_vendor_id: z.string().trim().uuid().nullable(),
+    default_category_id: z.string().trim().uuid().nullable(),
+    default_purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    default_expiry_alert_days: z.number().int().min(1).max(365).nullable(),
+  }),
+});
+
+export type ImportPurchasesValues = z.infer<typeof importPurchasesSchema>;
+
+/**
+ * 一張在庫異動單。
+ *
+ * ⚠️ 沒有 status：那是 inv.stock_adjustment_initial_status() 在資料庫算的。來源
+ *    的兩支盤點對話框把它硬寫成 'confirmed'，等於審核開關對盤點完全無效 ——
+ *    這個 schema 少掉 status 這個欄位，就是那個 bug 在型別上被關起來。
+ * ⚠️ 也沒有 unit_cost / total_cost：出庫的成本由 FIFO trigger 算，進庫的用商品
+ *    成本。從瀏覽器送成本進來就等於讓人自己填毛利。
+ */
+export const invAdjustmentSchema = z.object({
+  product_id: z.string().trim().uuid("請選擇商品"),
+  adjustment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD"),
+  category: z.enum(INV_ADJUSTMENT_CATEGORIES, { errorMap: () => ({ message: "請選擇異動類別" }) }),
+  quantity: z
+    .number({ invalid_type_error: "數量必須是數字" })
+    .int("數量必須是整數")
+    .refine((v) => v !== 0, "異動數量不可為 0") // 鏡射 inv.stock_adjustments 的 non_zero_quantity
+    .refine((v) => Math.abs(v) <= 1_000_000, "數量太大了，請確認"),
+  reason: z.enum(INV_ADJUSTMENT_REASONS).nullable(),
+  notes: z.string().trim().max(2000, "備註最多 2000 字").nullable(),
+  /** false = 存成草稿。true = 送出（要不要進待審由資料庫決定）。 */
+  submit: z.boolean(),
+});
+
+export type InvAdjustmentValues = z.infer<typeof invAdjustmentSchema>;
+
+/**
+ * 盤點。
+ *
+ * ⚠️ 送的是**實盤數量**，不是差異。差異由 inv_record_stock_count() 用當下的
+ *    stock_quantity 算 —— 來源在瀏覽器算，店員開著畫面十分鐘、櫃檯中間賣掉三本，
+ *    送出的差異就會多扣三本。
+ */
+export const stockCountSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        product_id: z.string().trim().uuid(),
+        actual_quantity: z
+          .number({ invalid_type_error: "實際盤點數量必須是數字" })
+          .int("數量必須是整數")
+          .min(0, "實際盤點數量不可為負數"),
+      }),
+    )
+    .min(1, "沒有要盤點的商品")
+    .max(500, "一次最多盤 500 件，請分批"),
+  options: z.object({
+    reason: z.enum(INV_ADJUSTMENT_REASONS, { errorMap: () => ({ message: "請選擇調整原因" }) }),
+    notes: z.string().trim().max(2000).nullable(),
+    adjustment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }),
+});
+
+export type StockCountValues = z.infer<typeof stockCountSchema>;
+
+export const adjustmentFilterSchema = z.object({
+  keyword: z.string().trim().max(100).nullable(),
+  category: z.enum(INV_ADJUSTMENT_CATEGORIES).nullable(),
+  status: z.enum(["all", ...INV_ADJUSTMENT_STATUSES]),
+  productId: z.string().trim().uuid().nullable(),
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  sort: z.enum(["date_desc", "date_asc", "created_at", "quantity_desc"]),
+  page: z.number().int().min(0),
+  pageSize: z.number().int().min(1).max(200),
+});
+
+export type AdjustmentFilterValues = z.infer<typeof adjustmentFilterSchema>;

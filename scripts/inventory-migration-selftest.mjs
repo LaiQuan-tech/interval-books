@@ -415,7 +415,7 @@ if (!TOKEN) {
       (select count(*)::int from pg_trigger t
         join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
         where n.nspname = 'inv' and not t.tgisinternal and t.tgenabled = 'D') disabled_triggers,
-      (select count(*)::int from pg_trigger t
+      (select string_agg(t.tgname, ',' order by t.tgname) from pg_trigger t
         where t.tgrelid = 'inv.inventory_adjustments'::regclass and not t.tgisinternal) adj_triggers,
       (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'inv' and p.proname = 'handle_new_user') inv_hnu,
@@ -426,7 +426,16 @@ if (!TOKEN) {
   check("anon/authenticated 對 inv 表的權限筆數", dbsec.anon_grants, 0);
   check("anon/authenticated 對 inv schema 的 USAGE", dbsec.anon_usage, 0);
   check("匯入後仍被停用的 trigger", dbsec.disabled_triggers, 0);
-  check("inventory_adjustments 上的 trigger 數", dbsec.adj_triggers, 1);
+  // 比對**名字**而不是數量。原本這裡是 `=== 1`，守的是「來源那兩個綁同一個函式的
+  // trigger 只剩一個」（兩個都在，INSERT 會扣加庫存兩次）。0017 之後這張表多了一個
+  // freeze_inventory_adjustments —— 它是 BEFORE INSERT 的凍結守衛，與庫存無關。
+  // 改成逐字對名單，既保住原本的意思，也擋得住「有人再加一個會動庫存的 trigger」
+  // 這種數量對得上但語意錯掉的情況。
+  check(
+    "inventory_adjustments 上的 trigger 就是這兩個",
+    dbsec.adj_triggers,
+    "freeze_inventory_adjustments,update_stock_on_adjustment",
+  );
   check("inv.handle_new_user 不存在", dbsec.inv_hnu, 0);
   check("auth.users 的 trigger 仍指向目標自己的函式", dbsec.auth_trigger_fn, "handle_new_user");
 

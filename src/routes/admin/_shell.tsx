@@ -10,6 +10,7 @@ import {
   BookOpen,
   Boxes,
   CalendarDays,
+  ClipboardList,
   FileText,
   Handshake,
   ImageIcon,
@@ -21,6 +22,8 @@ import {
   Phone,
   Receipt,
   ScanLine,
+  SlidersHorizontal,
+  TruckIcon,
   Settings,
   ShoppingBag,
   Tags,
@@ -130,6 +133,12 @@ const NAV_GROUPS = [
       // 審核那幾顆按鈕還要 approve_products / approve_price_changes，而那是
       // lib/admin/fns/inv-products.ts 在 server 端擋的，不是這一行。
       { to: "/admin/inventory-products", label: "商品管理", icon: PackageSearch, staff: true },
+      // 進貨、盤點、在庫異動同樣是店員每天的工作，所以 staff: true。看得到不等於
+      // 改得動：審核那幾顆按鈕還要 approve_purchases / approve_stock_adjustments，
+      // 而那是 lib/admin/fns/inv-purchases.ts 與 inv-adjustments.ts 在 server 端擋的。
+      { to: "/admin/inventory-purchases", label: "進貨", icon: TruckIcon, staff: true },
+      { to: "/admin/inventory-count", label: "庫存盤點", icon: ClipboardList, staff: true },
+      { to: "/admin/inventory-adjustments", label: "在庫異動", icon: SlidersHorizontal, staff: true },
       { to: "/admin/inventory-listing", label: "上架", icon: Boxes, staff: false },
     ],
   },
