@@ -127,6 +127,111 @@ function publicUrlForObject(objectName: string): string {
   return `${supabaseUrl()}/storage/v1/object/public/${SITE_IMAGES_BUCKET}/${objectName}`;
 }
 
+// ---------------------------------------------------------------------------
+// OCR 掃描圖 —— 私有 bucket
+// ---------------------------------------------------------------------------
+/**
+ * 0018 建的 `ocr-scans`。與 site-images 的差別只有一個字，但那個字是重點：
+ * `public = false`。
+ *
+ * 進貨單上有廠商名稱、單價與聯絡方式；0009 §0 為了 inv.vendors 的身分證字號把
+ * 整個 inv schema 移出 PostgREST，把同一批資訊拍成照片丟進公開 bucket 等於從
+ * 後門送出去。所以這裡沒有 publicUrlForObject 的對應物 —— 要看圖只能拿一張有
+ * 期限的 signed URL。
+ */
+export const OCR_SCANS_BUCKET = "ocr-scans";
+
+/** 鏡射 0018 建 bucket 時設的 file_size_limit。進貨單比書封密，所以比 site-images 寬。 */
+const MAX_OCR_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+/** signed URL 的有效期。夠一個店員看完一張單子，不夠拿去外面散佈。 */
+const OCR_SIGNED_URL_SECONDS = 60 * 30;
+
+/** OCR 掃描圖的 key 前綴。與 image_key 的 `storage:` 刻意不同 —— 那個是公開圖，這個不是，混用會把私有圖餵給 <img src>。 */
+const OCR_KEY_PREFIX = "ocr:";
+
+/**
+ * 上傳一張要送去辨識的圖，回一個 storage key。
+ *
+ * ⚠️ **server fn 不收 base64。** 前端壓縮完直接上傳到這裡拿 key，辨識那一支只
+ *    收 key。理由兩條：Vercel 的 request body 大約 4.5MB 就滿了，而 base64 會把
+ *    圖脹大 33%；還有辨識結果可疑時要調得出原圖來對照（「AI 說單價 50，單子上
+ *    到底寫什麼」）。
+ */
+export async function uploadOcrScan(file: File): Promise<{ key: string }> {
+  if (file.size <= 0) {
+    throw new ImageUploadError("檔案是空的");
+  }
+  if (file.size > MAX_OCR_UPLOAD_BYTES) {
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    throw new ImageUploadError(`檔案大小 ${mb}MB 超過上限 4MB`);
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // 與 site-images 同一條規矩：file.type 是呼叫端說了算的，只看 magic bytes。
+  const sniffed = sniffImageFormat(bytes);
+  if (!sniffed) {
+    throw new ImageUploadError("無法辨識的圖片格式，僅接受 JPEG、PNG 或 WebP");
+  }
+
+  // 依日期分資料夾，之後要清舊圖時好下手（bucket 是私有的，列表只有 service_role 看得到）。
+  const day = new Date().toISOString().slice(0, 10);
+  const objectName = `${day}/${crypto.randomUUID()}.${sniffed.extension}`;
+
+  const { error } = await supabaseAdmin().storage.from(OCR_SCANS_BUCKET).upload(objectName, bytes, {
+    contentType: sniffed.contentType,
+    cacheControl: "3600",
+    upsert: false,
+  });
+
+  if (error) {
+    throw new Error(`掃描圖上傳失敗：${error.message}`);
+  }
+
+  return { key: `${OCR_KEY_PREFIX}${objectName}` };
+}
+
+/** `ocr:2026-08-16/uuid.webp` → `2026-08-16/uuid.webp`。不是 OCR key 就回 null。 */
+export function ocrObjectName(key: string): string | null {
+  if (!key.startsWith(OCR_KEY_PREFIX)) return null;
+  const name = key.slice(OCR_KEY_PREFIX.length);
+  // 路徑穿越防線。物件名是這個模組自己產的，但這支是給「呼叫端送 key 進來」用的，
+  // 所以還是自己驗一次形狀，而不是相信上游。
+  if (!/^\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(webp|jpg|png)$/.test(name)) return null;
+  return name;
+}
+
+/** 把私有 bucket 裡的圖讀成 bytes，餵給辨識用。 */
+export async function readOcrScan(
+  key: string,
+): Promise<{ bytes: Uint8Array; contentType: string }> {
+  const objectName = ocrObjectName(key);
+  if (!objectName) throw new ImageUploadError("掃描圖代碼不正確");
+
+  const { data, error } = await supabaseAdmin().storage.from(OCR_SCANS_BUCKET).download(objectName);
+  if (error || !data) {
+    throw new Error(`讀取掃描圖失敗：${error?.message ?? "找不到這張圖"}`);
+  }
+
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  const sniffed = sniffImageFormat(bytes);
+  if (!sniffed) throw new Error("掃描圖格式無法辨識");
+  return { bytes, contentType: sniffed.contentType };
+}
+
+/** 給店員回看原圖用的短期網址。bucket 是私有的，所以沒有永久網址這種東西。 */
+export async function signedOcrScanUrl(key: string): Promise<string | null> {
+  const objectName = ocrObjectName(key);
+  if (!objectName) return null;
+
+  const { data, error } = await supabaseAdmin()
+    .storage.from(OCR_SCANS_BUCKET)
+    .createSignedUrl(objectName, OCR_SIGNED_URL_SECONDS);
+
+  if (error || !data) return null;
+  return data.signedUrl;
+}
+
 /**
  * Deletes a previously uploaded image. A no-op for keys that are not
  * storage-managed (bundled asset keys, empty/null) so callers can pass

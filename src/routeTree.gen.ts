@@ -45,6 +45,7 @@ import { Route as AdminShellInventoryPurchasesRouteImport } from './routes/admin
 import { Route as AdminShellInventoryProductsRouteImport } from './routes/admin/_shell.inventory-products'
 import { Route as AdminShellInventoryListingRouteImport } from './routes/admin/_shell.inventory-listing'
 import { Route as AdminShellInventoryCountRouteImport } from './routes/admin/_shell.inventory-count'
+import { Route as AdminShellInventoryCombosRouteImport } from './routes/admin/_shell.inventory-combos'
 import { Route as AdminShellInventoryAdjustmentsRouteImport } from './routes/admin/_shell.inventory-adjustments'
 import { Route as AdminShellExhibitionsRouteImport } from './routes/admin/_shell.exhibitions'
 import { Route as AdminShellEventsRouteImport } from './routes/admin/_shell.events'
@@ -237,6 +238,12 @@ const AdminShellInventoryCountRoute =
     path: '/inventory-count',
     getParentRoute: () => AdminShellRoute,
   } as any)
+const AdminShellInventoryCombosRoute =
+  AdminShellInventoryCombosRouteImport.update({
+    id: '/inventory-combos',
+    path: '/inventory-combos',
+    getParentRoute: () => AdminShellRoute,
+  } as any)
 const AdminShellInventoryAdjustmentsRoute =
   AdminShellInventoryAdjustmentsRouteImport.update({
     id: '/inventory-adjustments',
@@ -302,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/admin/events': typeof AdminShellEventsRoute
   '/admin/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
+  '/admin/inventory-combos': typeof AdminShellInventoryCombosRoute
   '/admin/inventory-count': typeof AdminShellInventoryCountRoute
   '/admin/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/inventory-products': typeof AdminShellInventoryProductsRoute
@@ -346,6 +354,7 @@ export interface FileRoutesByTo {
   '/admin/events': typeof AdminShellEventsRoute
   '/admin/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
+  '/admin/inventory-combos': typeof AdminShellInventoryCombosRoute
   '/admin/inventory-count': typeof AdminShellInventoryCountRoute
   '/admin/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/inventory-products': typeof AdminShellInventoryProductsRoute
@@ -392,6 +401,7 @@ export interface FileRoutesById {
   '/admin/_shell/events': typeof AdminShellEventsRoute
   '/admin/_shell/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/_shell/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
+  '/admin/_shell/inventory-combos': typeof AdminShellInventoryCombosRoute
   '/admin/_shell/inventory-count': typeof AdminShellInventoryCountRoute
   '/admin/_shell/inventory-listing': typeof AdminShellInventoryListingRoute
   '/admin/_shell/inventory-products': typeof AdminShellInventoryProductsRoute
@@ -439,6 +449,7 @@ export interface FileRouteTypes {
     | '/admin/events'
     | '/admin/exhibitions'
     | '/admin/inventory-adjustments'
+    | '/admin/inventory-combos'
     | '/admin/inventory-count'
     | '/admin/inventory-listing'
     | '/admin/inventory-products'
@@ -483,6 +494,7 @@ export interface FileRouteTypes {
     | '/admin/events'
     | '/admin/exhibitions'
     | '/admin/inventory-adjustments'
+    | '/admin/inventory-combos'
     | '/admin/inventory-count'
     | '/admin/inventory-listing'
     | '/admin/inventory-products'
@@ -528,6 +540,7 @@ export interface FileRouteTypes {
     | '/admin/_shell/events'
     | '/admin/_shell/exhibitions'
     | '/admin/_shell/inventory-adjustments'
+    | '/admin/_shell/inventory-combos'
     | '/admin/_shell/inventory-count'
     | '/admin/_shell/inventory-listing'
     | '/admin/_shell/inventory-products'
@@ -824,6 +837,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellInventoryCountRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/inventory-combos': {
+      id: '/admin/_shell/inventory-combos'
+      path: '/inventory-combos'
+      fullPath: '/admin/inventory-combos'
+      preLoaderRoute: typeof AdminShellInventoryCombosRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/inventory-adjustments': {
       id: '/admin/_shell/inventory-adjustments'
       path: '/inventory-adjustments'
@@ -895,6 +915,7 @@ interface AdminShellRouteChildren {
   AdminShellEventsRoute: typeof AdminShellEventsRoute
   AdminShellExhibitionsRoute: typeof AdminShellExhibitionsRoute
   AdminShellInventoryAdjustmentsRoute: typeof AdminShellInventoryAdjustmentsRoute
+  AdminShellInventoryCombosRoute: typeof AdminShellInventoryCombosRoute
   AdminShellInventoryCountRoute: typeof AdminShellInventoryCountRoute
   AdminShellInventoryListingRoute: typeof AdminShellInventoryListingRoute
   AdminShellInventoryProductsRoute: typeof AdminShellInventoryProductsRoute
@@ -920,6 +941,7 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellEventsRoute: AdminShellEventsRoute,
   AdminShellExhibitionsRoute: AdminShellExhibitionsRoute,
   AdminShellInventoryAdjustmentsRoute: AdminShellInventoryAdjustmentsRoute,
+  AdminShellInventoryCombosRoute: AdminShellInventoryCombosRoute,
   AdminShellInventoryCountRoute: AdminShellInventoryCountRoute,
   AdminShellInventoryListingRoute: AdminShellInventoryListingRoute,
   AdminShellInventoryProductsRoute: AdminShellInventoryProductsRoute,

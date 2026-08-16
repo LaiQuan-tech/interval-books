@@ -39,3 +39,32 @@ export function supabaseServiceRoleKey(): string {
 export function adminSessionSecret(): string {
   return required("ADMIN_SESSION_SECRET");
 }
+
+/**
+ * Google Gemini API key, for the OCR (拍照辨識) server functions.
+ *
+ * 來源進銷存打的是 Lovable AI Gateway（`ai.gateway.lovable.dev`，OpenAI 相容的
+ * /v1/chat/completions），金鑰是那個平台發的。離開平台就失效，所以 4a/4b 把 OCR
+ * 入口整個拿掉、留到這一期改接 Gemini 原生 API。
+ *
+ * ⚠️ 沒有 VITE_ 前綴，理由見本檔開頭：那會被 define 進**瀏覽器** bundle。
+ */
+export function geminiApiKey(): string {
+  return required("GEMINI_API_KEY");
+}
+
+/**
+ * OCR 用的模型。
+ *
+ * ⚠️ 原訂是沿用來源的 `gemini-2.5-flash` 以便比較辨識品質，**但那個模型已經不能
+ *    用了**：Google 對新金鑰關閉了它，實測回 404 —— "This model
+ *    models/gemini-2.5-flash is no longer available to new users."（models 清單
+ *    裡還列著它，但 generateContent 會 404，所以不能靠列表判斷可用性）。
+ *
+ * 所以預設值是 `gemini-3.5-flash`（同一條 flash 產線的現役版本，實測可用）。
+ * 寫成環境變數而不是常數，是因為哪天拿到 2.5 的存取權，改一個 Vercel 環境變數
+ * 就能切回去比對，不必動程式。
+ */
+export function geminiOcrModel(): string {
+  return process.env.GEMINI_OCR_MODEL || "gemini-3.5-flash";
+}

@@ -7,205 +7,78 @@
  * inv.sales(channel='pos')，扣的是同一個 inv.products.stock_quantity。
  *
  * 兩條路徑的交會點在 inv.update_stock_on_sale() 那個 trigger 上，不在這個檔案裡。
- * 這一頁只負責把店員的意圖翻成一次 pos_checkout() 呼叫。
+ * 這一頁只負責把店員的意圖翻成一次結帳函式呼叫。
  *
- * ── 為什麼拆成四個元件而不是一個巨檔 ──────────────────────────────────────
- * 來源的 QuickSaleScanner.tsx 是 2,135 行、一個檔案裡有 30 個 useState。搬進
- * TanStack Router 之後沒有人維護得動，而且那個檔案的四塊職責（掃碼、清單、結帳、
- * 搜尋）彼此其實只透過「購物車」這一個狀態溝通。所以購物車留在這裡，四塊各自
- * 出去 —— components/pos/ 底下每一個檔案都在 250 行以內。
+ * ── 三條結帳路徑 ──────────────────────────────────────────────────────────
+ * · **單品**（SingleSaleTab）→ pos_checkout()。掃碼／搜尋 → 購物車 → 結帳。
+ * · **套餐**（ComboCheckoutTab）→ inv_combo_checkout()。組合價由資料庫分攤到每個
+ *   組成品項，結帳後把分攤結果攤開給人看 —— 那是寄賣廠商的拆帳基礎，看不到就等於
+ *   沒有人驗證過。見 0018 檔頭問題一。
+ * · **二手書**（SecondhandDialog）→ inv_secondhand_checkout()。不進商品主檔、沒有
+ *   庫存也沒有成本，所以它是一個對話框而不是一條購物車。見 0018 檔頭問題三。
  *
- * ── 沒有搬過來的東西（Phase 4 交接）──────────────────────────────────────
+ * ── 為什麼拆這麼多元件 ────────────────────────────────────────────────────
+ * 來源的 QuickSaleScanner.tsx 是 2,135 行、一個檔案裡有 30 個 useState。三條結帳
+ * 路徑各有一整包狀態，擠回同一個 function 就是回到那裡。這一頁只留「共用的東西」：
+ * loader 的資料、預設付款方式、分頁切換。components/pos/ 底下每一個檔案都在 250
+ * 行以內。
+ *
+ * ── 還是沒有搬過來的東西 ──────────────────────────────────────────────────
  * · AI 拍照辨識（來源 QuickSaleScanner 的 recognize-book edge function）——
  *   這個專案沒有那支 edge function，硬搬會是一顆永遠 500 的按鈕。
- * · 套餐（combo_sets）與二手書入帳 —— inv.sales 的欄位都在（combo_set_id /
- *   combo_sale_group / is_secondhand），pos_checkout() 也留得下擴充空間，
- *   但它們各自有一套定價規則，這一期先把單品這條路走通。
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { CheckCircle2, ScanLine, TriangleAlert } from "lucide-react";
-import { toast } from "sonner";
+import { BookMarked, ScanLine } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { CartPanel, type CartLine } from "@/components/pos/CartPanel";
-import { CheckoutPanel } from "@/components/pos/CheckoutPanel";
-import { ProductLookup } from "@/components/pos/ProductLookup";
-import { ScannerInput } from "@/components/pos/ScannerInput";
-import type { PosProduct } from "@/server/repos/inv-sales";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ComboCheckoutTab } from "@/components/pos/ComboCheckoutTab";
+import { SecondhandDialog } from "@/components/pos/SecondhandDialog";
+import { SingleSaleTab } from "@/components/pos/SingleSaleTab";
 
 export const Route = createFileRoute("/admin/_shell/pos")({
   loader: async () => {
     const { listPosProducts, listPosPaymentMethods } = await import("@/lib/admin/fns/pos");
-    // 兩支都是 staffFnMiddleware 守的。店員進得來、customer 進不來，而且擋人的
+    const { listAdminComboSets } = await import("@/lib/admin/fns/inv-combos");
+    // 三支都是 staffFnMiddleware 守的。店員進得來、customer 進不來，而且擋人的
     // 是 middleware 重讀 profiles 那一下，不是側欄。
-    const [products, paymentMethods] = await Promise.all([
+    const [products, paymentMethods, combos] = await Promise.all([
       listPosProducts(),
       listPosPaymentMethods(),
+      // 櫃檯只要賣得動的套餐。同樣的條件 inv_combo_checkout() 在資料庫端還會擋
+      // 一次 —— 這裡篩是為了不要畫一顆按下去必定跳錯誤的按鈕。
+      listAdminComboSets({
+        data: {
+          keyword: null,
+          activeStatus: "active",
+          approvalStatus: "approved",
+          sort: "name_asc",
+        },
+      }),
     ]);
-    return { products, paymentMethods };
+    return {
+      products,
+      paymentMethods,
+      comboSets: combos.sets,
+      comboItems: combos.items,
+    };
   },
   head: () => ({ meta: [{ title: "櫃檯結帳｜小時光書店後台" }] }),
   component: PosPage,
 });
 
-function todayInTaipei() {
-  // 門市的「今天」是台北的今天，不是伺服器的今天。sale_date 是 date 不是
-  // timestamptz，所以這裡不能用 toISOString()（那是 UTC，晚上 8 點後會差一天）。
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
-}
-
 function PosPage() {
-  const { products, paymentMethods } = Route.useLoaderData();
+  const { products, paymentMethods, comboSets, comboItems } = Route.useLoaderData();
   const router = useRouter();
 
-  const [lines, setLines] = useState<CartLine[]>([]);
-  const [paymentMethodId, setPaymentMethodId] = useState<string | null>(
+  const [secondhandOpen, setSecondhandOpen] = useState(false);
+
+  /** 三條路徑共用同一個預設付款方式。 */
+  const defaultPaymentMethodId =
     paymentMethods.find((m) => m.is_default)?.payment_method_id ??
-      paymentMethods[0]?.payment_method_id ??
-      null,
-  );
-  const [notes, setNotes] = useState("");
-  const [override, setOverride] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [notFound, setNotFound] = useState<string | null>(null);
-  const [lastReceipt, setLastReceipt] = useState<{
-    amount: number;
-    count: number;
-    oversold: { product_name: string; shortfall: number }[];
-  } | null>(null);
-
-  /** 條碼 → 商品。993 筆建一次 Map，掃碼就是 O(1)，不用每次掃描都線性找。 */
-  const byBarcode = useMemo(() => {
-    const map = new Map<string, PosProduct>();
-    for (const p of products) if (p.barcode) map.set(p.barcode.trim(), p);
-    return map;
-  }, [products]);
-
-  const inCart = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const l of lines) counts[l.product.inv_product_id] = l.quantity;
-    return counts;
-  }, [lines]);
-
-  const addProduct = useCallback((product: PosProduct) => {
-    setNotFound(null);
-    setLines((current) => {
-      const existing = current.find((l) => l.product.inv_product_id === product.inv_product_id);
-      if (existing) {
-        return current.map((l) =>
-          l.product.inv_product_id === product.inv_product_id
-            ? { ...l, quantity: l.quantity + 1 }
-            : l,
-        );
-      }
-      return [
-        ...current,
-        { product, quantity: 1, unitPrice: Number(product.selling_price ?? 0) },
-      ];
-    });
-  }, []);
-
-  // 掃碼查詢中的 in-flight guard：掃描槍會連發，不要讓同一個條碼打出兩次請求。
-  const lookupRef = useRef(false);
-
-  const handleBarcode = useCallback(
-    async (barcode: string) => {
-      const code = barcode.trim();
-      const hit = byBarcode.get(code);
-      if (hit) {
-        addProduct(hit);
-        return;
-      }
-
-      // 快取裡沒有 → 可能是剛在進銷存那邊建的新品項。去伺服器問一次，不要叫
-      // 店員重整頁面。
-      if (lookupRef.current) return;
-      lookupRef.current = true;
-      try {
-        const { findPosProductByBarcode } = await import("@/lib/admin/fns/pos");
-        const found = await findPosProductByBarcode({ data: { barcode: code } });
-        if (found) {
-          addProduct(found as PosProduct);
-        } else {
-          setNotFound(`條碼「${code}」找不到對應商品。請用下面的搜尋框找，或先去進銷存建立品項。`);
-        }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "條碼查詢失敗");
-      } finally {
-        lookupRef.current = false;
-      }
-    },
-    [addProduct, byBarcode],
-  );
-
-  function changeQuantity(id: string, quantity: number) {
-    if (quantity < 1) return;
-    setLines((current) =>
-      current.map((l) => (l.product.inv_product_id === id ? { ...l, quantity } : l)),
-    );
-  }
-
-  function changePrice(id: string, unitPrice: number) {
-    if (unitPrice < 0 || !Number.isFinite(unitPrice)) return;
-    setLines((current) =>
-      current.map((l) => (l.product.inv_product_id === id ? { ...l, unitPrice } : l)),
-    );
-  }
-
-  function removeLine(id: string) {
-    setLines((current) => current.filter((l) => l.product.inv_product_id !== id));
-  }
-
-  function clearCart() {
-    setLines([]);
-    setOverride(false);
-    setNotes("");
-    setNotFound(null);
-  }
-
-  async function handleCheckout() {
-    setSubmitting(true);
-    try {
-      const { posCheckout } = await import("@/lib/admin/fns/pos");
-      const result = await posCheckout({
-        data: {
-          items: lines.map((l) => ({
-            inv_product_id: l.product.inv_product_id,
-            quantity: l.quantity,
-            unit_price: l.unitPrice,
-          })),
-          payment_method_id: paymentMethodId,
-          sale_date: todayInTaipei(),
-          notes: notes.trim() || null,
-          override_reservation: override,
-        },
-      });
-
-      setLastReceipt({
-        amount: Number(result.total_amount),
-        count: lines.reduce((n, l) => n + l.quantity, 0),
-        oversold: result.oversold ?? [],
-      });
-
-      if ((result.oversold ?? []).length > 0) {
-        toast.warning("已結帳，但這一筆賣超了 —— 已記進賣超告警");
-      } else {
-        toast.success("已結帳");
-      }
-
-      clearCart();
-      // 這個 repo 沒有 react-query。重新載入 loader 就是「重新抓一次庫存」，
-      // 所以下一位客人看到的可售量是剛剛扣完的數字。
-      await router.invalidate();
-    } catch (err) {
-      // 庫存不足的訊息是 pos_checkout() 寫給店員看的整句中文，原樣顯示。
-      toast.error(err instanceof Error ? err.message : "結帳失敗，請再試一次");
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    paymentMethods[0]?.payment_method_id ??
+    null;
 
   return (
     <div className="space-y-5">
@@ -217,76 +90,52 @@ function PosPage() {
         <Badge variant="secondary" className="font-normal">
           門市銷售會寫進 inv.sales（channel=pos），與網站扣同一份庫存
         </Badge>
+        <Button
+          type="button"
+          variant="outline"
+          className="ml-auto gap-1.5"
+          onClick={() => setSecondhandOpen(true)}
+        >
+          <BookMarked className="h-4 w-4" aria-hidden="true" />
+          二手書入帳
+        </Button>
       </div>
 
-      {lastReceipt ? (
-        <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
-          <p className="flex items-center gap-1.5 font-medium">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-            上一筆：{lastReceipt.count} 件，NT$ {lastReceipt.amount.toLocaleString("zh-TW")}
-          </p>
-          {lastReceipt.oversold.length > 0 ? (
-            <p className="mt-1.5 flex items-start gap-1.5 text-xs text-destructive">
-              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                強制放行：
-                {lastReceipt.oversold
-                  .map((o) => `「${o.product_name}」差 ${o.shortfall} 件`)
-                  .join("、")}
-                。已記進「賣超告警」，請找時間盤點。
-              </span>
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+      <Tabs defaultValue="single">
+        <TabsList>
+          <TabsTrigger value="single">單品結帳</TabsTrigger>
+          <TabsTrigger value="combo">套餐結帳</TabsTrigger>
+        </TabsList>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_22rem]">
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">加入商品</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ScannerInput onBarcode={handleBarcode} notFound={notFound} disabled={submitting} />
-              <Separator />
-              <ProductLookup products={products} onPick={addProduct} inCart={inCart} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">
-                銷售清單{lines.length > 0 ? `（${lines.length} 項）` : ""}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CartPanel
-                lines={lines}
-                onQuantityChange={changeQuantity}
-                onPriceChange={changePrice}
-                onRemove={removeLine}
-                disabled={submitting}
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          <CheckoutPanel
-            lines={lines}
+        {/* 兩個 TabsContent 各自持有自己的狀態。切分頁時 Radix 會把沒選中的那個
+            卸載 —— 購物車裡有東西時切過去再切回來會清空，這是刻意的：兩條路徑
+            共用一車只會做出「結完帳發現多賣了一本套餐」那種帳。 */}
+        <TabsContent value="single" className="mt-4">
+          <SingleSaleTab
+            products={products}
             paymentMethods={paymentMethods}
-            paymentMethodId={paymentMethodId}
-            onPaymentMethodChange={setPaymentMethodId}
-            notes={notes}
-            onNotesChange={setNotes}
-            override={override}
-            onOverrideChange={setOverride}
-            onSubmit={handleCheckout}
-            submitting={submitting}
-            onClear={clearCart}
+            defaultPaymentMethodId={defaultPaymentMethodId}
           />
-        </div>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="combo" className="mt-4">
+          <ComboCheckoutTab
+            comboSets={comboSets}
+            comboItems={comboItems}
+            paymentMethods={paymentMethods}
+            defaultPaymentMethodId={defaultPaymentMethodId}
+          />
+        </TabsContent>
+      </Tabs>
+
+      <SecondhandDialog
+        open={secondhandOpen}
+        onOpenChange={setSecondhandOpen}
+        paymentMethods={paymentMethods}
+        defaultPaymentMethodId={defaultPaymentMethodId}
+        // 二手書動不到庫存，但銷售紀錄與當日統計要跟上，所以還是重跑一次 loader。
+        onSaved={() => router.invalidate()}
+      />
     </div>
   );
 }

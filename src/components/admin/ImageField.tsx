@@ -6,14 +6,13 @@
  * server — not an optimization, a requirement: Vercel serverless functions
  * cap the request body around 4.5MB, and an un-resized photo straight off a
  * phone (src/assets/bookstore-interior.jpg alone ships at 2.6MB) can blow
- * past that on its own. The pipeline:
+ * past that on its own.
  *
- *   createImageBitmap(file, { imageOrientation: "from-image" })  // EXIF-rotate
- *     -> canvas, long edge capped at 2000px
- *     -> canvas.toBlob("image/webp", 0.82)
- *
- * Redrawing onto a canvas also strips all metadata (EXIF, GPS, ...) as a side
- * effect — nothing more needs to be done to scrub it.
+ * ⚠️ The pipeline itself now lives in src/lib/admin/image-compress.ts — 4c's
+ *    拍照辨識 needs the exact same thing for the exact same reason, and two
+ *    copies of a size-limit workaround drift the moment one caller changes a
+ *    constant. This component keeps its own 2000px/0.82 numbers by importing
+ *    the IMAGE_* constants.
  *
  * The server (src/server/storage.ts, via src/lib/admin/fns/upload.ts) does its
  * own independent validation — this component's checks are only a fast local
@@ -27,9 +26,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { imageFor, IMAGE_BY_KEY } from "@/lib/images";
 import { uploadImage } from "@/lib/admin/fns/upload";
+import {
+  compressImage,
+  extensionFor,
+  IMAGE_MAX_EDGE_PX,
+  IMAGE_WEBP_QUALITY,
+} from "@/lib/admin/image-compress";
 
-const MAX_EDGE_PX = 2000;
-const WEBP_QUALITY = 0.82;
+const MAX_EDGE_PX = IMAGE_MAX_EDGE_PX;
 
 export type ImageFieldProps = {
   /** Current image_key: a bundled filename key, a "storage:..." key, or null/empty for "unset". */
@@ -45,38 +49,17 @@ export type ImageFieldProps = {
 
 /** Downscales + re-encodes a picked file in-browser. Never touches the network. */
 async function compressForUpload(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-  try {
-    const scale = Math.min(1, MAX_EDGE_PX / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("此瀏覽器不支援圖片處理");
-    ctx.drawImage(bitmap, 0, 0, width, height);
-
-    const webp = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/webp", WEBP_QUALITY),
-    );
-    if (webp) return webp;
-
-    // Rare: a browser that can encode canvases but not to webp. jpeg is the
-    // universally-supported fallback; the server accepts it too.
-    const jpeg = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", WEBP_QUALITY),
-    );
-    if (jpeg) return jpeg;
-
-    throw new Error("圖片壓縮失敗，請換一張圖片再試");
-  } finally {
-    bitmap.close();
-  }
+  return compressImage(file, { maxEdge: IMAGE_MAX_EDGE_PX, quality: IMAGE_WEBP_QUALITY });
 }
 
-export function ImageField({ value, onChange, fallback, label, disabled, className }: ImageFieldProps) {
+export function ImageField({
+  value,
+  onChange,
+  fallback,
+  label,
+  disabled,
+  className,
+}: ImageFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +99,7 @@ export function ImageField({ value, onChange, fallback, label, disabled, classNa
       const compressed = await compressForUpload(file);
       replaceLocalPreview(URL.createObjectURL(compressed));
 
-      const ext = compressed.type === "image/jpeg" ? "jpg" : "webp";
+      const ext = extensionFor(compressed);
       const formData = new FormData();
       formData.append("file", compressed, `upload.${ext}`);
 
@@ -194,7 +177,13 @@ export function ImageField({ value, onChange, fallback, label, disabled, classNa
               從圖庫選擇
             </Button>
             {value ? (
-              <Button type="button" variant="ghost" size="sm" disabled={controlsDisabled} onClick={clearImage}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={controlsDisabled}
+                onClick={clearImage}
+              >
                 <X className="size-4" />
                 清除
               </Button>

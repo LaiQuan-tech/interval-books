@@ -18,6 +18,7 @@ import {
   LogOut,
   Newspaper,
   Package,
+  Package2,
   PackageSearch,
   Phone,
   Receipt,
@@ -138,7 +139,15 @@ const NAV_GROUPS = [
       // 而那是 lib/admin/fns/inv-purchases.ts 與 inv-adjustments.ts 在 server 端擋的。
       { to: "/admin/inventory-purchases", label: "進貨", icon: TruckIcon, staff: true },
       { to: "/admin/inventory-count", label: "庫存盤點", icon: ClipboardList, staff: true },
-      { to: "/admin/inventory-adjustments", label: "在庫異動", icon: SlidersHorizontal, staff: true },
+      {
+        to: "/admin/inventory-adjustments",
+        label: "在庫異動",
+        icon: SlidersHorizontal,
+        staff: true,
+      },
+      // 套餐同樣是店員每天的工作（櫃檯要賣），所以 staff: true。審核那兩顆按鈕還要
+      // approve_combo_sets，而那是 lib/admin/fns/inv-combos.ts 在 server 端擋的。
+      { to: "/admin/inventory-combos", label: "套餐", icon: Package2, staff: true },
       { to: "/admin/inventory-listing", label: "上架", icon: Boxes, staff: false },
     ],
   },

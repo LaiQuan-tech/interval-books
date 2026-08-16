@@ -435,9 +435,29 @@ checkTrue(
   "前端沒有直接碰 supabase",
   !/supabaseAdmin|createClient|@supabase\/supabase-js/.test(codeFront),
 );
+// ⚠️ 這一條在 4a 是「AI 拍照辨識沒有被搬進來（入口按鈕也沒留）」—— 當時它打的是
+//    Lovable AI Gateway，離開那個平台就是一顆按了必定 500 的按鈕。
+//    0018 把它接上 Gemini 了，所以斷言換成**它必須走 server fn**。
+//    直接刪掉的話，「前端自己拿金鑰打 Gemini」會靜默通過。
 checkTrue(
-  "AI 拍照辨識沒有被搬進來（入口按鈕也沒留）",
-  !/ProductOCR|recognize-purchase-order|recognize-book|拍照辨識/.test(codeFront),
+  "拍照辨識的入口回來了（0018 接上 Gemini）",
+  /ProductOCR|拍照辨識/.test(codeFront),
+  "4a/4b 刻意拿掉，4c 接回來。找不到入口代表整合掉了",
+);
+checkTrue(
+  "但它是走 server fn，不是 client 直連 Gemini",
+  !/generativelanguage|GEMINI_API_KEY|x-goog-api-key/.test(codeFront),
+  "client 直連 = 金鑰在瀏覽器裡。辨識要走 src/lib/admin/fns/ocr.ts",
+);
+checkTrue(
+  "而且沒有把 base64 塞進 server fn（Vercel body 上限 4.5MB）",
+  !/(imageBase64|dataUrl|data_url)/.test(codeFront) &&
+    !/base64[\s\S]{0,80}(recogniseBook|recognisePurchaseOrder)/.test(codeFront),
+  "server fn 只收私有 bucket 的 storage key，見 src/lib/admin/fns/ocr.ts 檔頭",
+);
+checkTrue(
+  "沒有留著已失效的 Lovable edge function 名稱",
+  !/recognize-purchase-order|recognize-book|recognize-product|lovable/i.test(codeFront),
 );
 
 console.log("\n[6b] repo 層：錯誤一律 throw，不吞");

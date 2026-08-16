@@ -6,15 +6,15 @@
  * remaining_quantity 對齊。這是庫存唯一會往上加的路。
  *
  * ── 授權：兩層，而且兩層都在 server ───────────────────────────────────────
- * 檢視／新增／編輯／刪除／匯入 = staffFnMiddleware()；審核進貨再多一層
- * module→approve_purchases 對照。⚠️ 這一頁的 canApprove 旗標**只控制畫面**，把按鈕
- * 藏起來不是授權 —— 擋住 `curl -X POST /_serverFn/…` 的是 fns/inv-purchases.ts 每一
- * 支上面的 middleware，而它每一次都重讀 profiles 與 staff_permissions。
+ * 日常作業 = staffFnMiddleware()；審核進貨再多一層 module→approve_purchases 對照。
+ * ⚠️ 這一頁的 canApprove 旗標**只控制畫面**，把按鈕藏起來不是授權 —— 擋住
+ * `curl -X POST /_serverFn/…` 的是 fns/inv-purchases.ts 每一支上面的 middleware，
+ * 而它每一次都重讀 profiles 與 staff_permissions。
  *
- * ⚠️ **AI 拍照辨識沒有搬過來**（來源 PurchaseOCRDialog，687 行）。它打的是 Lovable
- *    AI Gateway 的 recognize-purchase-order edge function，這個專案沒有那支函式 ——
- *    硬搬會是一顆按了必定 500 的按鈕，所以入口按鈕一起拿掉了，不是留著壞的。
- *    來源的「匯出 Excel」也還沒做。
+ * ⚠️ **AI 拍照辨識已經接回來了**（4c）：不再打來源那支 Lovable AI Gateway 的
+ *    recognize-purchase-order edge function（這個專案沒有 edge function），改走
+ *    fns/ocr.ts 的 server fn 到 Gemini —— 瀏覽器只送壓縮過的圖與 storage key，辨識
+ *    結果是**建議**，逐列改完才走既有的 importPurchases()。「匯出 Excel」還沒做。
  */
 import { useCallback, useMemo, useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
@@ -26,6 +26,7 @@ import { PurchaseBatchBar } from "@/components/inventory/PurchaseBatchBar";
 import { PurchaseDialogs } from "@/components/inventory/PurchaseDialogs";
 import { PurchaseFilterBar } from "@/components/inventory/PurchaseFilterBar";
 import { PurchaseTable } from "@/components/inventory/PurchaseTable";
+import { PurchasePageHeader } from "@/components/inventory/PurchasePageHeader";
 import { isApprovalRequired } from "@/lib/admin/inv-product-utils";
 import { usePurchaseActions } from "@/lib/admin/usePurchaseActions";
 import type { PurchaseFilterValues } from "@/lib/admin/schemas";
@@ -134,6 +135,17 @@ function InventoryPurchasesPage() {
   const { busyId, batchBusy, handleApprove, handleDelete, handleBatchApprove } =
     usePurchaseActions(refresh);
 
+  function toggleSelectMode() {
+    setSelectMode((v) => !v);
+    setSelectedIds([]);
+  }
+
+  /** 空白的新增進貨表單。拍照辨識失敗時的「改用手動輸入」也走這一支。 */
+  function openCreateForm() {
+    setEditing(null);
+    setFormOpen(true);
+  }
+
   const cards = [
     { label: "批次數", value: summary.batches.toLocaleString("zh-TW") },
     { label: "進貨總量", value: summary.quantity.toLocaleString("zh-TW") },
@@ -144,45 +156,18 @@ function InventoryPurchasesPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Truck className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-          <h1 className="text-lg font-medium">進貨</h1>
-          <span className="text-sm text-muted-foreground">共 {data.total} 筆</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSelectMode((v) => !v);
-              setSelectedIds([]);
-            }}
-          >
-            {selectMode ? "取消批次操作" : "批次操作"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setImportOpen(true)}
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5" />
-            匯入 Excel
-          </Button>
-          <Button
-            size="sm"
-            className="gap-1.5"
-            onClick={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            新增進貨
-          </Button>
-        </div>
-      </div>
+      <PurchasePageHeader
+        total={data.total}
+        selectMode={selectMode}
+        onToggleSelectMode={toggleSelectMode}
+        onOpenImport={() => setImportOpen(true)}
+        onCreate={openCreateForm}
+        products={products}
+        vendors={options.vendors}
+        categories={options.categories}
+        approvalOn={approvalOn}
+        onImported={refresh}
+      />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => (

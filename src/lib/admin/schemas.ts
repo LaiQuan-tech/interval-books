@@ -654,7 +654,12 @@ export const INV_ADJUSTMENT_CATEGORIES = ["EXP", "PR", "SMP", "INT", "ADJ", "CMB
 export type InvAdjustmentCategory = (typeof INV_ADJUSTMENT_CATEGORIES)[number];
 
 /** 異動單的四個狀態。與 0017 加的 stock_adjustments_status_check 逐字對齊。 */
-export const INV_ADJUSTMENT_STATUSES = ["draft", "pending_approval", "confirmed", "rejected"] as const;
+export const INV_ADJUSTMENT_STATUSES = [
+  "draft",
+  "pending_approval",
+  "confirmed",
+  "rejected",
+] as const;
 export type InvAdjustmentStatus = (typeof INV_ADJUSTMENT_STATUSES)[number];
 
 /**
@@ -704,7 +709,10 @@ export const invPurchaseSchema = z.object({
   vendor: z.string().trim().max(200, "供應商名稱最多 200 字").nullable(),
   publisher: z.string().trim().max(200, "出版社最多 200 字").nullable(),
   notes: z.string().trim().max(2000, "備註最多 2000 字").nullable(),
-  expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD").nullable(),
+  expiry_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD")
+    .nullable(),
   expiry_alert_days: z
     .number({ invalid_type_error: "警示天數必須是數字" })
     .int("警示天數必須是整數")
@@ -724,9 +732,21 @@ export const purchaseFilterSchema = z.object({
   /** 效期狀態。與來源的 ?expiry= 五個值逐字一致（Dashboard 的到期提醒會帶進來）。 */
   expiryStatus: z.enum(["all", "expiring", "expired", "warning", "no_expiry"]),
   stockStatus: z.enum(["all", "in_stock", "used_up"]),
-  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  sort: z.enum(["purchase_date_desc", "purchase_date_asc", "created_at", "quantity_desc", "remaining_asc"]),
+  dateFrom: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  dateTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  sort: z.enum([
+    "purchase_date_desc",
+    "purchase_date_asc",
+    "created_at",
+    "quantity_desc",
+    "remaining_asc",
+  ]),
   page: z.number().int().min(0),
   pageSize: z.number().int().min(1).max(200),
 });
@@ -746,7 +766,10 @@ export const purchaseBatchUpdateSchema = z.object({
         .optional(),
       expiry: z
         .object({
-          expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+          expiry_date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullable(),
           expiry_alert_days: z.number().int().min(1).max(365).nullable(),
         })
         .optional(),
@@ -766,9 +789,15 @@ const purchaseImportRowSchema = z.object({
   unit_cost: z.number().min(0, "成本不可為負數").finite().nullable(),
   vendor_id: z.string().trim().uuid().nullable(),
   vendor: z.string().trim().max(200).nullable(),
-  purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  purchase_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
   notes: z.string().trim().max(2000).nullable(),
-  expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  expiry_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
   expiry_alert_days: z.number().int().min(1).max(365).nullable(),
   product_type: z.enum(INV_PRODUCT_TYPES).nullable(),
   category_id: z.string().trim().uuid().nullable(),
@@ -776,11 +805,17 @@ const purchaseImportRowSchema = z.object({
 
 export const importPurchasesSchema = z.object({
   // 上限與 inv_import_purchases() 的 IMPORT_TOO_MANY 對齊。
-  rows: z.array(purchaseImportRowSchema).min(1, "沒有要匯入的資料").max(2000, "一次最多 2000 列，請分批"),
+  rows: z
+    .array(purchaseImportRowSchema)
+    .min(1, "沒有要匯入的資料")
+    .max(2000, "一次最多 2000 列，請分批"),
   options: z.object({
     default_vendor_id: z.string().trim().uuid().nullable(),
     default_category_id: z.string().trim().uuid().nullable(),
-    default_purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    default_purchase_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable(),
     default_expiry_alert_days: z.number().int().min(1).max(365).nullable(),
   }),
 });
@@ -847,11 +882,130 @@ export const adjustmentFilterSchema = z.object({
   category: z.enum(INV_ADJUSTMENT_CATEGORIES).nullable(),
   status: z.enum(["all", ...INV_ADJUSTMENT_STATUSES]),
   productId: z.string().trim().uuid().nullable(),
-  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  dateFrom: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  dateTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
   sort: z.enum(["date_desc", "date_asc", "created_at", "quantity_desc"]),
   page: z.number().int().min(0),
   pageSize: z.number().int().min(1).max(200),
 });
 
 export type AdjustmentFilterValues = z.infer<typeof adjustmentFilterSchema>;
+
+// ---------------------------------------------------------------------------
+// 套餐（0018）
+// ---------------------------------------------------------------------------
+// ⚠️ 這裡沒有 approval_status，也沒有 amount / unit_price / cost_price。
+//    狀態由 inv.initial_approval_status() 算，金額由 inv.allocate_combo_amounts()
+//    分攤 —— payload 裡就算送了這些 key，也沒有任何一行程式會去讀它。
+//    來源的 ComboSets.tsx:236 是在瀏覽器算完 approval_status 再連同 insert 送出去。
+
+/** 一件組成品項。同一件商品不可以出現兩次（要多份請改數量）—— 0018 的 COMBO_DUP_ITEM 也擋一次。 */
+export const comboItemSchema = z.object({
+  product_id: z.string().trim().uuid("請選擇商品"),
+  quantity: z
+    .number({ invalid_type_error: "數量必須是數字" })
+    .int("數量必須是整數")
+    .min(1, "數量至少 1")
+    .max(999, "數量太多了"),
+});
+
+export const comboSetSchema = z.object({
+  id: z.string().trim().uuid().nullable(),
+  name: z.string().trim().min(1, "請填套餐名稱").max(200),
+  selling_price: z
+    .number({ invalid_type_error: "組合價必須是數字" })
+    .min(0, "組合價不可為負數")
+    .finite("組合價必須是數字"),
+  notes: z.string().trim().max(2000).nullable(),
+  is_active: z.boolean(),
+  items: z
+    .array(comboItemSchema)
+    .min(1, "套餐至少要有一件組成品項")
+    .max(50, "組成品項太多了")
+    .refine(
+      (items) => new Set(items.map((i) => i.product_id)).size === items.length,
+      "同一件商品不可以在套餐裡出現兩次，請改用數量",
+    ),
+});
+
+export type ComboSetValues = z.infer<typeof comboSetSchema>;
+export type ComboItemValues = z.infer<typeof comboItemSchema>;
+
+export const comboFilterSchema = z.object({
+  keyword: z.string().trim().max(100).nullable(),
+  activeStatus: z.enum(["all", "active", "inactive"]),
+  approvalStatus: z.enum(["all", "pending", "approved", "rejected"]),
+  sort: z.enum(["name_asc", "name_desc", "created_desc", "sold_desc", "price_desc"]),
+});
+
+export type ComboFilterValues = z.infer<typeof comboFilterSchema>;
+
+/** 賣一份套餐。呼叫端能決定的只有「哪個套餐、幾份、什麼時候、怎麼付」。 */
+export const comboCheckoutSchema = z.object({
+  combo_set_id: z.string().trim().uuid("請選擇套餐"),
+  quantity: z.number().int().min(1, "至少 1 份").max(100, "一次最多 100 份"),
+  sale_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD"),
+  payment_method_id: z.string().trim().uuid().nullable(),
+  notes: z.string().trim().max(2000).nullable(),
+  override_reservation: z.boolean(),
+});
+
+export type ComboCheckoutValues = z.infer<typeof comboCheckoutSchema>;
+
+// ---------------------------------------------------------------------------
+// 二手書（0018）
+// ---------------------------------------------------------------------------
+// ⚠️ 沒有 product_id 這個欄位，而且不會有。二手書一本一件、沒有進貨批次、沒有
+//    庫存 —— inv.sales 的 CHECK（sales_secondhand_has_no_product）也擋著。
+//    「二手商品」這個東西在來源系統裡是 productTypes.ts 的一個幻覺，資料庫從來
+//    沒有支援過，0018 把死碼刪掉了。
+
+export const secondhandSaleSchema = z.object({
+  item_name: z.string().trim().min(1, "請填書名").max(200),
+  quantity: z.number().int().min(1, "數量至少 1").max(999, "數量太多了"),
+  unit_price: z
+    .number({ invalid_type_error: "售價必須是數字" })
+    .min(0, "售價不可為負數")
+    .finite("售價必須是數字"),
+  sale_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式必須是 YYYY-MM-DD"),
+  payment_method_id: z.string().trim().uuid().nullable(),
+  notes: z.string().trim().max(2000).nullable(),
+});
+
+export type SecondhandSaleValues = z.infer<typeof secondhandSaleSchema>;
+
+// ---------------------------------------------------------------------------
+// 拍照辨識 OCR（0018）
+// ---------------------------------------------------------------------------
+// ⚠️ 沒有 base64、沒有 dataUrl、沒有 image 這種欄位。server fn 只收私有 bucket 的
+//    storage key，圖是前端先壓縮再上傳的 —— Vercel 的 body 上限大約 4.5MB，而
+//    base64 會把圖脹大 33%（來源就是直接把 5.4MB 的 data URL 送進 request body）。
+
+/** `ocr:YYYY-MM-DD/uuid.ext`。形狀在 src/server/storage.ts#ocrObjectName 再驗一次。 */
+export const ocrScanKeySchema = z
+  .string()
+  .trim()
+  .regex(/^ocr:\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.(webp|jpg|png)$/, "掃描圖代碼不正確");
+
+export const ocrRecogniseSchema = z.object({
+  scan_key: ocrScanKeySchema,
+});
+
+export type OcrRecogniseValues = z.infer<typeof ocrRecogniseSchema>;
+
+/** 辨識失敗的分類。與 src/server/gemini.ts 的 OcrFailureKind 逐字對齊。 */
+export const OCR_FAILURE_KINDS = [
+  "quota",
+  "timeout",
+  "bad_response",
+  "no_content",
+  "service",
+] as const;
+
+export type OcrFailureKindValue = (typeof OCR_FAILURE_KINDS)[number];

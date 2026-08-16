@@ -112,7 +112,11 @@ for (let n = 1; n <= 16; n += 1) {
   const prefix = String(n).padStart(4, "0");
   check(`migration ${prefix} 仍在`, migFiles.some((f) => f.startsWith(`${prefix}_`)), true);
 }
-check("沒有多出 0018（0017 是最後一號）", migFiles.some((f) => f.startsWith("0018_")), false);
+// 4c 加了 0018（套餐／二手書／OCR bucket）。這一條原本是「0017 是最後一號」，
+// 目的不是凍結號碼，是**擋住有人偷偷改既有 migration 的行為**：要改就開新號。
+// 所以往前推一格，繼續守著。0018 自己的內容由 inventory-combos-selftest 驗。
+check("0018 在（4c 加的）", migFiles.some((f) => f.startsWith("0018_")), true);
+check("沒有多出 0019（0018 是最後一號）", migFiles.some((f) => f.startsWith("0019_")), false);
 
 const sql = read(MIG_0017);
 const exec = strip(sql);
@@ -470,10 +474,29 @@ checkTrue(`元件檔掃到 ${compFiles.length} 個（> 6）`, compFiles.length >
 const codeFront = stripTs(ALL_FRONT.map((f) => read(join(ROOT, f))).join("\n"));
 checkTrue("前端不是空的（> 20000 字）", codeFront.length > 20000, `實際 ${codeFront.length} 字`);
 
+// ⚠️ 這一條在 4b 是「AI 拍照辨識沒有被搬進來（入口按鈕也沒留）」—— 當時它打的是
+//    Lovable AI Gateway，這個專案沒有那支 edge function，留著就是一顆按了必定
+//    500 的按鈕。0018 把它接上 Gemini 了，所以斷言換成**它必須走 server fn**。
+//    直接刪掉的話，「前端自己拿金鑰打 Gemini」會靜默通過 —— 那比一顆壞按鈕糟。
 checkTrue(
-  "AI 拍照辨識沒有被搬進來（入口按鈕也沒留）",
-  !/PurchaseOCR|ProductOCR|recognize-purchase-order|recognize-book|拍照辨識/.test(codeFront),
-  "它打的是 Lovable AI Gateway，這個專案沒有那支 edge function。留著就是一顆按了必定 500 的按鈕。要接是改接 Gemini，那是 4c。",
+  "進貨單拍照辨識的入口回來了（0018 接上 Gemini）",
+  /PurchaseOCR|拍照辨識/.test(codeFront),
+  "4b 刻意拿掉，4c 接回來。找不到入口代表整合掉了",
+);
+checkTrue(
+  "但它是走 server fn，不是 client 直連 Gemini",
+  !/generativelanguage|GEMINI_API_KEY|x-goog-api-key/.test(codeFront),
+  "client 直連 = 金鑰在瀏覽器裡。辨識要走 src/lib/admin/fns/ocr.ts",
+);
+checkTrue(
+  "而且沒有把 base64 塞進 server fn（Vercel body 上限 4.5MB）",
+  !/(imageBase64|dataUrl|data_url)/.test(codeFront) &&
+    !/base64[\s\S]{0,80}(recogniseBook|recognisePurchaseOrder)/.test(codeFront),
+  "server fn 只收私有 bucket 的 storage key，見 src/lib/admin/fns/ocr.ts 檔頭",
+);
+checkTrue(
+  "沒有留著已失效的 Lovable edge function 名稱",
+  !/recognize-purchase-order|recognize-book|recognize-product|lovable/i.test(codeFront),
 );
 checkTrue("沒有 xlsx 的靜態 import", !/^import .*["']xlsx["']/m.test(codeFront));
 checkTrue("沒有 react-query", !/@tanstack\/react-query|useQuery|useMutation|queryClient/.test(codeFront));
@@ -512,7 +535,10 @@ for (const [to, label] of [
 ]) {
   checkTrue(
     `側欄有「${label}」且 staff: true`,
-    new RegExp(`\\{ to: "${to}", label: "${label}",[^}]*staff: true`).test(shell),
+    // ⚠️ 不要求寫在同一行。prettier 會依 icon 名稱的長度決定折不折行（
+    //    SlidersHorizontal 就被折了），寫死單行等於在測排版而不是測授權。
+    //    [^{}]* 保證比對不會跨過物件邊界跑去讀下一個項目的 staff。
+    new RegExp(`to:\\s*"${to}",[^{}]*label:\\s*"${label}",[^{}]*staff:\\s*true`).test(shell),
   );
 }
 // ⚠️ 側欄把模組藏起來不是授權。真正的擋在每一支 server fn 的 middleware。

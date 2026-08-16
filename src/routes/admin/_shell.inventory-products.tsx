@@ -14,11 +14,14 @@
  *    lib/admin/fns/inv-products.ts 每一支上面的 middleware，而它每次都重讀
  *    profiles 與 staff_permissions。
  *
+ * ── AI 拍照辨識（4c 接上了）───────────────────────────────────────────────
+ * 4b 把入口整個拿掉，因為來源打的是 Lovable AI Gateway 的 edge function，這個
+ * 專案沒有那支函式，硬搬會是一顆按了必定 500 的按鈕。0018 改接 Gemini：走
+ * createServerFn + staffFnMiddleware（沒有新增任何 edge function），前端只送
+ * 私有 bucket 的 storage key，金鑰留在 src/server/env.ts。
+ * ⚠️ 辨識結果是**建議**，不會自己寫入 —— 店員在確認畫面改完才走 inv_save_product()。
+ *
  * ── 沒有搬過來的東西（4b 交接）────────────────────────────────────────────
- * · **AI 拍照辨識**（來源 ProductOCRDialog，829 行）—— 它打的是 Lovable AI
- *   Gateway 的 recognize-purchase-order edge function，這個專案沒有那支函式。
- *   硬搬會是一顆按了必定 500 的按鈕，所以入口按鈕**一起拿掉了**，不是留著壞的。
- *   要接的話是改接 Gemini，那是 4c。
  * · **盤點與在庫異動**（來源 InventoryAdjustmentDialog / BatchInventoryAdjustmentDialog）
  *   —— 它們寫 inv.stock_adjustments 與 inv.inventory_adjustments，那是 4b。
  *   0016 的 inv_approve_record() 已經先把這兩個 module 的審核路徑接好了。
@@ -33,9 +36,11 @@ import { ProductFilterBar } from "@/components/inventory/ProductFilterBar";
 import { ProductDialogs } from "@/components/inventory/ProductDialogs";
 import { PriceChangeQueue } from "@/components/inventory/PriceChangeQueue";
 import { ProductPageHeader } from "@/components/inventory/ProductPageHeader";
+import { ProductOCRLauncher } from "@/components/ocr/ProductOCRLauncher";
 import { ProductPagination } from "@/components/inventory/ProductPagination";
 import { ProductTable } from "@/components/inventory/ProductTable";
 import { useProductActions } from "@/lib/admin/useProductActions";
+import { useProductListState } from "@/lib/admin/useProductListState";
 import { isApprovalRequired } from "@/lib/admin/inv-product-utils";
 import type { ProductFilterValues } from "@/lib/admin/schemas";
 import type { AdminProductRow } from "@/server/repos/inv-products";
@@ -56,9 +61,8 @@ const DEFAULT_FILTER: ProductFilterValues = {
 
 export const Route = createFileRoute("/admin/_shell/inventory-products")({
   loader: async () => {
-    const { listAdminProducts, listProductFormOptions } = await import(
-      "@/lib/admin/fns/inv-products"
-    );
+    const { listAdminProducts, listProductFormOptions } =
+      await import("@/lib/admin/fns/inv-products");
     // 兩支都是 staffFnMiddleware 守的。店員進得來、customer 進不來，而且擋人的
     // 是 middleware 重讀 profiles 那一下，不是側欄。
     const [page, options] = await Promise.all([
@@ -76,12 +80,21 @@ function InventoryProductsPage() {
   const { user } = Route.useRouteContext();
   const router = useRouter();
 
-  const [filter, setFilter] = useState<ProductFilterValues>(DEFAULT_FILTER);
-  const [data, setData] = useState(initialPage);
-  const [loading, setLoading] = useState(false);
+  const {
+    filter,
+    data,
+    loading,
+    selectedIds,
+    setSelectedIds,
+    changeFilter,
+    changePage,
+    refresh,
+    rowsById,
+    selectedPending,
+    totalPages,
+  } = useProductListState(initialPage, DEFAULT_FILTER);
 
   const [selectMode, setSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<AdminProductRow | null>(null);
@@ -96,44 +109,6 @@ function InventoryProductsPage() {
   const productApprovalOn = isApprovalRequired(options.approvalSettings, "products");
   const priceApprovalOn = isApprovalRequired(options.approvalSettings, "price_changes");
 
-  const reload = useCallback(
-    async (next: ProductFilterValues) => {
-      setLoading(true);
-      try {
-        const { listAdminProducts } = await import("@/lib/admin/fns/inv-products");
-        setData(await listAdminProducts({ data: next }));
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "商品清單讀取失敗");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
-
-  function changeFilter(next: ProductFilterValues) {
-    setFilter(next);
-    setSelectedIds([]);
-    void reload(next);
-  }
-
-  /** 寫入之後重抓目前這一頁。這個 repo 沒有 react-query，重抓就是唯一的同步方式。 */
-  const refresh = useCallback(async () => {
-    await reload(filter);
-    // 母品項候選與審核設定放在 loader 裡，所以也讓 router 重跑一次。
-    await router.invalidate();
-  }, [filter, reload, router]);
-
-  const rowsById = useMemo(() => {
-    const map = new Map<string, AdminProductRow>();
-    for (const r of data.rows) map.set(r.inv_product_id, r);
-    return map;
-  }, [data.rows]);
-
-  const selectedPending = selectedIds.filter(
-    (id) => rowsById.get(id)?.approval_status === "pending",
-  );
-
   const {
     busyId,
     batchBusy,
@@ -144,9 +119,6 @@ function InventoryProductsPage() {
     handleDelete,
     handleBatchApprove,
   } = useProductActions(refresh);
-
-
-  const totalPages = Math.max(1, Math.ceil(data.total / filter.pageSize));
 
   return (
     <div className="space-y-5">
@@ -170,6 +142,17 @@ function InventoryProductsPage() {
         這裡的商品是<strong>庫存主檔</strong>（inv.products），不是店面型錄。改這裡不會動到
         網站上的商品名稱與售價 —— 那是「上架」那一頁的事，兩邊靠 product_inventory_links 連著。
       </p>
+
+      <ProductOCRLauncher
+        categories={options.categories}
+        vendors={options.vendors}
+        productApprovalOn={productApprovalOn}
+        onSaved={refresh}
+        onManualEntry={() => {
+          setEditing(null);
+          setFormOpen(true);
+        }}
+      />
 
       <ProductFilterBar
         value={filter}
@@ -211,9 +194,7 @@ function InventoryProductsPage() {
           selectMode={selectMode}
           selectedIds={selectedIds}
           onToggleSelect={(id) =>
-            setSelectedIds((cur) =>
-              cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
-            )
+            setSelectedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
           }
           onToggleSelectAll={() =>
             setSelectedIds((cur) =>
@@ -241,18 +222,12 @@ function InventoryProductsPage() {
         onDecide={handleApprovePrice}
       />
 
-
       <ProductPagination
         page={filter.page}
         totalPages={totalPages}
         disabled={loading}
-        onPageChange={(page) => {
-          const next = { ...filter, page };
-          setFilter(next);
-          void reload(next);
-        }}
+        onPageChange={changePage}
       />
-
 
       {!canApproveProducts ? (
         <p className="text-xs text-muted-foreground">
