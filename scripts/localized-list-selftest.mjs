@@ -70,7 +70,40 @@ function checkTrue(label, value, hint) {
   check(label, value === true, true, hint);
 }
 
-const readFile = (p) => (existsSync(p) ? readFileSync(p, "utf8") : "");
+/**
+ * 讀原始碼。**檔案不存在 = 丟例外**，不是回空字串。
+ *
+ * 這裡曾經是 `existsSync(p) ? readFileSync(p, "utf8") : ""`。問題在於這一支底下大量
+ * 的斷言長成 `check("…沒有 X", src.includes("X"), false)` —— 路徑一打錯（或檔案被改名、
+ * 搬走），`"".includes("X")` 就是 `false`，那條斷言**靜默通過**，從此永遠是綠的，而且
+ * 再也沒有在檢查任何東西。正面斷言會轉紅所以是安全的；只有否定斷言會這樣壞掉。
+ * 見 run-selftests.mjs 的「守門 4」。
+ */
+const readFile = (p) => {
+  if (!existsSync(p)) {
+    throw new Error(
+      `selftest 讀不到檔案：${p}` +
+        "（路徑打錯，或檔案被改名／搬走了。這裡刻意不回空字串 —— 回空字串會讓所有" +
+        "「確認原始碼裡沒有 X」的否定斷言靜默通過。）",
+    );
+  }
+  return readFileSync(p, "utf8");
+};
+
+// 守著 readFile() 自己：路徑打錯時它必須炸掉，而不是回空字串讓否定斷言靜默通過。
+{
+  const ghost = join(ROOT, "__selftest-missing-file-probe__");
+  let thrown = null;
+  try {
+    readFile(ghost);
+  } catch (e) {
+    thrown = e;
+  }
+  checkTrue(
+    "🔴 readFile() 讀不到檔案時丟例外，訊息指出是哪個路徑（不是靜默回空字串）",
+    thrown !== null && String(thrown.message).includes(ghost),
+  );
+}
 
 /** 拿掉 TypeScript／TSX 的註解。這個 repo 的檔頭特別長，少了這一步斷言會全紅。 */
 function stripTs(src) {

@@ -7,7 +7,7 @@
  * CI 一路綠燈。關鍵在於**測試框架對「沒對到任何檔案的 glob」不會報錯** —— 綠燈的意思
  * 從「測試都過了」悄悄變成「沒有測試跑過」，而這兩件事在 CI 畫面上長得一模一樣。
  *
- * 所以這支 runner 不只是「跑測試」，它做三件互相獨立的比對：
+ * 所以這支 runner 不只是「跑測試」，它做四件互相獨立的比對：
  *
  *   1. **檔數對帳** —— 用 readdir 列出磁碟上所有 `*-selftest.mjs`，與實際執行的檔數
  *      相比。少一個就紅。
@@ -17,13 +17,16 @@
  *   3. **case 數對帳** —— 每支測試收尾要印一行 `##SELFTEST## file=… pass=N fail=N`，
  *      而且 `file=` 必須等於實際執行的路徑（防貼錯／複製別人的收尾行）。跑得起來
  *      但一個 case 都沒有的檔案也算失敗 —— 那是「測試被刪光只剩空殼」的樣子。
+ *   4. **靜默回空字串的 read** —— 見下面「守門 4」的長註解。這是同一個「綠燈的意思
+ *      悄悄改變了」的家族裡，最難用肉眼看出來的一支。
  *
  * 執行：node scripts/run-selftests.mjs  （或 npm test）
  */
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
+import { parse as parseJs } from "@babel/parser";
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SCRIPTS_DIR, "..");
@@ -79,6 +82,121 @@ if (orphans.length > 0) {
 if (discovered.length === 0) {
   hardFail = true;
   console.log(red("\n✗ 一個測試檔都沒找到 —— 這代表 glob 壞了，不是「測試都過了」。"));
+}
+
+// ── 守門 4：讀不到檔案就回空字串的 read ───────────────────────────────────
+//
+// 這些自檢有大量斷言長成「讀某個檔的原始碼，確認裡面**沒有** X」：
+//
+//     check("…沒有 X", src.includes("X"), false);
+//
+// 只要 read 的形狀是 `existsSync(p) ? readFileSync(p, "utf8") : ""`，路徑一打錯
+// （或那個檔被改名／搬走），`src` 就是 `""`，`"".includes("X")` 就是 `false`，
+// 這條斷言**靜默通過**。它從此永遠是綠的，而且再也沒有在檢查任何東西。
+//
+// 這一類壞法的惡毒之處在於它只影響否定斷言：正面斷言（`checkTrue(…, src.includes("X"))`）
+// 會立刻轉紅，所以是安全的；有人改路徑時看到全綠，會以為自己沒改壞。
+//
+// 所以 read 讀不到檔案時必須**丟例外**，訊息裡要有那個路徑。這個守門用 AST
+// （不是 grep —— 註解裡的範例、字串裡的片段都不該算數）掃出任何一個「readFileSync
+// 配一個空字串 fallback」的形狀，包括三元式、`|| ""`、以及 try/catch 吞掉。
+const READ_FALLBACK_ALLOWLIST = new Map([
+  // 目前沒有例外。真的需要「檔案可有可無」的讀取時，寫成 if (existsSync(p)) {…}
+  // 明確分支，不要用會回空字串的表達式 —— 空字串會流進斷言，明確分支不會。
+]);
+
+/** 這個節點底下有沒有呼叫 readFileSync？ */
+function callsReadFileSync(node) {
+  let found = false;
+  walk(node, (n) => {
+    if (n.type !== "CallExpression") return;
+    const c = n.callee;
+    if (c?.type === "Identifier" && c.name === "readFileSync") found = true;
+    if (c?.type === "MemberExpression" && c.property?.name === "readFileSync") found = true;
+  });
+  return found;
+}
+
+/** 這個節點底下有沒有出現空字串字面量？ */
+function hasEmptyString(node) {
+  let found = false;
+  walk(node, (n) => {
+    if (n.type === "StringLiteral" && n.value === "") found = true;
+    if (n.type === "TemplateLiteral" && n.quasis?.length === 1 && n.quasis[0].value.cooked === "")
+      found = true;
+  });
+  return found;
+}
+
+const isEmptyStr = (n) =>
+  (n?.type === "StringLiteral" && n.value === "") ||
+  (n?.type === "TemplateLiteral" && n.quasis?.length === 1 && n.quasis[0].value.cooked === "");
+
+function walk(node, visit) {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const n of node) walk(n, visit);
+    return;
+  }
+  if (typeof node.type !== "string") return;
+  visit(node);
+  for (const key of Object.keys(node)) {
+    if (key === "loc" || key === "leadingComments" || key === "trailingComments") continue;
+    walk(node[key], visit);
+  }
+}
+
+console.log("\n── 守門 4：read 讀不到檔案時會靜默回空字串嗎 ──────");
+const silentReads = [];
+for (const f of discovered) {
+  let ast;
+  try {
+    ast = parseJs(readFileSync(join(SCRIPTS_DIR, f), "utf8"), {
+      sourceType: "module",
+      plugins: ["topLevelAwait"],
+    });
+  } catch (err) {
+    hardFail = true;
+    console.log(red(`✗ scripts/${f} 解析失敗，無法檢查：${err.message}`));
+    continue;
+  }
+  walk(ast.program, (n) => {
+    const line = n.loc?.start?.line ?? 0;
+    let why = null;
+    // a) existsSync(…) ? readFileSync(…) : ""   ／  反過來寫也算
+    if (n.type === "ConditionalExpression") {
+      if (isEmptyStr(n.alternate) && callsReadFileSync(n.consequent))
+        why = "三元式的 else 分支是空字串";
+      else if (isEmptyStr(n.consequent) && callsReadFileSync(n.alternate))
+        why = "三元式的 then 分支是空字串";
+    }
+    // b) readFileSync(…) || ""  ／  ?? ""
+    if (n.type === "LogicalExpression" && (n.operator === "||" || n.operator === "??")) {
+      if (isEmptyStr(n.right) && callsReadFileSync(n.left))
+        why = `readFileSync(…) ${n.operator} ""`;
+    }
+    // c) try { readFileSync(…) } catch { return "" }
+    if (n.type === "TryStatement" && n.handler) {
+      if (callsReadFileSync(n.block) && hasEmptyString(n.handler))
+        why = "catch 分支把讀檔失敗換成空字串";
+    }
+    if (why) silentReads.push({ file: f, line, why });
+  });
+}
+
+const flagged = silentReads.filter((s) => !READ_FALLBACK_ALLOWLIST.has(`${s.file}:${s.line}`));
+if (flagged.length > 0) {
+  hardFail = true;
+  console.log(red(`✗ 有 ${flagged.length} 處「讀不到檔案就回空字串」的 read：`));
+  for (const s of flagged) console.log(red(`    scripts/${s.file}:${s.line} —— ${s.why}`));
+  console.log(
+    red(
+      '  → 這會讓 `check("…沒有 X", src.includes("X"), false)` 在路徑打錯時靜默通過。\n' +
+        "    改成讀不到就 throw（訊息帶上路徑），或用明確的 if (existsSync(p)) 分支。",
+    ),
+  );
+} else {
+  console.log(green(`✓ ${discovered.length} 支自檢，沒有任何一處 read 會靜默回空字串`));
 }
 
 // ── 執行 ─────────────────────────────────────────────────────────────────

@@ -93,8 +93,10 @@ for (const f of [
   check(`${f} 仍在`, existsSync(join(ROOT, "supabase/migrations", f)), true);
 }
 
-const sql0011 = existsSync(MIG_0011) ? readFileSync(MIG_0011, "utf8") : "";
-const sql0012 = existsSync(MIG_0012) ? readFileSync(MIG_0012, "utf8") : "";
+// 不加 `existsSync(…) ? … : ""` 的守衛：回空字串會讓下面所有「確認 SQL 裡沒有 X」的
+// 否定斷言在路徑打錯時靜默通過。讀不到就讓它炸，訊息裡有路徑。（見 run-selftests.mjs 守門 4）
+const sql0011 = readFileSync(MIG_0011, "utf8");
+const sql0012 = readFileSync(MIG_0012, "utf8");
 /** 把 `--` 註解整行拿掉，免得註解裡提到的字串讓下面的斷言假性通過。 */
 const exec0011 = sql0011
   .split("\n")

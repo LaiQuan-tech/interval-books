@@ -29,8 +29,14 @@ const WORKFLOW = join(ROOT, ".github/workflows/tests.yml");
 /** 這些 job 一定要存在，而且一定要是無條件、不可失敗的。 */
 const REQUIRED_JOBS = ["selftests", "ci-integrity"];
 
-/** selftests 一定要真的跑到這些指令，否則「job 存在」只是個空殼。 */
-const REQUIRED_COMMANDS = ["npm ci", "npm test"];
+/**
+ * selftests 一定要真的跑到這些指令，否則「job 存在」只是個空殼。
+ *
+ * `npm run lint` 是 2026-09-01 加的。它以前刻意不在 CI（既有的 prettier 格式債會讓
+ * workflow 從第一天就紅），債清掉之後才加成獨立 step。列在這裡是因為：一個「加回來
+ * 之後又被安靜拿掉」的 step，跟從來沒加過在 CI 畫面上長得一模一樣。
+ */
+const REQUIRED_COMMANDS = ["npm ci", "npm test", "npm run lint"];
 
 const problems = [];
 const notes = [];

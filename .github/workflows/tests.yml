@@ -20,11 +20,19 @@ on:
 # 每次 push 都去開一張測試發票既不禮貌也會讓 CI 依賴外部服務的可用性。它在
 # scripts/amego-live-test.mjs，需要 AMEGO_LIVE=1 手動執行。
 #
-# `npm run lint` 也不在這裡，而且這是刻意的、不是漏掉：這個 repo 目前 `eslint .` 有
-# 245 個既有的 prettier 格式錯誤（分佈在 src/server/repos/*、src/routes/* 等本次沒動到
-# 的檔案），把它加進來會讓這個 workflow 從第一天就是紅的，而一個永遠紅的 job 等於沒有
-# job。要接 lint 的話，先用一次 `prettier --write .` 把既有債清掉，再把它加成獨立的
-# step —— 不要在這裡加 continue-on-error 假裝它綠了。
+# `npm run lint` **現在在這裡了**（2026-09-01）。
+#
+# 它以前刻意不在：那時 `eslint .` 有幾百個既有的 prettier 格式錯誤（分佈在
+# src/server/repos/*、src/routes/* 等），加進來會讓這個 workflow 從第一天就是紅的，
+# 而一個永遠紅的 job 等於沒有 job。當時寫下的條件是「先用一次 `prettier --write .`
+# 把既有債清掉，再把它加成獨立的 step」—— 那筆債已經清完，所以條件成立，step 加上了。
+#
+# （原註解寫「245 個」，實測其實是 940 個；那個數字從來沒有被重新量過。現在是 0。
+#  留這一句是因為「註解裡的數字會過期而且沒人會發現」本身就是這個 repo 在防的東西。）
+#
+# lint 是**獨立的 step**，不是併進 `npm test`：測試紅跟格式紅是兩件事，混在一起會讓
+# CI 畫面沒辦法一眼分辨。同樣不要在它上面加 continue-on-error 或 if 假裝它綠了 ——
+# scripts/check-ci.mjs 會把那兩個擋掉，而且它現在也會確認這個 step 真的還在。
 
 jobs:
   selftests:
@@ -49,6 +57,9 @@ jobs:
 
       - name: Run self-tests (blocking)
         run: npm test
+
+      - name: Lint (eslint + prettier)
+        run: npm run lint
 
       - name: TypeScript
         run: ./node_modules/.bin/tsc --noEmit
