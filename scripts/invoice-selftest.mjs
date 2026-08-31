@@ -220,7 +220,10 @@ console.log("\n[4] 自然人憑證載具（2 大寫英文 + 14 數字）");
 console.log("\n[5] isValidCarrier 依載具類型挑規則");
 {
   checkTrue("3J0002 + 手機條碼", isValidCarrier(CARRIER_MOBILE, "/ABC1234"));
-  checkFalse("3J0002 + 自然人憑證格式（張冠李戴）", isValidCarrier(CARRIER_MOBILE, "AB12345678901234"));
+  checkFalse(
+    "3J0002 + 自然人憑證格式（張冠李戴）",
+    isValidCarrier(CARRIER_MOBILE, "AB12345678901234"),
+  );
   checkTrue("CQ0001 + 自然人憑證", isValidCarrier(CARRIER_NPC, "AB12345678901234"));
   checkFalse("CQ0001 + 手機條碼格式（張冠李戴）", isValidCarrier(CARRIER_NPC, "/ABC1234"));
   checkFalse("不認得的載具類型一律不放行", isValidCarrier("XX0000", "/ABC1234"));
@@ -247,7 +250,11 @@ console.log("\n[7] normalizeInvoiceChoice：不屬於該類型的欄位一律不
   check("undefined → 預設個人無載具", normalizeInvoiceChoice(undefined), DEFAULT_INVOICE_CHOICE);
   check("null → 預設個人無載具", normalizeInvoiceChoice(null), DEFAULT_INVOICE_CHOICE);
   check("空物件 → 預設個人無載具", normalizeInvoiceChoice({}), DEFAULT_INVOICE_CHOICE);
-  check("不認得的 type → 退回 personal", normalizeInvoiceChoice({ type: "corporate" }), DEFAULT_INVOICE_CHOICE);
+  check(
+    "不認得的 type → 退回 personal",
+    normalizeInvoiceChoice({ type: "corporate" }),
+    DEFAULT_INVOICE_CHOICE,
+  );
 
   check(
     "company 帶著載具與愛心碼 → 只留統編與抬頭",
@@ -299,7 +306,11 @@ console.log("\n[7] normalizeInvoiceChoice：不屬於該類型的欄位一律不
 
   check(
     "personal + 手機條碼",
-    normalizeInvoiceChoice({ type: "personal", carrierType: CARRIER_MOBILE, carrierNumber: "/abc1234" }),
+    normalizeInvoiceChoice({
+      type: "personal",
+      carrierType: CARRIER_MOBILE,
+      carrierNumber: "/abc1234",
+    }),
     {
       type: "personal",
       taxId: null,
@@ -327,9 +338,17 @@ console.log("\n[7] normalizeInvoiceChoice：不屬於該類型的欄位一律不
   );
   checkTrue(
     "回傳的鍵永遠是固定那六個",
-    INVOICE_TYPES.every((t) =>
-      JSON.stringify(Object.keys(normalizeInvoiceChoice({ type: t })).sort()) ===
-      JSON.stringify(["carrierNumber", "carrierType", "companyTitle", "loveCode", "taxId", "type"]),
+    INVOICE_TYPES.every(
+      (t) =>
+        JSON.stringify(Object.keys(normalizeInvoiceChoice({ type: t })).sort()) ===
+        JSON.stringify([
+          "carrierNumber",
+          "carrierType",
+          "companyTitle",
+          "loveCode",
+          "taxId",
+          "type",
+        ]),
     ),
   );
 }
@@ -392,15 +411,18 @@ console.log("\n[8] checkoutPayloadSchema：發票欄位帶不動任何金額");
     "taxId",
     "type",
   ]);
-  check("品項只帶得動 productId 與 quantity", Object.keys(invParsed.data?.items?.[0] ?? {}).sort(), [
-    "productId",
-    "quantity",
-  ]);
+  check(
+    "品項只帶得動 productId 與 quantity",
+    Object.keys(invParsed.data?.items?.[0] ?? {}).sort(),
+    ["productId", "quantity"],
+  );
 
   // 每一個品項也不能夾帶單價
   const itemTampered = {
     ...base,
-    items: [{ productId: "11111111-1111-4111-8111-111111111111", quantity: 1, unitPrice: 1, subtotal: 1 }],
+    items: [
+      { productId: "11111111-1111-4111-8111-111111111111", quantity: 1, unitPrice: 1, subtotal: 1 },
+    ],
   };
   const itemParsed = checkoutPayloadSchema.safeParse(itemTampered);
   check(
@@ -435,7 +457,11 @@ console.log("\n[9] 向後相容：payload 沒有 invoice 欄位");
   };
   const parsed = checkoutPayloadSchema.safeParse(noInvoice);
   checkTrue("沒有 invoice 欄位仍然 parse 得過", parsed.success);
-  check("normalize 之後是預設的個人發票", normalizeInvoiceChoice(parsed.data?.invoice), DEFAULT_INVOICE_CHOICE);
+  check(
+    "normalize 之後是預設的個人發票",
+    normalizeInvoiceChoice(parsed.data?.invoice),
+    DEFAULT_INVOICE_CHOICE,
+  );
 }
 
 // ── 10. 錯誤訊息掛在正確的欄位路徑上 ──────────────────────────────────────
@@ -457,7 +483,9 @@ console.log("\n[10] 驗證錯誤的 path（決定訊息會不會出現在欄位�
     return r.success ? null : r.error.issues[0].message;
   };
 
-  check("公司但統編是空的 → invoice.taxId", pathsOf({ type: "company", taxId: "" }), ["invoice.taxId"]);
+  check("公司但統編是空的 → invoice.taxId", pathsOf({ type: "company", taxId: "" }), [
+    "invoice.taxId",
+  ]);
   check("公司但統編只有 7 碼 → invoice.taxId", pathsOf({ type: "company", taxId: "1234567" }), [
     "invoice.taxId",
   ]);
@@ -468,7 +496,8 @@ console.log("\n[10] 驗證錯誤的 path（決定訊息會不會出現在欄位�
   // 是自己數錯了，真正的問題是其中一碼打錯。
   checkTrue(
     "碼數不對與檢核碼不對是不同的訊息",
-    messageOf({ type: "company", taxId: "1234567" }) !== messageOf({ type: "company", taxId: "12345678" }),
+    messageOf({ type: "company", taxId: "1234567" }) !==
+      messageOf({ type: "company", taxId: "12345678" }),
   );
   checkTrue(
     "檢核碼的訊息說得出「檢核碼」",

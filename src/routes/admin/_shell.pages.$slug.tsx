@@ -7,7 +7,14 @@ import { ArrowDown, ArrowLeft, ArrowUp, Plus } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -26,10 +33,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { ImageField } from "@/components/admin/ImageField";
-import { localizedSchema, pageBlockSchema, type PageMetaFormValues, type PageListItemFormValues } from "@/lib/admin/schemas";
+import {
+  localizedSchema,
+  pageBlockSchema,
+  type PageMetaFormValues,
+  type PageListItemFormValues,
+} from "@/lib/admin/schemas";
 import {
   getPageBySlug,
   listPageBlocks,
@@ -312,7 +332,9 @@ function PageBlocksSection({
   const [submitting, setSubmitting] = useState(false);
   const form = useForm<BlocksFormShape>({
     resolver: zodResolver(blocksFormSchema),
-    defaultValues: { blocks: blocks.map((b) => ({ id: b.id, block_key: b.block_key, value: b.value })) },
+    defaultValues: {
+      blocks: blocks.map((b) => ({ id: b.id, block_key: b.block_key, value: b.value })),
+    },
   });
 
   const groups = groupBlocks(blocks);
@@ -320,7 +342,9 @@ function PageBlocksSection({
   async function onSubmit(values: BlocksFormShape) {
     setSubmitting(true);
     try {
-      const updated = await updatePageBlocks({ data: { page_slug: pageSlug, blocks: values.blocks } });
+      const updated = await updatePageBlocks({
+        data: { page_slug: pageSlug, blocks: values.blocks },
+      });
       onSaved(updated);
       toast.success("已儲存文案區塊");
     } catch (err) {
@@ -412,7 +436,13 @@ function groupListItems(items: PageListItemRow[]): ListItemGroup[] {
   return order.map((listKey) => ({ listKey, rows: byKey.get(listKey)! }));
 }
 
-function PageListItemsSection({ pageSlug, initialItems }: { pageSlug: string; initialItems: PageListItemRow[] }) {
+function PageListItemsSection({
+  pageSlug,
+  initialItems,
+}: {
+  pageSlug: string;
+  initialItems: PageListItemRow[];
+}) {
   const [items, setItems] = useState<PageListItemRow[]>(initialItems);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<PageListItemRow | null>(null);
@@ -490,7 +520,12 @@ function PageListItemsSection({ pageSlug, initialItems }: { pageSlug: string; in
    * has UNIQUE(page_slug, list_key, sort_order), and a two-row swap done as
    * separate UPDATEs collides with that constraint mid-flight.
    */
-  async function handleMove(listKey: string, rows: PageListItemRow[], index: number, direction: -1 | 1) {
+  async function handleMove(
+    listKey: string,
+    rows: PageListItemRow[],
+    index: number,
+    direction: -1 | 1,
+  ) {
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= rows.length) return;
 
@@ -501,7 +536,9 @@ function PageListItemsSection({ pageSlug, initialItems }: { pageSlug: string; in
 
     setReorderingId(moved.id);
     try {
-      await reorderPageListItems({ data: { page_slug: pageSlug, list_key: listKey, ids: reordered.map((r) => r.id) } });
+      await reorderPageListItems({
+        data: { page_slug: pageSlug, list_key: listKey, ids: reordered.map((r) => r.id) },
+      });
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "排序失敗，請稍後再試");
@@ -510,7 +547,9 @@ function PageListItemsSection({ pageSlug, initialItems }: { pageSlug: string; in
     }
   }
 
-  const activeRows = activeListKey ? (groups.find((g) => g.listKey === activeListKey)?.rows ?? []) : [];
+  const activeRows = activeListKey
+    ? (groups.find((g) => g.listKey === activeListKey)?.rows ?? [])
+    : [];
   const nextSortOrder = activeRows.reduce((max, r) => Math.max(max, r.sort_order), 0) + 1;
 
   const dialogDefaultValues: ListItemFormShape = editing
@@ -536,7 +575,9 @@ function PageListItemsSection({ pageSlug, initialItems }: { pageSlug: string; in
     <section className="space-y-4 rounded-md border border-border p-4">
       <div>
         <h2 className="text-lg font-medium">清單</h2>
-        <p className="mt-1 text-sm text-muted-foreground">共 {items.length} 筆，依清單分組管理，可新增／刪除／排序。</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          共 {items.length} 筆，依清單分組管理，可新增／刪除／排序。
+        </p>
       </div>
 
       {groups.length === 0 ? (
@@ -549,7 +590,12 @@ function PageListItemsSection({ pageSlug, initialItems }: { pageSlug: string; in
             <div key={group.listKey} className="space-y-3 rounded-md border border-border p-3">
               <div className="flex items-center justify-between gap-4">
                 <h3 className="text-sm font-semibold">{group.listKey}</h3>
-                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openCreate(group.listKey)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => openCreate(group.listKey)}
+                >
                   <Plus className="h-4 w-4" />
                   新增
                 </Button>
@@ -636,11 +682,16 @@ function PageListItemsSection({ pageSlug, initialItems }: { pageSlug: string; in
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這個項目嗎？</AlertDialogTitle>
-            <AlertDialogDescription>「{deleteTarget?.label.zh}」刪除後無法復原。</AlertDialogDescription>
+            <AlertDialogDescription>
+              「{deleteTarget?.label.zh}」刪除後無法復原。
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>

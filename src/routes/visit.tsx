@@ -184,12 +184,7 @@ function Visit() {
       {/* Map */}
       <section className="container-editorial pb-16">
         <div className="aspect-[16/9] bg-muted">
-          <iframe
-            src={map.embed}
-            className="h-full w-full border-0"
-            loading="lazy"
-            title="Map"
-          />
+          <iframe src={map.embed} className="h-full w-full border-0" loading="lazy" title="Map" />
         </div>
       </section>
 
@@ -211,9 +206,13 @@ function Visit() {
       <section className="container-editorial pb-20">
         <div className="border border-border bg-[oklch(0.97_0.012_82)] p-8 md:p-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="max-w-md">
-            <p className="eyebrow text-2xl">{t(p.block("navigateEyebrow", PAGE.navigateEyebrow))}</p>
+            <p className="eyebrow text-2xl">
+              {t(p.block("navigateEyebrow", PAGE.navigateEyebrow))}
+            </p>
             <h3 className="display mt-3 text-2xl md:text-3xl">{t(ui.buttons.navigate)}</h3>
-            <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{t(p.block("navHint", PAGE.navHint))}</p>
+            <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+              {t(p.block("navHint", PAGE.navHint))}
+            </p>
           </div>
           <div className="flex flex-wrap gap-3 text-xs tracking-widest">
             <a
@@ -238,7 +237,9 @@ function Visit() {
 
       {/* 3) 交通方式 */}
       <section className="container-editorial pb-24">
-        <p className="eyebrow text-2xl border-t border-border pt-12">{t(p.block("transport", PAGE.transport))}</p>
+        <p className="eyebrow text-2xl border-t border-border pt-12">
+          {t(p.block("transport", PAGE.transport))}
+        </p>
         <div className="mt-10 grid gap-12 md:grid-cols-2 lg:grid-cols-4">
           {/* Metro */}
           <div>
@@ -281,7 +282,7 @@ function Visit() {
               onClick={() => setBusOpen((v) => !v)}
               className="mt-5 text-xs tracking-widest text-clay hover-underline"
             >
-              {t(p.block("busDetail", PAGE.busDetail))}  {busOpen ? "−" : "+"}
+              {t(p.block("busDetail", PAGE.busDetail))} {busOpen ? "−" : "+"}
             </button>
             {busOpen && (
               <ul className="mt-5 space-y-3 text-xs leading-relaxed text-muted-foreground border-l-2 border-clay/40 pl-4">
@@ -297,7 +298,9 @@ function Visit() {
       {/* 4) 店內體驗 + CTA */}
       <section className="container-editorial pb-32 grid gap-12 md:grid-cols-2">
         <div>
-          <p className="eyebrow text-2xl border-t border-border pt-12">{t(p.block("inside", PAGE.inside))}</p>
+          <p className="eyebrow text-2xl border-t border-border pt-12">
+            {t(p.block("inside", PAGE.inside))}
+          </p>
           <ul className="mt-6 space-y-3 text-sm leading-relaxed text-foreground/80">
             {insideList.map((item, i) => (
               <li key={i}>· {t(item)}</li>
@@ -305,12 +308,22 @@ function Visit() {
           </ul>
         </div>
         <div>
-          <p className="eyebrow text-2xl border-t border-border pt-12">{t(p.block("contactEyebrow", PAGE.contactEyebrow))}</p>
+          <p className="eyebrow text-2xl border-t border-border pt-12">
+            {t(p.block("contactEyebrow", PAGE.contactEyebrow))}
+          </p>
           <div className="mt-6 flex flex-wrap gap-4 text-xs tracking-widest">
-            <Link to="/contact" className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors">
+            <Link
+              to="/contact"
+              className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors"
+            >
               {t(p.block("contactUs", PAGE.contactUs))}
             </Link>
-            <a href={social.instagram} target="_blank" rel="noreferrer" className="self-center text-clay hover-underline">
+            <a
+              href={social.instagram}
+              target="_blank"
+              rel="noreferrer"
+              className="self-center text-clay hover-underline"
+            >
               @intervalbookstw
             </a>
           </div>

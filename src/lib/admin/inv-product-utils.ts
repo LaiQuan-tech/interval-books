@@ -16,7 +16,10 @@
  *    真的拆錯了，期數欄就在旁邊，改回去比每次都要手動填快。所以它只在期數欄
  *    **是空的**時候才跑。
  */
-export function extractIssueFromName(name: string): { baseName: string; issueNumber: string | null } {
+export function extractIssueFromName(name: string): {
+  baseName: string;
+  issueNumber: string | null;
+} {
   const patterns = [
     /\s*NO\.?\s*(\d+)/i, // NO.15, NO 15
     /\s*#(\d+)/, // #15
@@ -64,7 +67,13 @@ export function isApprovalRequired(
  * pageSize 上限 200 是 productFilterSchema 訂的，所以 993 筆要跑 5 次。
  */
 export async function loadAllProductsForMatching(): Promise<
-  { inv_product_id: string; name: string; issue_number: string | null; barcode: string | null; series: string | null }[]
+  {
+    inv_product_id: string;
+    name: string;
+    issue_number: string | null;
+    barcode: string | null;
+    series: string | null;
+  }[]
 > {
   const { listAdminProducts } = await import("@/lib/admin/fns/inv-products");
   const base = {

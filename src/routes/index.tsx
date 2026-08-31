@@ -2,7 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageShell } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { fetchEvents, fetchExhibitions, fetchJourneys, fetchNews, fetchPage, pageText } from "@/lib/cms";
+import {
+  fetchEvents,
+  fetchExhibitions,
+  fetchJourneys,
+  fetchNews,
+  fetchPage,
+  pageText,
+} from "@/lib/cms";
 import { useSiteContent } from "@/lib/site-content";
 import { imageFor } from "@/lib/images";
 import heroImg from "@/assets/hero-mountain.jpg";
@@ -21,7 +28,11 @@ const PAGE_META = {
 };
 
 const HERO = {
-  eyebrow: { zh: "Interval Books  ／  Est.", en: "Interval Books  ／  Est.", ja: "Interval Books  ／  Est." },
+  eyebrow: {
+    zh: "Interval Books  ／  Est.",
+    en: "Interval Books  ／  Est.",
+    ja: "Interval Books  ／  Est.",
+  },
   titleMain: { zh: "小時光書店", en: "Interval Books", ja: "小時光書店" },
   titleSub: {
     zh: "留一點時間給真正重要的事",
@@ -175,7 +186,7 @@ function Index() {
                 {card.note ? t(card.note) : ""}
               </p>
               <span className="mt-8 inline-block text-xs tracking-widest text-clay group-hover:text-foreground">
-                ——  {t(p.block("entries.goTo", ENTRIES.goTo))}
+                —— {t(p.block("entries.goTo", ENTRIES.goTo))}
               </span>
             </Link>
           ))}
@@ -183,7 +194,11 @@ function Index() {
       </section>
 
       {/* 精選活動 */}
-      <SectionHeader eyebrow={t(ui.sections.thisMonth)} title={t(ui.sections.featuredEvents)} link={{ to: "/events", label: t(ui.buttons.viewAll) }} />
+      <SectionHeader
+        eyebrow={t(ui.sections.thisMonth)}
+        title={t(ui.sections.featuredEvents)}
+        link={{ to: "/events", label: t(ui.buttons.viewAll) }}
+      />
       <div className="container-editorial pb-20 grid gap-10 md:grid-cols-3">
         {events.slice(0, 3).map((e) => (
           <article key={e.id} className="flex flex-col">
@@ -197,43 +212,72 @@ function Index() {
               rel="noreferrer"
               className="mt-6 inline-block tracking-widest text-clay hover-underline self-start text-base"
             >
-              {t(ui.buttons.toEvent)}  →
+              {t(ui.buttons.toEvent)} →
             </a>
           </article>
         ))}
       </div>
 
       {/* 精選展覽 */}
-      <SectionHeader eyebrow={t(p.block("sections.exhibitionsEyebrow", SECTION_EYEBROWS.exhibitions))} title={t(ui.sections.featuredExhibitions)} link={{ to: "/exhibitions", label: t(ui.buttons.viewAll) }} />
+      <SectionHeader
+        eyebrow={t(p.block("sections.exhibitionsEyebrow", SECTION_EYEBROWS.exhibitions))}
+        title={t(ui.sections.featuredExhibitions)}
+        link={{ to: "/exhibitions", label: t(ui.buttons.viewAll) }}
+      />
       <div className="container-editorial pb-24 grid gap-10 md:grid-cols-2">
         {exhibitions.slice(0, 2).map((ex, i) => (
           <article key={ex.id} className="group">
             <div className="aspect-[5/4] overflow-hidden bg-muted">
-              <img src={imageFor(ex.imageKey, i === 0 ? exhibitionImg : storefrontImg)} alt={t(ex.title)} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]" />
+              <img
+                src={imageFor(ex.imageKey, i === 0 ? exhibitionImg : storefrontImg)}
+                alt={t(ex.title)}
+                loading="lazy"
+                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]"
+              />
             </div>
             <p className="eyebrow text-2xl mt-6">{ex.period}</p>
             <h3 className="display mt-3 text-3xl">{t(ex.title)}</h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{t(ex.summary)}</p>
-            <Link to="/exhibitions" hash={ex.slug} className="mt-5 inline-block text-xs tracking-widest text-clay hover-underline">
-              {t(ui.buttons.toExhibition)}  →
+            <Link
+              to="/exhibitions"
+              hash={ex.slug}
+              className="mt-5 inline-block text-xs tracking-widest text-clay hover-underline"
+            >
+              {t(ui.buttons.toExhibition)} →
             </Link>
           </article>
         ))}
       </div>
 
       {/* 精選策旅 */}
-      <SectionHeader eyebrow={t(p.block("sections.journeysEyebrow", SECTION_EYEBROWS.journeys))} title={t(ui.sections.featuredJourney)} link={{ to: "/journeys", label: t(ui.buttons.viewAll) }} />
+      <SectionHeader
+        eyebrow={t(p.block("sections.journeysEyebrow", SECTION_EYEBROWS.journeys))}
+        title={t(ui.sections.featuredJourney)}
+        link={{ to: "/journeys", label: t(ui.buttons.viewAll) }}
+      />
       <div className="container-editorial pb-24">
         {journeys.slice(0, 1).map((j) => (
           <article key={j.id} className="grid md:grid-cols-2 gap-12 items-center">
             <div className="aspect-[4/3] overflow-hidden bg-muted">
-              <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
+              <img
+                src={journeyImg}
+                alt={t(j.title)}
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
             </div>
             <div>
-              <p className="eyebrow text-2xl">{t(j.days)}  ／  {t(j.theme)}</p>
+              <p className="eyebrow text-2xl">
+                {t(j.days)} ／ {t(j.theme)}
+              </p>
               <h3 className="display mt-4 text-4xl whitespace-pre-line">{t(j.title)}</h3>
               <p className="mt-5 text-base leading-relaxed text-foreground/75">{t(j.summary)}</p>
-              <a href={j.externalUrl} target="_blank" rel="noreferrer" className="mt-8 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base">
+              <a
+                href={j.externalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-8 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
+              >
                 {t(ui.buttons.toJourney)}
               </a>
             </div>
@@ -246,16 +290,26 @@ function Index() {
         <div className="grid md:grid-cols-2 gap-12 items-center">
           <div>
             <p className="eyebrow text-2xl">{t(ui.nav.curated)}</p>
-            <h2 className="display mt-5 md:text-5xl text-3xl font-mono text-left whitespace-pre-line">{t(p.block("entries.curatedTitle", ENTRIES.curatedTitle))}</h2>
+            <h2 className="display mt-5 md:text-5xl text-3xl font-mono text-left whitespace-pre-line">
+              {t(p.block("entries.curatedTitle", ENTRIES.curatedTitle))}
+            </h2>
             <p className="mt-6 max-w-md text-base leading-relaxed text-foreground/75 whitespace-pre-line">
               {t(p.block("entries.curatedBody", ENTRIES.curatedBody))}
             </p>
-            <Link to="/curated" className="mt-8 inline-block tracking-widest text-clay hover-underline text-base">
-              {t(p.block("entries.curatedCta", ENTRIES.curatedCta))}  →
+            <Link
+              to="/curated"
+              className="mt-8 inline-block tracking-widest text-clay hover-underline text-base"
+            >
+              {t(p.block("entries.curatedCta", ENTRIES.curatedCta))} →
             </Link>
           </div>
           <div className="aspect-[4/5] overflow-hidden bg-muted">
-            <img src={curatedImg} alt={t(ui.nav.curated)} loading="lazy" className="h-full w-full object-cover" />
+            <img
+              src={curatedImg}
+              alt={t(ui.nav.curated)}
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
           </div>
         </div>
       </section>
@@ -264,12 +318,7 @@ function Index() {
       <section className="container-editorial pb-24">
         <div className="grid md:grid-cols-2 gap-12 items-stretch">
           <div className="aspect-[4/3] md:aspect-auto bg-muted">
-            <iframe
-              src={map.embed}
-              className="h-full w-full border-0"
-              loading="lazy"
-              title="Map"
-            />
+            <iframe src={map.embed} className="h-full w-full border-0" loading="lazy" title="Map" />
           </div>
           <div className="flex flex-col justify-center">
             <p className="eyebrow text-2xl">{t(ui.nav.visit)}</p>
@@ -277,11 +326,16 @@ function Index() {
             <p className="mt-6 text-base text-foreground/75">{t(site.hours)}</p>
             <p className="mt-1 text-sm text-muted-foreground">{t(ui.footer.everyday)}</p>
             <div className="mt-8 flex flex-wrap gap-4 text-xs tracking-widest">
-              <a href={map.link} target="_blank" rel="noreferrer" className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors">
+              <a
+                href={map.link}
+                target="_blank"
+                rel="noreferrer"
+                className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors"
+              >
                 {t(ui.buttons.navigate)}
               </a>
               <Link to="/visit" className="self-center text-clay hover-underline">
-                {t(p.block("entries.visitFull", ENTRIES.visitFull))}  →
+                {t(p.block("entries.visitFull", ENTRIES.visitFull))} →
               </Link>
             </div>
           </div>
@@ -289,13 +343,21 @@ function Index() {
       </section>
 
       {/* 最新消息 */}
-      <SectionHeader eyebrow={t(p.block("sections.newsEyebrow", SECTION_EYEBROWS.news))} title={t(ui.sections.latestNews)} link={{ to: "/news", label: t(ui.buttons.viewAll) }} />
+      <SectionHeader
+        eyebrow={t(p.block("sections.newsEyebrow", SECTION_EYEBROWS.news))}
+        title={t(ui.sections.latestNews)}
+        link={{ to: "/news", label: t(ui.buttons.viewAll) }}
+      />
       <div className="container-editorial pb-24 grid gap-10 md:grid-cols-3">
         {news.slice(0, 3).map((n) => (
           <article key={n.id}>
             <p className="text-muted-foreground tracking-widest text-lg">{n.date}</p>
-            <h3 className="font-serif text-xl mt-3 leading-snug whitespace-pre-line">{t(n.title)}</h3>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">{t(n.summary)}</p>
+            <h3 className="font-serif text-xl mt-3 leading-snug whitespace-pre-line">
+              {t(n.title)}
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
+              {t(n.summary)}
+            </p>
           </article>
         ))}
       </div>
@@ -319,8 +381,11 @@ function SectionHeader({
         <h2 className="display mt-3 text-3xl md:text-4xl">{title}</h2>
       </div>
       {link && (
-        <Link to={link.to} className="text-xs tracking-widest text-clay hover-underline hidden md:inline-block">
-          {link.label}  →
+        <Link
+          to={link.to}
+          className="text-xs tracking-widest text-clay hover-underline hidden md:inline-block"
+        >
+          {link.label} →
         </Link>
       )}
     </div>

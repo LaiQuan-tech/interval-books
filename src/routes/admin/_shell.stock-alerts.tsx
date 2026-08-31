@@ -170,9 +170,12 @@ function StockAlertsPage() {
                   </div>
 
                   <p className="text-sm text-muted-foreground">
-                    差 <span className="font-medium text-foreground tabular-nums">{a.shortfall}</span> 件
-                    ／目前庫存{" "}
-                    <span className="font-medium text-foreground tabular-nums">{a.current_stock}</span>
+                    差{" "}
+                    <span className="font-medium text-foreground tabular-nums">{a.shortfall}</span>{" "}
+                    件 ／目前庫存{" "}
+                    <span className="font-medium text-foreground tabular-nums">
+                      {a.current_stock}
+                    </span>
                     {/* 分隔符要寫成字串運算式：單獨一行的全形空白會被 JSX 當成
                         純空白節點修掉，庫存數字就會直接黏在時間戳上（「庫存 02026/8/15」）。 */}
                     {" ・ "}
@@ -189,7 +192,9 @@ function StockAlertsPage() {
                   {a.resolved_at ? (
                     <p className="rounded-md bg-background px-2.5 py-1.5 text-sm">
                       <span className="text-muted-foreground">
-                        {new Date(a.resolved_at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}
+                        {new Date(a.resolved_at).toLocaleString("zh-TW", {
+                          timeZone: "Asia/Taipei",
+                        })}
                         {/* 同上：行首的全形空白會被 JSX 修掉，時間戳會黏住 email。 */}
                         {" ・ "}
                         {a.resolved_by_email ?? "—"}：
@@ -221,8 +226,7 @@ function StockAlertsPage() {
 
       {!canResolve ? (
         <p className="text-xs text-muted-foreground">
-          你可以看到告警，但沒有「標記已處理」的權限（approve_stock_adjustments）。
-          請找管理員授權。
+          你可以看到告警，但沒有「標記已處理」的權限（approve_stock_adjustments）。 請找管理員授權。
         </p>
       ) : null}
 

@@ -168,7 +168,11 @@ export async function getAdjustmentSummary(filter: {
   if (error) throw new Error(`[repo/inv-adjustments] 異動統計讀取失敗：${error.message}`);
 
   const out: Record<string, { count: number; quantity: number; cost: number }> = {};
-  for (const row of (data ?? []) as { category: string; quantity: number; total_cost: number | null }[]) {
+  for (const row of (data ?? []) as {
+    category: string;
+    quantity: number;
+    total_cost: number | null;
+  }[]) {
     const bucket = (out[row.category] ??= { count: 0, quantity: 0, cost: 0 });
     bucket.count += 1;
     bucket.quantity += Math.abs(row.quantity ?? 0);
@@ -334,17 +338,24 @@ export async function recordStockCount(input: {
   };
 }
 
-export async function submitAdjustment(input: {
-  userId: string;
-  id: string;
-}): Promise<{ changed: boolean; previous_status: string; status: string; needs_approval: boolean }> {
+export async function submitAdjustment(input: { userId: string; id: string }): Promise<{
+  changed: boolean;
+  previous_status: string;
+  status: string;
+  needs_approval: boolean;
+}> {
   const { data, error } = await supabaseAdmin().rpc("inv_submit_stock_adjustment", {
     p_user_id: input.userId,
     p_id: input.id,
   });
 
   if (error) throw new Error(speak(error.message, "送出失敗，請再試一次"));
-  return data as { changed: boolean; previous_status: string; status: string; needs_approval: boolean };
+  return data as {
+    changed: boolean;
+    previous_status: string;
+    status: string;
+    needs_approval: boolean;
+  };
 }
 
 export async function deleteAdjustment(id: string): Promise<{
@@ -358,17 +369,24 @@ export async function deleteAdjustment(id: string): Promise<{
   return data as { deleted: boolean; adjustment_number: string | null };
 }
 
-export async function reverseAdjustment(input: {
-  userId: string;
+export async function reverseAdjustment(input: { userId: string; id: string }): Promise<{
   id: string;
-}): Promise<{ id: string; adjustment_number: string | null; quantity: number; reversal_of: string }> {
+  adjustment_number: string | null;
+  quantity: number;
+  reversal_of: string;
+}> {
   const { data, error } = await supabaseAdmin().rpc("inv_reverse_stock_adjustment", {
     p_user_id: input.userId,
     p_id: input.id,
   });
 
   if (error) throw new Error(speak(error.message, "沖帳失敗"));
-  return data as { id: string; adjustment_number: string | null; quantity: number; reversal_of: string };
+  return data as {
+    id: string;
+    adjustment_number: string | null;
+    quantity: number;
+    reversal_of: string;
+  };
 }
 
 export async function resubmitAdjustment(
@@ -404,12 +422,16 @@ export async function listAdjustmentFormOptions(): Promise<{
   approvalSettings: { module: string; is_enabled: boolean }[];
 }> {
   const [cats, settings] = await Promise.all([
-    supabaseAdmin().from("inv_admin_categories").select("category_id, name, icon").order("display_order"),
+    supabaseAdmin()
+      .from("inv_admin_categories")
+      .select("category_id, name, icon")
+      .order("display_order"),
     supabaseAdmin().from("inv_admin_approval_settings").select("module, is_enabled"),
   ]);
 
   if (cats.error) throw new Error(`[repo/inv-adjustments] 分類讀取失敗：${cats.error.message}`);
-  if (settings.error) throw new Error(`[repo/inv-adjustments] 審核設定讀取失敗：${settings.error.message}`);
+  if (settings.error)
+    throw new Error(`[repo/inv-adjustments] 審核設定讀取失敗：${settings.error.message}`);
 
   return {
     categories: (cats.data ?? []) as { category_id: string; name: string; icon: string | null }[],

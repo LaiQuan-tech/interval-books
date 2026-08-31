@@ -153,7 +153,9 @@ export function LocalizedField({
               size="sm"
               className="h-auto gap-1.5 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+              />
               {label}（英文／日文{optional ? "" : " — 必填"}）
             </Button>
           </CollapsibleTrigger>

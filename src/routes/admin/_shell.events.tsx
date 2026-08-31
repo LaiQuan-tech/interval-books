@@ -8,8 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -28,10 +41,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { eventSchema, type EventFormValues } from "@/lib/admin/schemas";
-import { countEventsByCategory, listEvents, removeEvent, upsertEvent } from "@/lib/admin/fns/events";
+import {
+  countEventsByCategory,
+  listEvents,
+  removeEvent,
+  upsertEvent,
+} from "@/lib/admin/fns/events";
 import { listEventCategories } from "@/lib/admin/fns/event-categories";
 import { listArtistOptions } from "@/lib/admin/fns/artists";
 import { formatUpdatedAt } from "@/lib/admin/format";
@@ -292,7 +318,10 @@ function AdminEventsPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這場活動嗎？</AlertDialogTitle>
@@ -454,7 +483,9 @@ function EventForm({
                   onChange={(e) => field.onChange(e.target.value === "" ? null : e.target.value)}
                 />
               </FormControl>
-              <FormDescription>目前沒有任何頁面讀取這個欄位，保留給未來依日期排序、篩選使用。</FormDescription>
+              <FormDescription>
+                目前沒有任何頁面讀取這個欄位，保留給未來依日期排序、篩選使用。
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}
@@ -488,7 +519,9 @@ function EventForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {(Object.keys(REGISTRATION_TYPE_LABEL) as EventFormValues["registration_type"][]).map((v) => (
+                    {(
+                      Object.keys(REGISTRATION_TYPE_LABEL) as EventFormValues["registration_type"][]
+                    ).map((v) => (
                       <SelectItem key={v} value={v}>
                         {REGISTRATION_TYPE_LABEL[v]}
                       </SelectItem>
@@ -532,7 +565,9 @@ function EventForm({
                     ref={field.ref}
                     onBlur={field.onBlur}
                     value={field.value}
-                    onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                    onChange={(e) =>
+                      field.onChange(e.target.value === "" ? 0 : Number(e.target.value))
+                    }
                   />
                 </FormControl>
                 <FormMessage />
@@ -550,7 +585,9 @@ function EventForm({
                   <FormControl>
                     <Switch checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
-                  <span className="text-sm text-muted-foreground">{field.value ? "已發布" : "草稿"}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {field.value ? "已發布" : "草稿"}
+                  </span>
                 </div>
                 <FormMessage />
               </FormItem>

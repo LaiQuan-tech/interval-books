@@ -68,9 +68,15 @@ function News() {
           {news.map((n) => (
             <li key={n.id} className="py-10">
               <p className="text-muted-foreground tracking-widest text-lg">{n.date}</p>
-              <h3 className="font-serif text-2xl mt-3 leading-snug whitespace-pre-line">{t(n.title)}</h3>
-              <p className="mt-4 text-sm leading-relaxed text-foreground/75 whitespace-pre-line">{t(n.summary)}</p>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{t(n.description)}</p>
+              <h3 className="font-serif text-2xl mt-3 leading-snug whitespace-pre-line">
+                {t(n.title)}
+              </h3>
+              <p className="mt-4 text-sm leading-relaxed text-foreground/75 whitespace-pre-line">
+                {t(n.summary)}
+              </p>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                {t(n.description)}
+              </p>
             </li>
           ))}
         </ul>

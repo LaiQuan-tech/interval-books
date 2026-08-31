@@ -24,79 +24,83 @@ type Props = {
   onPurchaseChange: (next: InitialPurchase) => void;
 };
 
-export function InitialPurchaseFields({ enabled, onEnabledChange, purchase, onPurchaseChange }: Props) {
+export function InitialPurchaseFields({
+  enabled,
+  onEnabledChange,
+  purchase,
+  onPurchaseChange,
+}: Props) {
   return (
     <>
-            <Separator />
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="p-with-purchase"
-                  checked={enabled}
-                  onCheckedChange={(v) => onEnabledChange(v === true)}
-                />
-                <Label htmlFor="p-with-purchase" className="font-normal">
-                  同時建立一筆進貨記錄
-                </Label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                庫存不是直接填的數字 —— 它由進貨加上去。這一筆進貨與商品在同一個交易裡建立，
-                不會出現「商品建好了、進貨沒進去」。
-              </p>
+      <Separator />
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="p-with-purchase"
+            checked={enabled}
+            onCheckedChange={(v) => onEnabledChange(v === true)}
+          />
+          <Label htmlFor="p-with-purchase" className="font-normal">
+            同時建立一筆進貨記錄
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          庫存不是直接填的數字 —— 它由進貨加上去。這一筆進貨與商品在同一個交易裡建立，
+          不會出現「商品建好了、進貨沒進去」。
+        </p>
 
-              {enabled ? (
-                <div className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pu-qty" className="text-xs">
-                      數量
-                    </Label>
-                    <Input
-                      id="pu-qty"
-                      type="number"
-                      min={1}
-                      value={purchase.quantity}
-                      onChange={(e) => onPurchaseChange({ ...purchase, quantity: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pu-cost" className="text-xs">
-                      進貨單價
-                    </Label>
-                    <Input
-                      id="pu-cost"
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={purchase.cost_price}
-                      onChange={(e) => onPurchaseChange({ ...purchase, cost_price: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pu-vendor" className="text-xs">
-                      供應商（文字）
-                    </Label>
-                    <Input
-                      id="pu-vendor"
-                      value={purchase.vendor}
-                      maxLength={200}
-                      onChange={(e) => onPurchaseChange({ ...purchase, vendor: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pu-date" className="text-xs">
-                      進貨日期
-                    </Label>
-                    <Input
-                      id="pu-date"
-                      type="date"
-                      value={purchase.purchase_date}
-                      onChange={(e) => onPurchaseChange({ ...purchase, purchase_date: e.target.value })}
-                    />
-                  </div>
-                </div>
-              ) : null}
+        {enabled ? (
+          <div className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="pu-qty" className="text-xs">
+                數量
+              </Label>
+              <Input
+                id="pu-qty"
+                type="number"
+                min={1}
+                value={purchase.quantity}
+                onChange={(e) => onPurchaseChange({ ...purchase, quantity: e.target.value })}
+              />
             </div>
-
+            <div className="space-y-1.5">
+              <Label htmlFor="pu-cost" className="text-xs">
+                進貨單價
+              </Label>
+              <Input
+                id="pu-cost"
+                type="number"
+                min={0}
+                step="0.01"
+                value={purchase.cost_price}
+                onChange={(e) => onPurchaseChange({ ...purchase, cost_price: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pu-vendor" className="text-xs">
+                供應商（文字）
+              </Label>
+              <Input
+                id="pu-vendor"
+                value={purchase.vendor}
+                maxLength={200}
+                onChange={(e) => onPurchaseChange({ ...purchase, vendor: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pu-date" className="text-xs">
+                進貨日期
+              </Label>
+              <Input
+                id="pu-date"
+                type="date"
+                value={purchase.purchase_date}
+                onChange={(e) => onPurchaseChange({ ...purchase, purchase_date: e.target.value })}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
     </>
   );
 }

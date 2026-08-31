@@ -35,8 +35,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (typeof document !== "undefined") {
-      document.documentElement.lang =
-        lang === "zh" ? "zh-Hant" : lang === "ja" ? "ja" : "en";
+      document.documentElement.lang = lang === "zh" ? "zh-Hant" : lang === "ja" ? "ja" : "en";
     }
   }, [lang]);
 
@@ -52,9 +51,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const t = (entry: Localized) => entry[lang] || entry.zh;
 
   return (
-    <LanguageContext.Provider value={{ lang, setLang, t }}>
-      {children}
-    </LanguageContext.Provider>
+    <LanguageContext.Provider value={{ lang, setLang, t }}>{children}</LanguageContext.Provider>
   );
 }
 

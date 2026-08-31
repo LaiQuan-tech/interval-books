@@ -273,7 +273,11 @@ type Translate = (value: Localized) => string;
 const MSG = {
   name: { zh: "請輸入姓名", en: "Please enter a name", ja: "お名前をご入力ください" },
   nameLong: { zh: "姓名過長", en: "That name is too long", ja: "お名前が長すぎます" },
-  email: { zh: "請輸入電子信箱", en: "Please enter an email address", ja: "メールアドレスをご入力ください" },
+  email: {
+    zh: "請輸入電子信箱",
+    en: "Please enter an email address",
+    ja: "メールアドレスをご入力ください",
+  },
   emailFormat: {
     zh: "電子信箱格式不正確",
     en: "That email address does not look right",
@@ -284,11 +288,19 @@ const MSG = {
     en: "Please enter a mobile number (10 digits starting 09)",
     ja: "携帯番号をご入力ください（09 で始まる 10 桁）",
   },
-  recipient: { zh: "請輸入收件人姓名", en: "Please enter a recipient", ja: "お届け先のお名前をご入力ください" },
+  recipient: {
+    zh: "請輸入收件人姓名",
+    en: "Please enter a recipient",
+    ja: "お届け先のお名前をご入力ください",
+  },
   city: { zh: "請輸入縣市", en: "Please enter a city", ja: "市・県をご入力ください" },
   street: { zh: "請輸入詳細地址", en: "Please enter a street address", ja: "住所をご入力ください" },
   tooLong: { zh: "內容過長", en: "That is too long", ja: "内容が長すぎます" },
-  noteLong: { zh: "備註最多 500 字", en: "Notes are limited to 500 characters", ja: "備考は 500 文字までです" },
+  noteLong: {
+    zh: "備註最多 500 字",
+    en: "Notes are limited to 500 characters",
+    ja: "備考は 500 文字までです",
+  },
   taxId: {
     zh: "請輸入 8 碼統一編號",
     en: "Please enter the 8-digit business number",

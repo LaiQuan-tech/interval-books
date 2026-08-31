@@ -51,12 +51,11 @@ function Privacy() {
 
   return (
     <PageShell>
-      <PageHeader
-        eyebrow={page?.eyebrowPrefix ?? "Privacy"}
-        title={t(p.title(PAGE.title))}
-      />
+      <PageHeader eyebrow={page?.eyebrowPrefix ?? "Privacy"} title={t(p.title(PAGE.title))} />
       <section className="container-editorial pb-32 max-w-3xl">
-        <p className="text-base leading-loose text-foreground/80">{t(p.block("body", PAGE.body))}</p>
+        <p className="text-base leading-loose text-foreground/80">
+          {t(p.block("body", PAGE.body))}
+        </p>
       </section>
     </PageShell>
   );

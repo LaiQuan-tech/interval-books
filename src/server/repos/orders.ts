@@ -264,7 +264,12 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
   // charge for both while seating everyone in whichever one came first.
   const wanted = new Map<
     string,
-    { productId: string; sessionId: string | null; quantity: number; participants: ParticipantInput[] }
+    {
+      productId: string;
+      sessionId: string | null;
+      quantity: number;
+      participants: ParticipantInput[];
+    }
   >();
   for (const item of items) {
     const sessionId = item.sessionId ?? null;
@@ -300,7 +305,9 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
   // Only queried when the cart actually holds a booking, so an all-books
   // checkout costs exactly the round trips it did before 0020.
   const sessionIds = [
-    ...new Set([...wanted.values()].map((w) => w.sessionId).filter((id): id is string => id !== null)),
+    ...new Set(
+      [...wanted.values()].map((w) => w.sessionId).filter((id): id is string => id !== null),
+    ),
   ];
   const sessionById = new Map<string, SessionRow>();
   if (sessionIds.length > 0) {
@@ -466,9 +473,14 @@ async function releaseSeats(orderItemIds: number[]): Promise<void> {
  * cart has been priced and the answer is known. Returning null rather than
  * throwing lets the caller decide whether a missing address is a problem.
  */
-function completeAddress(
-  a: CheckoutPayload["address"],
-): { recipient: string; phone: string; postalCode: string | null; city: string; district: string | null; street: string } | null {
+function completeAddress(a: CheckoutPayload["address"]): {
+  recipient: string;
+  phone: string;
+  postalCode: string | null;
+  city: string;
+  district: string | null;
+  street: string;
+} | null {
   const recipient = a?.recipient?.trim();
   const phone = a?.phone?.trim();
   const city = a?.city?.trim();
@@ -1144,13 +1156,15 @@ export async function getOrderByToken(token: string): Promise<OrderSummary | nul
     .eq("order_id", o.id)
     .order("id", { ascending: true });
 
-  const items = ((itemRows ?? []) as unknown as {
-    name: Localized;
-    unit_price: number;
-    quantity: number;
-    subtotal: number;
-    product_type: ProductTypeForOrder;
-  }[]).map((r) => ({
+  const items = (
+    (itemRows ?? []) as unknown as {
+      name: Localized;
+      unit_price: number;
+      quantity: number;
+      subtotal: number;
+      product_type: ProductTypeForOrder;
+    }[]
+  ).map((r) => ({
     name: r.name,
     unitPrice: r.unit_price,
     quantity: r.quantity,

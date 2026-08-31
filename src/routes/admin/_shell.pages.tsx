@@ -1,5 +1,12 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { listPages } from "@/lib/admin/fns/pages";
 import { formatUpdatedAt } from "@/lib/admin/format";
@@ -45,7 +52,8 @@ function AdminPagesListPage() {
       <div>
         <h1 className="text-2xl font-medium">頁面文案</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          共 {pages.length} 個頁面。頁面由程式碼的路由決定，這裡只能編輯既有頁面的文案，不能新增或刪除頁面。
+          共 {pages.length}{" "}
+          個頁面。頁面由程式碼的路由決定，這裡只能編輯既有頁面的文案，不能新增或刪除頁面。
         </p>
       </div>
 

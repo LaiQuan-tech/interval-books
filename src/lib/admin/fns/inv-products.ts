@@ -42,8 +42,12 @@ export const listAdminProducts = createServerFn({ method: "POST" })
 export const listProductFormOptions = createServerFn({ method: "GET" })
   .middleware([staffFnMiddleware()])
   .handler(async () => {
-    const { listAdminCategories, listAdminVendors, listApprovalSettings, listBaseProductCandidates } =
-      await import("@/server/repos/inv-products");
+    const {
+      listAdminCategories,
+      listAdminVendors,
+      listApprovalSettings,
+      listBaseProductCandidates,
+    } = await import("@/server/repos/inv-products");
     const [categories, vendors, approvalSettings, baseProducts] = await Promise.all([
       listAdminCategories(),
       listAdminVendors(),

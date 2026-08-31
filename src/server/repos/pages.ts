@@ -79,7 +79,11 @@ export async function listPages(): Promise<PageRow[]> {
 }
 
 export async function getPageBySlug(slug: string): Promise<PageRow | null> {
-  const { data, error } = await supabaseAdmin().from("pages").select(PAGE_COLUMNS).eq("slug", slug).maybeSingle();
+  const { data, error } = await supabaseAdmin()
+    .from("pages")
+    .select(PAGE_COLUMNS)
+    .eq("slug", slug)
+    .maybeSingle();
 
   if (error) throw new Error(`[repo/pages] getPageBySlug 失敗：${error.message}`);
   return (data as PageRow | null) ?? null;
@@ -106,7 +110,8 @@ export async function updatePageMeta(input: PageMetaUpdateInput): Promise<PageRo
       og_title: input.og_title ?? null,
       og_description: input.og_description ?? null,
       og_image_key: input.og_image_key ?? null,
-      eyebrow_prefix: input.eyebrow_prefix && input.eyebrow_prefix.trim() ? input.eyebrow_prefix.trim() : null,
+      eyebrow_prefix:
+        input.eyebrow_prefix && input.eyebrow_prefix.trim() ? input.eyebrow_prefix.trim() : null,
       eyebrow_suffix: input.eyebrow_suffix ?? null,
       header_title: input.header_title ?? null,
       header_intro: input.header_intro ?? null,
@@ -163,9 +168,15 @@ export async function bulkUpdatePageBlocks(
 ): Promise<PageBlockRow[]> {
   await Promise.all(
     blocks.map(async (block) => {
-      const { error } = await supabaseAdmin().from("page_blocks").update({ value: block.value }).eq("id", block.id);
+      const { error } = await supabaseAdmin()
+        .from("page_blocks")
+        .update({ value: block.value })
+        .eq("id", block.id);
 
-      if (error) throw new Error(`[repo/pages] bulkUpdatePageBlocks 失敗（${block.block_key}）：${error.message}`);
+      if (error)
+        throw new Error(
+          `[repo/pages] bulkUpdatePageBlocks 失敗（${block.block_key}）：${error.message}`,
+        );
     }),
   );
 
@@ -176,7 +187,8 @@ export async function bulkUpdatePageBlocks(
  * page_list_items
  * ------------------------------------------------------------------ */
 
-const LIST_ITEM_COLUMNS = "id, page_slug, list_key, label, note, image_key, sort_order, created_at, updated_at";
+const LIST_ITEM_COLUMNS =
+  "id, page_slug, list_key, label, note, image_key, sort_order, created_at, updated_at";
 
 export type PageListItemRow = {
   id: number;
@@ -281,7 +293,11 @@ export async function removePageListItem(id: number): Promise<void> {
  * `ids` is the full list of item ids for this page_slug+list_key in the
  * desired display order; array position becomes the new sort_order (1-based).
  */
-export async function reorderPageListItems(pageSlug: string, listKey: string, ids: number[]): Promise<void> {
+export async function reorderPageListItems(
+  pageSlug: string,
+  listKey: string,
+  ids: number[],
+): Promise<void> {
   const { error } = await supabaseAdmin().rpc("admin_reorder_page_list_items", {
     p_page_slug: pageSlug,
     p_list_key: listKey,

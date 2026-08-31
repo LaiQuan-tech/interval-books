@@ -416,7 +416,11 @@ export const curatedThemes: CuratedTheme[] = [
     },
     items: [
       {
-        name: { zh: "山村釀造．桂花蜜", en: "Mountain Village Osmanthus Honey", ja: "山村醸造 桂花蜜" },
+        name: {
+          zh: "山村釀造．桂花蜜",
+          en: "Mountain Village Osmanthus Honey",
+          ja: "山村醸造 桂花蜜",
+        },
         note: { zh: "南投手工小批次", en: "Small batch from Nantou", ja: "南投の小ロット" },
       },
       {
@@ -452,7 +456,11 @@ export const curatedThemes: CuratedTheme[] = [
     items: [
       {
         name: { zh: "粗陶茶碗", en: "Stoneware Tea Bowl", ja: "粗陶の茶碗" },
-        note: { zh: "手捏．不規則口緣", en: "Hand-pinched, irregular rim", ja: "手びねり・不揃いの縁" },
+        note: {
+          zh: "手捏．不規則口緣",
+          en: "Hand-pinched, irregular rim",
+          ja: "手びねり・不揃いの縁",
+        },
       },
       {
         name: { zh: "白瓷小皿", en: "White Porcelain Small Dish", ja: "白磁の小皿" },

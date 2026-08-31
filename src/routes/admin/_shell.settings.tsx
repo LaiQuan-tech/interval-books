@@ -202,7 +202,9 @@ function AdminSettingsPage() {
                     <FormControl>
                       <Textarea rows={2} {...field} />
                     </FormControl>
-                    <FormDescription>Google 地圖 embed 用網址，貼在頁面中顯示地圖。</FormDescription>
+                    <FormDescription>
+                      Google 地圖 embed 用網址，貼在頁面中顯示地圖。
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

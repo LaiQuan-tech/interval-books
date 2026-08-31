@@ -7,7 +7,14 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +33,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { eventCategorySchema, type EventCategoryFormValues } from "@/lib/admin/schemas";
 import {
@@ -51,7 +66,10 @@ const EMPTY_LOCALIZED = { zh: "", en: "", ja: "" };
  */
 export const Route = createFileRoute("/admin/_shell/categories")({
   loader: async () => {
-    const [categories, counts] = await Promise.all([listEventCategories(), countEventsByCategory()]);
+    const [categories, counts] = await Promise.all([
+      listEventCategories(),
+      countEventsByCategory(),
+    ]);
     return { categories, counts };
   },
   head: () => ({
@@ -195,7 +213,9 @@ function AdminEventCategoriesPage() {
                           </Button>
                         </div>
                         {inUse > 0 && (
-                          <p className="text-xs text-muted-foreground">尚有 {inUse} 場活動使用此分類</p>
+                          <p className="text-xs text-muted-foreground">
+                            尚有 {inUse} 場活動使用此分類
+                          </p>
                         )}
                       </div>
                     </TableCell>
@@ -226,7 +246,10 @@ function AdminEventCategoriesPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這個分類嗎？</AlertDialogTitle>
@@ -262,7 +285,13 @@ type CategoryFormProps = {
   submitLabel: string;
 };
 
-function CategoryForm({ defaultValues, editing, onSubmit, submitting, submitLabel }: CategoryFormProps) {
+function CategoryForm({
+  defaultValues,
+  editing,
+  onSubmit,
+  submitting,
+  submitLabel,
+}: CategoryFormProps) {
   const form = useForm<EventCategoryFormValues>({
     resolver: zodResolver(eventCategorySchema),
     defaultValues,
@@ -305,7 +334,9 @@ function CategoryForm({ defaultValues, editing, onSubmit, submitting, submitLabe
                   ref={field.ref}
                   onBlur={field.onBlur}
                   value={field.value}
-                  onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                  onChange={(e) =>
+                    field.onChange(e.target.value === "" ? 0 : Number(e.target.value))
+                  }
                 />
               </FormControl>
               <FormMessage />

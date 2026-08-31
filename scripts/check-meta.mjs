@@ -53,7 +53,10 @@ function routeFromFile(file) {
 function checkLocalizedObject(file, route, field, objNode, line) {
   if (!objNode || objNode.type !== "ObjectExpression") {
     record({
-      file, route, field, line,
+      file,
+      route,
+      field,
+      line,
       code: "non_literal_object",
       message: `${field}: not an object literal — cannot statically verify`,
     });
@@ -67,7 +70,11 @@ function checkLocalizedObject(file, route, field, objNode, line) {
     const val = getStringValue(prop.value);
     if (val === null) {
       record({
-        file, route, field, lang: key, line: prop.loc?.start.line,
+        file,
+        route,
+        field,
+        lang: key,
+        line: prop.loc?.start.line,
         code: "non_static_string",
         message: `${field}.${key}: not a static string`,
       });
@@ -75,13 +82,21 @@ function checkLocalizedObject(file, route, field, objNode, line) {
     }
     if (!val.trim()) {
       record({
-        file, route, field, lang: key, line: prop.loc?.start.line,
+        file,
+        route,
+        field,
+        lang: key,
+        line: prop.loc?.start.line,
         code: "empty_string",
         message: `${field}.${key}: empty string`,
       });
     } else if (!PATTERNS[key].test(val)) {
       record({
-        file, route, field, lang: key, line: prop.loc?.start.line,
+        file,
+        route,
+        field,
+        lang: key,
+        line: prop.loc?.start.line,
         code: "wrong_language",
         message: `${field}.${key}: text does not match language → "${val.slice(0, 60)}"`,
       });
@@ -91,7 +106,11 @@ function checkLocalizedObject(file, route, field, objNode, line) {
   for (const l of LANGS) {
     if (!(l in seen)) {
       record({
-        file, route, field, lang: l, line,
+        file,
+        route,
+        field,
+        lang: l,
+        line,
         code: "missing_language",
         message: `${field}: missing ${l} translation`,
       });
@@ -153,12 +172,19 @@ async function auditRoute(file) {
   let called = false;
   traverse(ast, {
     CallExpression(path) {
-      if (path.node.callee.type !== "Identifier" || path.node.callee.name !== "useDocumentMeta") return;
+      if (path.node.callee.type !== "Identifier" || path.node.callee.name !== "useDocumentMeta")
+        return;
       called = true;
       const arg = path.node.arguments[0];
       const callLine = path.node.loc?.start.line;
       if (!arg || arg.type !== "ObjectExpression") {
-        record({ file, route, line: callLine, code: "non_object_arg", message: "useDocumentMeta argument is not an object literal" });
+        record({
+          file,
+          route,
+          line: callLine,
+          code: "non_object_arg",
+          message: "useDocumentMeta argument is not an object literal",
+        });
         return;
       }
       for (const key of [...REQUIRED_FIELDS, ...OPTIONAL_FIELDS]) {
@@ -167,13 +193,27 @@ async function auditRoute(file) {
         );
         if (!prop) {
           if (REQUIRED_FIELDS.includes(key)) {
-            record({ file, route, field: key, line: callLine, code: "missing_field", message: `missing required field: ${key}` });
+            record({
+              file,
+              route,
+              field: key,
+              line: callLine,
+              code: "missing_field",
+              message: `missing required field: ${key}`,
+            });
           }
           continue;
         }
         const obj = resolveObject(prop.value);
         if (!obj) {
-          record({ file, route, field: key, line: prop.loc?.start.line, code: "unresolved_reference", message: `${key}: cannot resolve to object literal (referenced identifier not found)` });
+          record({
+            file,
+            route,
+            field: key,
+            line: prop.loc?.start.line,
+            code: "unresolved_reference",
+            message: `${key}: cannot resolve to object literal (referenced identifier not found)`,
+          });
           continue;
         }
         checkLocalizedObject(file, route, key, obj, prop.loc?.start.line);
@@ -181,15 +221,24 @@ async function auditRoute(file) {
     },
   });
   if (!called) {
-    record({ file, route, code: "hook_not_invoked", message: "useDocumentMeta imported but not invoked" });
+    record({
+      file,
+      route,
+      code: "hook_not_invoked",
+      message: "useDocumentMeta imported but not invoked",
+    });
   }
 }
 
 async function auditContent() {
   const file = CONTENT_FILE;
   let src;
-  try { src = await readFile(file, "utf8"); }
-  catch { record({ file, code: "missing_file", message: "content file not found" }); return; }
+  try {
+    src = await readFile(file, "utf8");
+  } catch {
+    record({ file, code: "missing_file", message: "content file not found" });
+    return;
+  }
   const ast = parse(src, { sourceType: "module", plugins: ["typescript"] });
 
   traverse(ast, {
@@ -202,20 +251,44 @@ async function auditContent() {
       for (const l of LANGS) {
         const prop = props.find((p) => (p.key.name ?? p.key.value) === l);
         if (!prop) {
-          record({ file, lang: l, line, code: "missing_language", message: `content object @ line ${line}: missing ${l}` });
+          record({
+            file,
+            lang: l,
+            line,
+            code: "missing_language",
+            message: `content object @ line ${line}: missing ${l}`,
+          });
           continue;
         }
         const v = prop.value;
         if (v.type === "StringLiteral" || v.type === "TemplateLiteral") {
           const s = getStringValue(v);
           if (!s || !s.trim()) {
-            record({ file, lang: l, line: prop.loc?.start.line, code: "empty_string", message: `content @ line ${line}: ${l} is empty` });
+            record({
+              file,
+              lang: l,
+              line: prop.loc?.start.line,
+              code: "empty_string",
+              message: `content @ line ${line}: ${l} is empty`,
+            });
           } else if (!PATTERNS[l].test(s)) {
-            record({ file, lang: l, line: prop.loc?.start.line, code: "wrong_language", message: `content @ line ${line}: ${l} text does not match language → "${s.slice(0, 50)}"` });
+            record({
+              file,
+              lang: l,
+              line: prop.loc?.start.line,
+              code: "wrong_language",
+              message: `content @ line ${line}: ${l} text does not match language → "${s.slice(0, 50)}"`,
+            });
           }
         } else if (v.type === "ArrayExpression") {
           if (v.elements.length === 0) {
-            record({ file, lang: l, line: prop.loc?.start.line, code: "empty_array", message: `content @ line ${line}: ${l} array is empty` });
+            record({
+              file,
+              lang: l,
+              line: prop.loc?.start.line,
+              code: "empty_array",
+              message: `content @ line ${line}: ${l} array is empty`,
+            });
           }
         }
       }
@@ -242,7 +315,8 @@ function buildReport(routeFiles) {
     byCode[x.code] = (byCode[x.code] ?? 0) + 1;
   }
 
-  const totalChecks = routeFiles.length * LANGS.length * (REQUIRED_FIELDS.length + OPTIONAL_FIELDS.length);
+  const totalChecks =
+    routeFiles.length * LANGS.length * (REQUIRED_FIELDS.length + OPTIONAL_FIELDS.length);
   return {
     generatedAt: new Date().toISOString(),
     summary: {
@@ -271,14 +345,18 @@ async function main() {
     const before = findings.length;
     await auditRoute(f);
     const routeIssues = findings.length - before;
-    console.log(`  ${routeIssues === 0 ? "✓" : "✗"} ${f}${routeIssues ? `  (${routeIssues} issue${routeIssues > 1 ? "s" : ""})` : ""}`);
+    console.log(
+      `  ${routeIssues === 0 ? "✓" : "✗"} ${f}${routeIssues ? `  (${routeIssues} issue${routeIssues > 1 ? "s" : ""})` : ""}`,
+    );
   }
 
   console.log(`\n→ Auditing ${CONTENT_FILE}`);
   const before = findings.length;
   await auditContent();
   const contentIssues = findings.length - before;
-  console.log(`  ${contentIssues === 0 ? "✓" : "✗"} ${CONTENT_FILE}${contentIssues ? `  (${contentIssues} issue${contentIssues > 1 ? "s" : ""})` : ""}`);
+  console.log(
+    `  ${contentIssues === 0 ? "✓" : "✗"} ${CONTENT_FILE}${contentIssues ? `  (${contentIssues} issue${contentIssues > 1 ? "s" : ""})` : ""}`,
+  );
 
   const report = buildReport(files);
   await mkdir("reports", { recursive: true });
@@ -311,11 +389,16 @@ async function main() {
     console.error(`\n✗ ${findings.length} issue(s):`);
     for (const f of findings) {
       const loc = f.line ? `:${f.line}` : "";
-      console.error(`  • [${f.code}] ${f.file}${loc}${f.lang ? ` (${f.lang})` : ""} — ${f.message}`);
+      console.error(
+        `  • [${f.code}] ${f.file}${loc}${f.lang ? ` (${f.lang})` : ""} — ${f.message}`,
+      );
     }
     process.exit(1);
   }
   console.log(`\n✓ All routes have complete zh/en/ja meta and all content fields are localized.`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

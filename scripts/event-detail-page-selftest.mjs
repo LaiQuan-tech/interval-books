@@ -117,7 +117,10 @@ checkTrue("反空殼：routeTree 讀得到", routeTree.length > 10000);
 checkTrue("routeTree import 了 events.index", /from '\.\/routes\/events\.index'/.test(routeTree));
 checkTrue("routeTree import 了 events.$slug", /from '\.\/routes\/events\.\$slug'/.test(routeTree));
 // 舊的那一行必須消失 —— 留著就代表 routeTree 沒重新產生，部署上去會找不到檔案。
-checkFalse("routeTree 不再 import 舊的 ./routes/events", /from '\.\/routes\/events'/.test(routeTree));
+checkFalse(
+  "routeTree 不再 import 舊的 ./routes/events",
+  /from '\.\/routes\/events'/.test(routeTree),
+);
 checkTrue("routeTree 有 /events/$slug 這條路由", routeTree.includes("'/events/$slug'"));
 
 // =============================================================================
@@ -138,19 +141,33 @@ checkTrue(
 check("整個路由只呼叫一次 notFound()", (detailCode.match(/notFound\(\)/g) ?? []).length, 1);
 checkFalse(
   "沒有任何一處無條件 notFound()",
-  /(^|[^!&\s])\s*throw notFound\(\);/m.test(detailCode.replace("if (!event && !unavailable) throw notFound();", "")),
+  /(^|[^!&\s])\s*throw notFound\(\);/m.test(
+    detailCode.replace("if (!event && !unavailable) throw notFound();", ""),
+  ),
 );
 // (b) 讀取失敗 → 頁殼 + 「暫時無法載入」，不是空白也不是 404。
 checkTrue("讀取失敗有自己的分支", /if \(!event\) \{/.test(detailCode));
 checkTrue("該分支渲染頁殼", /if \(!event\) \{[\s\S]{0,400}<PageShell>/.test(detailCode));
-checkTrue("該分支顯示 unavailable 文案", /if \(!event\) \{[\s\S]{0,600}t\(PAGE\.unavailable\)/.test(detailCode));
+checkTrue(
+  "該分支顯示 unavailable 文案",
+  /if \(!event\) \{[\s\S]{0,600}t\(PAGE\.unavailable\)/.test(detailCode),
+);
 checkFalse("讀取失敗的分支不是 return null", /if \(!event\) \{\s*return null;/.test(detailCode));
 
 // (c) 資料層必須真的分得出這兩種結果，否則路由那條守衛沒有東西可以判斷。
 checkTrue("cms.ts 匯出 fetchEventBySlug", /export async function fetchEventBySlug/.test(cmsCode));
-checkTrue("回傳型別帶著 unavailable", /event: EventDetailEntry \| null;\s*unavailable: boolean;/.test(cmsCode));
-checkTrue("查無此列時回 unavailable: false", /if \(!data\) return \{ event: null, unavailable: false \};/.test(bySlugBody));
-checkTrue("錯誤時回 unavailable: true", /return \{ event: null, unavailable: true \};/.test(bySlugBody));
+checkTrue(
+  "回傳型別帶著 unavailable",
+  /event: EventDetailEntry \| null;\s*unavailable: boolean;/.test(cmsCode),
+);
+checkTrue(
+  "查無此列時回 unavailable: false",
+  /if \(!data\) return \{ event: null, unavailable: false \};/.test(bySlugBody),
+);
+checkTrue(
+  "錯誤時回 unavailable: true",
+  /return \{ event: null, unavailable: true \};/.test(bySlugBody),
+);
 // 這一支不可以退回 bundled 的舊資料 —— 那等於把 0001 的種子當成現況印給客人看。
 checkFalse("詳情頁不退回 FALLBACK_EVENTS", /FALLBACK_EVENTS/.test(bySlugBody));
 // 也不可以借用本檔那個「把每一種失敗都吞成 null」的 select()。
@@ -164,12 +181,27 @@ console.log("\n[4] 不 select 不存在的欄位");
 // 把整個活動後台弄掛 —— PostgREST 對此回 42703，整頁 500。
 const selectMatch = /\.select\("([^"]*)"\)/.exec(bySlugBody);
 checkTrue("找得到 fetchEventBySlug 的 select 字串", Boolean(selectMatch));
-const selectedCols = (selectMatch?.[1] ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+const selectedCols = (selectMatch?.[1] ?? "")
+  .split(",")
+  .map((c) => c.trim())
+  .filter(Boolean);
 // 正式庫 public.events 的欄位全集（0001 的 14 欄 + 0025 的 speaker_id）。
 const EVENT_COLUMNS = new Set([
-  "id", "title", "summary", "description", "display_date", "iso_date", "category",
-  "external_url", "registration_type", "payment_enabled", "sort_order", "is_published",
-  "created_at", "updated_at", "speaker_id",
+  "id",
+  "title",
+  "summary",
+  "description",
+  "display_date",
+  "iso_date",
+  "category",
+  "external_url",
+  "registration_type",
+  "payment_enabled",
+  "sort_order",
+  "is_published",
+  "created_at",
+  "updated_at",
+  "speaker_id",
 ]);
 checkTrue("select 不是空的", selectedCols.length >= 6);
 for (const col of selectedCols) {
@@ -196,24 +228,39 @@ checkFalse("路由連 imageFor 都沒有 import", /from "@\/lib\/images"/.test(d
 checkFalse("路由沒有 import 任何 @/assets 圖片", /from "@\/assets\//.test(detailCode));
 checkFalse("head() 沒有硬塞 og:image", /"og:image"/.test(detailCode));
 // 對照組：imageFor 這支函式本身還在，斷言才有意義（不是因為函式被刪掉才「沒呼叫」）。
-checkTrue("imageFor 仍然存在於 src/lib/images.ts", /export function imageFor/.test(stripTs(readFile("src/lib/images.ts"))));
+checkTrue(
+  "imageFor 仍然存在於 src/lib/images.ts",
+  /export function imageFor/.test(stripTs(readFile("src/lib/images.ts"))),
+);
 checkTrue("而列表頁仍然用得到它", /imageFor\(/.test(indexCode));
 
 // =============================================================================
 // [6] 場次區：空的時候要有文案，不是整塊消失
 // =============================================================================
 console.log("\n[6] 場次區與空狀態");
-checkTrue("路由 import 了 SessionList", /import \{ SessionList \} from "@\/components\/shop\/SessionPicker";/.test(detailCode));
+checkTrue(
+  "路由 import 了 SessionList",
+  /import \{ SessionList \} from "@\/components\/shop\/SessionPicker";/.test(detailCode),
+);
 checkTrue("路由真的渲染 <SessionList", /<SessionList\b/.test(detailCode));
 // 沒有商品就沒有場次（event_sessions 掛的是 product_id），但那時候要傳空陣列
 // 讓元件畫空狀態，不是把整塊拿掉。
-checkTrue("沒有商品時仍然傳空陣列進去", /<SessionList sessions=\{booking\.product\?\.sessions \?\? \[\]\} \/>/.test(detailCode));
+checkTrue(
+  "沒有商品時仍然傳空陣列進去",
+  /<SessionList sessions=\{booking\.product\?\.sessions \?\? \[\]\} \/>/.test(detailCode),
+);
 checkTrue("SessionPicker.tsx 匯出 SessionList", /export function SessionList\(/.test(pickerCode));
 checkTrue("SessionList 有空狀態文案", /COPY\.noPublicSessions/.test(pickerCode));
-checkFalse("SessionList 不是空的時候 return null", /sessions\.length === 0[\s\S]{0,80}return null/.test(pickerCode));
+checkFalse(
+  "SessionList 不是空的時候 return null",
+  /sessions\.length === 0[\s\S]{0,80}return null/.test(pickerCode),
+);
 // 不可以自己再算一次剩餘名額，也不可以自己再寫一份日期格式 —— 兩份就是
 // 「商品頁與活動頁對同一場活動顯示不同的數字」。
-checkTrue("SessionList 走共用的 remainingForSession", /remainingForSession\(session\)/.test(pickerCode));
+checkTrue(
+  "SessionList 走共用的 remainingForSession",
+  /remainingForSession\(session\)/.test(pickerCode),
+);
 checkFalse("路由沒有自己算剩餘名額", /remainingForSession/.test(detailCode));
 checkFalse("路由沒有自己寫日期格式", /formatSessionWhen/.test(detailCode));
 checkFalse("路由沒有自己 map 場次", /sessions\.map\(/.test(detailCode));
@@ -236,9 +283,15 @@ checkTrue(
   "unavailable 才走 unavailable 文案，其餘走 closed",
   /booking\.unavailable \? \{ kind: "unavailable" \} : \{ kind: "closed" \}/.test(detailCode),
 );
-checkTrue("external_url 是空字串時也不生一個空連結", /return href \? \{ kind: "external", href \} : \{ kind: "closed" \};/.test(detailCode));
+checkTrue(
+  "external_url 是空字串時也不生一個空連結",
+  /return href \? \{ kind: "external", href \} : \{ kind: "closed" \};/.test(detailCode),
+);
 // 商品要透過 (source_type, source_id) 找 —— 0004 就定義好、也是唯一存在的連結。
-checkTrue("shop.ts 有 fetchActiveProductForEvent", /export async function fetchActiveProductForEvent/.test(shopCode));
+checkTrue(
+  "shop.ts 有 fetchActiveProductForEvent",
+  /export async function fetchActiveProductForEvent/.test(shopCode),
+);
 const forEventBody = stripTs(fnBody(readFile("src/lib/shop.ts"), "fetchActiveProductForEvent"));
 checkTrue("切得出 fetchActiveProductForEvent 的本體", forEventBody.length > 300);
 checkTrue('用 source_type = "event" 過濾', /\.eq\("source_type", "event"\)/.test(forEventBody));
@@ -248,8 +301,14 @@ checkTrue("只拿上架中的商品", /\.eq\("status", "active"\)/.test(forEvent
 checkTrue("重複資料用 limit(1) 而不是 maybeSingle()", /\.limit\(1\)/.test(forEventBody));
 checkFalse("沒有用 maybeSingle()", /maybeSingle\(\)/.test(forEventBody));
 // 用 event.id 問，不是拿 params.slug 直接問 —— 今天兩者相等，補上 events.slug 之後就不是。
-checkTrue("loader 用 event.id 去找商品", /fetchActiveProductForEvent\(event\.id\)/.test(detailCode));
-checkFalse("沒有拿 params.slug 直接找商品", /fetchActiveProductForEvent\(params\.slug\)/.test(detailCode));
+checkTrue(
+  "loader 用 event.id 去找商品",
+  /fetchActiveProductForEvent\(event\.id\)/.test(detailCode),
+);
+checkFalse(
+  "沒有拿 params.slug 直接找商品",
+  /fetchActiveProductForEvent\(params\.slug\)/.test(detailCode),
+);
 
 // =============================================================================
 // [8] 不在這一頁重做第二個結帳入口
@@ -270,7 +329,10 @@ checkFalse(
 );
 checkFalse("路由沒有渲染 <SessionPicker", /<SessionPicker\b/.test(detailCode));
 // 對照組：真正的入口還在 /shop/$slug，斷言才有意義。
-checkTrue("唯一的結帳入口仍在 shop.$slug.tsx", /cartInputFor\(/.test(stripTs(readFile("src/routes/shop.$slug.tsx"))));
+checkTrue(
+  "唯一的結帳入口仍在 shop.$slug.tsx",
+  /cartInputFor\(/.test(stripTs(readFile("src/routes/shop.$slug.tsx"))),
+);
 
 // =============================================================================
 // [9] 三語文案：en 要真的是英文
@@ -290,7 +352,10 @@ check("zh 與 en 句數一樣多", zhValues.length, enValues.length);
 for (const v of zhValues) checkTrue(`zh 真的是中文 → "${v.slice(0, 20)}"`, CJK.test(v));
 // description 是這一期才第一次有人渲染的欄位（0001 的欄位註解自承 "not rendered
 // by any route yet"），而它是後台的多行輸入 —— 換行要留著。
-checkTrue("description 用 whitespace-pre-line 渲染", /whitespace-pre-line[\s\S]{0,200}t\(event\.description\)/.test(detailCode));
+checkTrue(
+  "description 用 whitespace-pre-line 渲染",
+  /whitespace-pre-line[\s\S]{0,200}t\(event\.description\)/.test(detailCode),
+);
 
 // =============================================================================
 // [10] 列表頁連得到詳情頁；沒有偷加 migration
@@ -300,7 +365,9 @@ checkTrue("列表頁連到 /events/$slug", /to="\/events\/\$slug"/.test(indexCod
 checkTrue("列表頁帶的是 events.id", /params=\{\{ slug: e\.id \}\}/.test(indexCode));
 checkTrue("列表頁仍保留外部連結", /href=\{e\.externalUrl\}/.test(indexCode));
 
-const migrations = readdirSync(join(ROOT, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
+const migrations = readdirSync(join(ROOT, "supabase/migrations"))
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
 // 這一期完全不動資料庫：0024／0025 都還沒能套上正式庫，不要再疊第三支。
 check("migration 仍然是 25 支", migrations.length, 25);
 check("最後一支仍是 0025", migrations[24], "0025_event_speaker.sql");
@@ -308,7 +375,10 @@ check("最後一支仍是 0025", migrations[24], "0025_event_speaker.sql");
 // 守著，這一期一個字都不准動。
 const repoCode = readFile("src/server/repos/events.ts");
 checkTrue("repos/events.ts 的 speaker fallback 還在", /speakerColumnPresent/.test(repoCode));
-checkTrue("repos/events.ts 的 COLUMNS_BASE 還在", /const COLUMNS_BASE = COLUMNS\.replace/.test(repoCode));
+checkTrue(
+  "repos/events.ts 的 COLUMNS_BASE 還在",
+  /const COLUMNS_BASE = COLUMNS\.replace/.test(repoCode),
+);
 
 // -----------------------------------------------------------------------------
 // 收尾

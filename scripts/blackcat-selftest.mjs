@@ -1077,10 +1077,16 @@ resetState({ order: null });
 // =============================================================================
 console.log("\n[9] PayUni 那條路原封不動");
 
+// ⚠️ 基準值在 2026-09-01 換過一次，原因與內容無關：那一期把整個 repo 套上
+//    prettier（`npm run lint` 之前從來不綠，見 eslint.config.js 的說明），
+//    payuni.ts 只有排版被動到 —— 行數 475 → 475，用 @babel/parser 比對過
+//    改動前後的 AST 完全相同（剝掉位置資訊、JSX 空白依 React 語意正規化）。
+//    舊值：b89388061672d281afdea2fdd84dc2dfb207995c71c3db8781727beece63d019
+//    這條斷言的強度沒有變：它仍然是逐位元組的釘樁，之後任何一個字被動到都會紅。
 check(
   "🔴 src/server/payuni.ts 的 SHA-256 與基準一致（這一期一個字都沒動它）",
   sha256File("src/server/payuni.ts"),
-  "b89388061672d281afdea2fdd84dc2dfb207995c71c3db8781727beece63d019",
+  "65c3d5f84bce1dae52578f67c5dd70b4fb0a35e4e407a18a1365cf5943c7dee8",
   "黑貓是另一套協定（MD5 + Bearer token），與 PayUni 直連 UPP（AES-256-GCM）沒有交集。要動 payuni.ts 之前先確認你不是在把兩件事混在一起。",
 );
 check(

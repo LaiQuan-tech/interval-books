@@ -186,7 +186,11 @@ const sql0022 = readFile(MIG_0022);
 const exec0022 = stripComments(sql0022);
 
 // 反空殼：先證明檔案真的有內容，否則下面每一條 includes() 都是假性結果。
-checkTrue("反空殼：0022 不是空檔（> 8000 字）", exec0022.length > 8000, `實際 ${exec0022.length} 字`);
+checkTrue(
+  "反空殼：0022 不是空檔（> 8000 字）",
+  exec0022.length > 8000,
+  `實際 ${exec0022.length} 字`,
+);
 checkTrue("0022 有 begin; … commit;", /^begin;/m.test(exec0022) && /^commit;/m.test(exec0022));
 
 // =============================================================================
@@ -212,7 +216,10 @@ check(
   /create\s+or\s+replace\s+view\s+public\.admin_event_roster/i.test(exec0022),
   false,
 );
-checkTrue("但有 join admin_event_roster（on_roster 的唯一定義）", /admin_event_roster/.test(exec0022));
+checkTrue(
+  "但有 join admin_event_roster（on_roster 的唯一定義）",
+  /admin_event_roster/.test(exec0022),
+);
 
 // 0020 的兩支寫入函式也不能被動到。
 for (const fn of ["reserve_session_seat", "release_session_seat", "expire_unpaid_orders"]) {
@@ -237,7 +244,10 @@ check("alter table 只打在這一期自己的三張表", alterTargets, [
 // =============================================================================
 console.log("\n[3] email_outbox：dedupe_key 是冪等保證，skipped 不是 sent");
 
-checkTrue("建了 public.email_outbox", /create table if not exists public\.email_outbox/.test(exec0022));
+checkTrue(
+  "建了 public.email_outbox",
+  /create table if not exists public\.email_outbox/.test(exec0022),
+);
 checkTrue(
   "dedupe_key 是 not null unique —— 冪等保證本身",
   /dedupe_key\s+text\s+not null\s+unique/.test(exec0022),
@@ -263,7 +273,10 @@ for (const t of ["email_outbox", "email_copy"]) {
     `${t} 對 anon / authenticated 零 grant`,
     exec0022.includes(`revoke all on table public.${t} from anon, authenticated`),
   );
-  checkTrue(`${t} 只給 service_role`, exec0022.includes(`grant all  on table public.${t} to service_role`));
+  checkTrue(
+    `${t} 只給 service_role`,
+    exec0022.includes(`grant all  on table public.${t} to service_role`),
+  );
 }
 check(
   "email_outbox 沒有任何 create policy（零 policy = 全部拒絕）",
@@ -271,13 +284,22 @@ check(
   false,
 );
 // notify_epoch 只有一列、只給 select —— 它是回填用的標記，沒有人要寫它。
-checkTrue("notify_epoch 開 RLS", /alter table public\.notify_epoch enable row level security/.test(exec0022));
+checkTrue(
+  "notify_epoch 開 RLS",
+  /alter table public\.notify_epoch enable row level security/.test(exec0022),
+);
 checkTrue(
   "notify_epoch 對 anon / authenticated 零 grant",
   /revoke all    on table public\.notify_epoch from anon, authenticated/.test(exec0022),
 );
-checkTrue("notify_epoch 只給 service_role 讀", /grant  select on table public\.notify_epoch to service_role/.test(exec0022));
-checkTrue("notify_epoch 只有一列（check id = 1）", /id\s+smallint primary key check \(id = 1\)/.test(exec0022));
+checkTrue(
+  "notify_epoch 只給 service_role 讀",
+  /grant  select on table public\.notify_epoch to service_role/.test(exec0022),
+);
+checkTrue(
+  "notify_epoch 只有一列（check id = 1）",
+  /id\s+smallint primary key check \(id = 1\)/.test(exec0022),
+);
 
 // =============================================================================
 // [4] claim 是一句 SQL（相對快樂手的改良 1）
@@ -291,7 +313,10 @@ checkTrue(
   /for update skip locked/.test(claimBatch),
   "少了它，兩個並行的 flush 會拿到重疊的批次，同一封信被寄兩次",
 );
-checkTrue("挑列與 update 是同一句（update … where id in (select …)）", /update public\.email_outbox[\s\S]*where o\.id in \([\s\S]*select/.test(claimBatch));
+checkTrue(
+  "挑列與 update 是同一句（update … where id in (select …)）",
+  /update public\.email_outbox[\s\S]*where o\.id in \([\s\S]*select/.test(claimBatch),
+);
 checkTrue("回傳被佔住的那幾列（returning）", /returning o\.id, o\.dedupe_key/.test(claimBatch));
 checkTrue(
   "attempts 在送出之前就 +1",
@@ -300,7 +325,11 @@ checkTrue(
 );
 checkTrue("佔位就把 next_attempt_at 推到未來", /next_attempt_at\s*=\s*now\(\)/.test(claimBatch));
 // 反面對照：整支函式裡只有一句 update（沒有退化成「先 select 再逐列 CAS」）。
-check("claim_email_batch 裡只有一句 update", (claimBatch.match(/\bupdate public\.email_outbox\b/g) ?? []).length, 1);
+check(
+  "claim_email_batch 裡只有一句 update",
+  (claimBatch.match(/\bupdate public\.email_outbox\b/g) ?? []).length,
+  1,
+);
 
 // =============================================================================
 // [5] 退避
@@ -355,11 +384,25 @@ const enqRegs = functionBody(exec0022, "public.enqueue_registration_emails");
 checkTrue("反空殼：切得到兩支 enqueue", enqOrder.length > 200 && enqRegs.length > 200);
 
 // 兩支的參數列都沒有 email / to_email —— 地址進不來，也就出不去。
-check("enqueue_order_email 的參數沒有地址", /p_(to_)?email/.test(enqOrder.split("as $$")[0]), false);
-check("enqueue_registration_emails 的參數沒有地址", /p_(to_)?email/.test(enqRegs.split("as $$")[0]), false);
+check(
+  "enqueue_order_email 的參數沒有地址",
+  /p_(to_)?email/.test(enqOrder.split("as $$")[0]),
+  false,
+);
+check(
+  "enqueue_registration_emails 的參數沒有地址",
+  /p_(to_)?email/.test(enqRegs.split("as $$")[0]),
+  false,
+);
 checkTrue("enqueue_order_email 從 orders.customer_email join", /o\.customer_email/.test(enqOrder));
-checkTrue("enqueue_registration_emails 從 event_registrations.email join", /join public\.event_registrations r/.test(enqRegs));
-checkTrue("兩支都回數字／布林，不回地址", /returns boolean/.test(enqOrder) && /returns integer/.test(enqRegs));
+checkTrue(
+  "enqueue_registration_emails 從 event_registrations.email join",
+  /join public\.event_registrations r/.test(enqRegs),
+);
+checkTrue(
+  "兩支都回數字／布林，不回地址",
+  /returns boolean/.test(enqOrder) && /returns integer/.test(enqRegs),
+);
 
 // ⚠️ 名單條件不可以有第二份。
 checkTrue(
@@ -372,7 +415,11 @@ check(
   false,
   "「誰在簽到表上」只定義在 0021 §3 的 view 裡（roster-csv-selftest 守著同一條線）",
 );
-checkTrue("兩支都 on conflict do nothing（冪等）", /on conflict \(dedupe_key\) do nothing/.test(enqOrder) && /on conflict \(dedupe_key\) do nothing/.test(enqRegs));
+checkTrue(
+  "兩支都 on conflict do nothing（冪等）",
+  /on conflict \(dedupe_key\) do nothing/.test(enqOrder) &&
+    /on conflict \(dedupe_key\) do nothing/.test(enqRegs),
+);
 
 // =============================================================================
 // [8] claim_order_notify：用掉那個預留了五期的 'notify'
@@ -387,7 +434,10 @@ checkTrue(
   "少了它，兩邊會同時讀到「還沒有 notify 列」（0007 檔頭的原話）",
 );
 checkTrue("閘門 1 也擋沒付款的訂單", /payment_status <> 'paid'/.test(claimNotify));
-checkTrue("閘門 2：order_post_payment_log 的 upsert-claim", /insert into public\.order_post_payment_log/.test(claimNotify));
+checkTrue(
+  "閘門 2：order_post_payment_log 的 upsert-claim",
+  /insert into public\.order_post_payment_log/.test(claimNotify),
+);
 checkTrue("step 用的就是 'notify'", /values \(p_order_id, 'notify'\)/.test(claimNotify));
 checkTrue(
   "只放行「沒完成，而且（失敗過 or 過期）」的列",
@@ -395,7 +445,10 @@ checkTrue(
     /error_message is not null/.test(claimNotify) &&
     /claimed_at < now\(\) - p_stale_after/.test(claimNotify),
 );
-checkTrue("分得出 already_sent 與 locked", /'already_sent'/.test(claimNotify) && /'locked'/.test(claimNotify));
+checkTrue(
+  "分得出 already_sent 與 locked",
+  /'already_sent'/.test(claimNotify) && /'locked'/.test(claimNotify),
+);
 
 // 0005 那條 CHECK 從來沒有被改過，'notify' 一直都在裡面。
 const sql0005 = readFile(join(MIG_DIR, "0005_commerce_orders.sql"));
@@ -417,17 +470,25 @@ checkTrue(
   ),
   "沒有這一段，notify_backlog() 第一次跑就會把每一張歷史已付款訂單判成「還沒通知」",
 );
-const backfill = (exec0022.match(/create table if not exists public\.notify_epoch[\s\S]*?on conflict \(order_id, step\) do nothing;/) ?? [""])[0];
+const backfill = (exec0022.match(
+  /create table if not exists public\.notify_epoch[\s\S]*?on conflict \(order_id, step\) do nothing;/,
+) ?? [""])[0];
 checkTrue("反空殼：切得到回填那一段", backfill.length > 100);
 checkTrue("回填的是 'notify'", /'notify'/.test(backfill));
-checkTrue("回填把 completed_at 設成 now()（＝這一步關掉了）", /completed_at/.test(backfill) && /now\(\)/.test(backfill));
+checkTrue(
+  "回填把 completed_at 設成 now()（＝這一步關掉了）",
+  /completed_at/.test(backfill) && /now\(\)/.test(backfill),
+);
 checkTrue(
   "回填留下為什麼（error_message）",
   /skipped_backfill/.test(backfill),
   "只寫 completed_at 等於謊稱寄過了",
 );
 checkTrue("回填只碰已付款的訂單", /where o\.payment_status = 'paid'/.test(backfill));
-checkTrue("回填冪等（on conflict do nothing）", /on conflict \(order_id, step\) do nothing/.test(backfill));
+checkTrue(
+  "回填冪等（on conflict do nothing）",
+  /on conflict \(order_id, step\) do nothing/.test(backfill),
+);
 // ⚠️ on conflict do nothing 只保證「不出錯」，不保證冪等 —— 見 0022 §10 那一大段。
 checkTrue(
   "回填以 notify_epoch 為界（否則第二次套用會把新客人的通知也關掉）",
@@ -441,7 +502,9 @@ checkTrue(
 );
 checkTrue(
   "notify_epoch 的時間只在第一次套用時寫下（on conflict do nothing）",
-  /insert into public\.notify_epoch \(id\) values \(1\) on conflict \(id\) do nothing/.test(exec0022),
+  /insert into public\.notify_epoch \(id\) values \(1\) on conflict \(id\) do nothing/.test(
+    exec0022,
+  ),
 );
 
 // =============================================================================
@@ -451,7 +514,10 @@ console.log("\n[10] 排程 '6-56/10' 與既有兩支不相交");
 
 checkTrue("排了 dispatch-notify-task", /'dispatch-notify-task'/.test(exec0022));
 checkTrue("排程字串是 6-56/10", /'6-56\/10 \* \* \* \*'/.test(exec0022));
-checkTrue("cron 只呼叫 dispatch_notify_task()", /select public\.dispatch_notify_task\(\)/.test(exec0022));
+checkTrue(
+  "cron 只呼叫 dispatch_notify_task()",
+  /select public\.dispatch_notify_task\(\)/.test(exec0022),
+);
 
 // 真的算一次，不是相信註解。
 const minutesOf = (spec) => {
@@ -473,9 +539,21 @@ const expire = minutesOf("*/5");
 const invoice = minutesOf("3-53/10");
 const notifyMins = minutesOf("6-56/10");
 check("notify 的分鐘數", notifyMins, [6, 16, 26, 36, 46, 56]);
-check("notify ∩ expire = ∅", notifyMins.filter((m) => expire.includes(m)), []);
-check("notify ∩ invoice = ∅", notifyMins.filter((m) => invoice.includes(m)), []);
-check("invoice ∩ expire = ∅（0008 當時算過的，順便再驗一次）", invoice.filter((m) => expire.includes(m)), []);
+check(
+  "notify ∩ expire = ∅",
+  notifyMins.filter((m) => expire.includes(m)),
+  [],
+);
+check(
+  "notify ∩ invoice = ∅",
+  notifyMins.filter((m) => invoice.includes(m)),
+  [],
+);
+check(
+  "invoice ∩ expire = ∅（0008 當時算過的，順便再驗一次）",
+  invoice.filter((m) => expire.includes(m)),
+  [],
+);
 
 // 0008 的排程字串沒有被這一期改掉。
 const sql0008 = readFile(join(MIG_DIR, "0008_invoice_cron.sql"));
@@ -504,16 +582,30 @@ checkTrue("檔頭有教怎麼手動建 secret", /vault\.create_secret/.test(sql0
 // =============================================================================
 console.log("\n[12] 權限");
 
-const definerFns = [...exec0022.matchAll(/create or replace function (public\.\w+)\(/g)].map((m) => m[1]);
+const definerFns = [...exec0022.matchAll(/create or replace function (public\.\w+)\(/g)].map(
+  (m) => m[1],
+);
 checkTrue("反空殼：抓得到這一期新增的函式", definerFns.length >= 12, definerFns.join(", "));
-const grantBlock = (exec0022.match(/foreach sig in array array\[[\s\S]*?\]\s*\n\s*loop/) ?? [""])[0];
+const grantBlock = (exec0022.match(/foreach sig in array array\[[\s\S]*?\]\s*\n\s*loop/) ?? [
+  "",
+])[0];
 for (const fn of definerFns) {
   if (fn === "public.dispatch_notify_task") continue; // 它單獨處理（連 service_role 都不給）
-  checkTrue(`${fn}() 進了 revoke/grant 清單`, grantBlock.includes(`${fn}(`), grantBlock.slice(0, 200));
+  checkTrue(
+    `${fn}() 進了 revoke/grant 清單`,
+    grantBlock.includes(`${fn}(`),
+    grantBlock.slice(0, 200),
+  );
 }
 checkTrue("清單裡 revoke from public", /revoke execute on function %s from public/.test(exec0022));
-checkTrue("清單裡 revoke from anon, authenticated", /revoke execute on function %s from anon, authenticated/.test(exec0022));
-checkTrue("清單裡 grant to service_role", /grant  execute on function %s to service_role/.test(exec0022));
+checkTrue(
+  "清單裡 revoke from anon, authenticated",
+  /revoke execute on function %s from anon, authenticated/.test(exec0022),
+);
+checkTrue(
+  "清單裡 grant to service_role",
+  /grant  execute on function %s to service_role/.test(exec0022),
+);
 checkTrue(
   "dispatch_notify_task 連 service_role 都不給（只有 cron 打得到）",
   /revoke execute on function public\.dispatch_notify_task\(\) from public/.test(exec0022) &&
@@ -540,7 +632,12 @@ checkTrue(
   "理由同 invoice-issuer.ts:413-440",
 );
 checkTrue("逾時有自己的 reason，看得出是逾時", /notify_timeout/.test(notifyCode));
-checkTrue("claim → 做 → finish/fail 三段都在", /claimOrderNotify/.test(notifyCode) && /finishOrderNotify/.test(notifyCode) && /failOrderNotify/.test(notifyCode));
+checkTrue(
+  "claim → 做 → finish/fail 三段都在",
+  /claimOrderNotify/.test(notifyCode) &&
+    /finishOrderNotify/.test(notifyCode) &&
+    /failOrderNotify/.test(notifyCode),
+);
 checkTrue(
   "提醒信用 loadPaidRoster（不自己寫一次條件）",
   /loadPaidRoster\(/.test(notifyCode),
@@ -581,12 +678,12 @@ const iInvoice = webhookCode.indexOf("triggerInvoiceAfterPayment(order.id)");
 const iNotify = webhookCode.indexOf("triggerNotifyAfterPayment(order.id)");
 checkTrue("反空殼：三個呼叫都找得到", iInventory > 0 && iInvoice > 0 && iNotify > 0);
 checkTrue("庫存在發票之前", iInventory < iInvoice);
+checkTrue("發票在寄信之前", iInvoice < iNotify, "信的失敗最可補救（outbox 重試八次），所以排最後");
 checkTrue(
-  "發票在寄信之前",
-  iInvoice < iNotify,
-  "信的失敗最可補救（outbox 重試八次），所以排最後",
+  "webhook 沒有因為寄信失敗就回 5xx",
+  /notifyOutcome\.ok/.test(webhookCode) &&
+    !/notifyOutcome[\s\S]{0,120}return text\([^)]*5\d\d/.test(webhookCode),
 );
-checkTrue("webhook 沒有因為寄信失敗就回 5xx", /notifyOutcome\.ok/.test(webhookCode) && !/notifyOutcome[\s\S]{0,120}return text\([^)]*5\d\d/.test(webhookCode));
 
 // 信不帶發票號碼：webhook 不把 invoice 的結果傳給 notify。
 check(
@@ -622,7 +719,11 @@ const paths = [
 for (const p of paths) {
   checkTrue(`${p} 有被攔`, new RegExp(`pathname === ${p}`).test(serverCode));
 }
-check("路徑表恰好六條（多一條就要回來寫進上面那張表）", (serverCode.match(/pathname === [A-Z_]+/g) ?? []).length, paths.length);
+check(
+  "路徑表恰好六條（多一條就要回來寫進上面那張表）",
+  (serverCode.match(/pathname === [A-Z_]+/g) ?? []).length,
+  paths.length,
+);
 // 比對的是「路徑條數」而不是一個寫死的數字：這樣下次加路徑時，這一條會跟著
 // 上面那張表一起走，紅的只會是「表沒更新」那一條，不會多紅一條不相干的。
 checkTrue(
@@ -630,7 +731,10 @@ checkTrue(
   (serverCode.match(/await import\("@\/server\//g) ?? []).length === paths.length,
 );
 // 檔頭那張表要說明為什麼它不能用 createServerFn 表達（src/server.ts L21-24 的規矩）。
-checkTrue("檔頭說明了 NOTIFY_TASK_PATH 為什麼不能用 createServerFn", /NOTIFY_TASK_PATH[\s\S]{0,600}createServerFn/.test(serverTs));
+checkTrue(
+  "檔頭說明了 NOTIFY_TASK_PATH 為什麼不能用 createServerFn",
+  /NOTIFY_TASK_PATH[\s\S]{0,600}createServerFn/.test(serverTs),
+);
 
 // =============================================================================
 // [16] task endpoint：密鑰閘門與四件事的順序
@@ -639,19 +743,32 @@ console.log("\n[16] /api/tasks/notify");
 
 const tasksTs = readFile(join(ROOT, "src/server/task-endpoints.ts"));
 const tasksCode = stripTs(tasksTs);
-checkTrue("路徑常數是 /api/tasks/notify", /NOTIFY_TASK_PATH = "\/api\/tasks\/notify"/.test(tasksCode));
+checkTrue(
+  "路徑常數是 /api/tasks/notify",
+  /NOTIFY_TASK_PATH = "\/api\/tasks\/notify"/.test(tasksCode),
+);
 const notifyHandler = tasksCode.slice(tasksCode.indexOf("export async function handleNotifyTask"));
 checkTrue("反空殼：切得到 handleNotifyTask", notifyHandler.length > 500);
-checkTrue("缺密鑰回 503", /if \(!secret\) return text\("service unavailable", 503\)/.test(notifyHandler));
+checkTrue(
+  "缺密鑰回 503",
+  /if \(!secret\) return text\("service unavailable", 503\)/.test(notifyHandler),
+);
 checkTrue("密鑰不符回 404", /return text\("not found", 404\)/.test(notifyHandler));
-checkTrue("常數時間比對", /secretMatches\(url\.searchParams\.get\("k"\), secret\)/.test(notifyHandler));
+checkTrue(
+  "常數時間比對",
+  /secretMatches\(url\.searchParams\.get\("k"\), secret\)/.test(notifyHandler),
+);
 check(
   "連 body 都不解析",
   /req\.(json|text|formData)\(\)/.test(notifyHandler),
   false,
   "這條路徑會寄出真的信，所以要在解析任何東西之前就擋掉掃描式請求",
 );
-checkTrue("service_role 的資料層在密鑰閘門之後才 import", tasksCode.indexOf('await import("@/server/notify")') > tasksCode.indexOf("secretMatches(url.searchParams.get(\"k\"), secret)"));
+checkTrue(
+  "service_role 的資料層在密鑰閘門之後才 import",
+  tasksCode.indexOf('await import("@/server/notify")') >
+    tasksCode.indexOf('secretMatches(url.searchParams.get("k"), secret)'),
+);
 
 // 四件事的順序：排信 → 提醒 → flush → purge。
 const iBacklog = notifyHandler.indexOf("runNotifyBacklog(20)");
@@ -682,7 +799,11 @@ const pkg = JSON.parse(readFile(join(ROOT, "package.json")) || "{}");
 const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
 check("沒有裝 resend 套件（同 amego.ts 的決定）", Object.keys(deps).includes("resend"), false);
 check("沒有裝 nodemailer", Object.keys(deps).includes("nodemailer"), false);
-check("沒有引入 react-query 之類的新相依", Object.keys(deps).includes("@tanstack/react-query-next-experimental"), false);
+check(
+  "沒有引入 react-query 之類的新相依",
+  Object.keys(deps).includes("@tanstack/react-query-next-experimental"),
+  false,
+);
 
 checkTrue("沒有 key 時回 dry_run，不打外部請求", /return \{ outcome: "dry_run"/.test(emailCode));
 checkTrue(
@@ -704,7 +825,9 @@ for (const call of logCalls) {
 }
 check(
   "log 沒有印整封內文",
-  /console\.\w+\([^;]*message\.(text|html)[,)]/.test(emailCode.replace(/message\.(text|html)\.length/g, "LEN")),
+  /console\.\w+\([^;]*message\.(text|html)[,)]/.test(
+    emailCode.replace(/message\.(text|html)\.length/g, "LEN"),
+  ),
   false,
   "內文裡有姓名、場次與訂單編號 —— 只印長度",
 );
@@ -720,7 +843,10 @@ const piiSources = [
   ["src/server/notify.ts", notifyTs],
   ["src/server/email.ts", emailTs],
   ["src/server/repos/email-outbox.ts", readFile(join(ROOT, "src/server/repos/email-outbox.ts"))],
-  ["src/server/repos/event-registrations.ts", readFile(join(ROOT, "src/server/repos/event-registrations.ts"))],
+  [
+    "src/server/repos/event-registrations.ts",
+    readFile(join(ROOT, "src/server/repos/event-registrations.ts")),
+  ],
 ];
 for (const [name, src] of piiSources) {
   checkTrue(`反空殼：${name} 讀得到`, src.length > 500);
@@ -733,7 +859,7 @@ for (const [name, src] of piiSources) {
 }
 // 反面對照：把偵測器餵一段確定違規的程式碼，它必須抓得到。
 for (const [label, sample, expected] of [
-  ["console.error(msg, error)", 'console.error(`[x] 失敗`, error);', 1],
+  ["console.error(msg, error)", "console.error(`[x] 失敗`, error);", 1],
   ["console.error(error)", "console.error(error);", 1],
   ["安全寫法：只印 code 與 message", "console.error(`[x] ${error.code} ${error.message}`);", 0],
 ]) {
@@ -745,7 +871,9 @@ for (const [label, sample, expected] of [
 }
 checkTrue(
   "email-outbox repo 的 log 印的是 code 與 message",
-  /\$\{error\.code\} \$\{error\.message\}/.test(readFile(join(ROOT, "src/server/repos/email-outbox.ts"))),
+  /\$\{error\.code\} \$\{error\.message\}/.test(
+    readFile(join(ROOT, "src/server/repos/email-outbox.ts")),
+  ),
 );
 
 // =============================================================================
@@ -781,7 +909,11 @@ if (tpl) {
   check("escapeHtml 處理引號", tpl.escapeHtml(`"'`), "&quot;&#39;");
 
   // 佔位變數。
-  check("fill 換掉已知變數", tpl.fill("訂單 {orderNo} 完成", { orderNo: "IB-1" }), "訂單 IB-1 完成");
+  check(
+    "fill 換掉已知變數",
+    tpl.fill("訂單 {orderNo} 完成", { orderNo: "IB-1" }),
+    "訂單 IB-1 完成",
+  );
   check(
     "fill 對未知變數原樣留著",
     tpl.fill("{unknown}", {}),
@@ -811,7 +943,10 @@ if (tpl) {
     undefined,
     "zh",
   );
-  checkTrue("報名成功信有 subject / text / html", Boolean(ticket.subject && ticket.text && ticket.html));
+  checkTrue(
+    "報名成功信有 subject / text / html",
+    Boolean(ticket.subject && ticket.text && ticket.html),
+  );
   check("html 把姓名裡的 < 跳脫掉", /王<小明>/.test(ticket.html), false);
   checkTrue("text 裡是原樣的姓名（純文字不需要跳脫）", /王<小明>/.test(ticket.text));
   checkTrue("subject 帶入了場次名稱", ticket.subject.includes("場次<A>"));
@@ -853,12 +988,25 @@ if (tpl) {
   checkTrue("內建佔位一眼看得出還沒填", ticket.subject.includes("（待補："));
 
   // 內建佔位的每一把 key 都要在 0022 的 seed 裡。
-  const seedBlock = (exec0022.match(/insert into public\.email_copy[\s\S]*?on conflict/) ?? [""])[0];
+  const seedBlock = (exec0022.match(/insert into public\.email_copy[\s\S]*?on conflict/) ?? [
+    "",
+  ])[0];
   checkTrue("反空殼：切得到 email_copy 的 seed", seedBlock.length > 500);
   const defaultKeys = Object.keys(tpl.DEFAULT_EMAIL_COPY).sort();
-  checkTrue("反空殼：DEFAULT_EMAIL_COPY 有內容", defaultKeys.length >= 14, `${defaultKeys.length} 把`);
-  const seedKeys = [...seedBlock.matchAll(/\('(\w+)', '(\w+)',/g)].map((m) => `${m[1]}.${m[2]}`).sort();
-  check("DEFAULT_EMAIL_COPY 的 key 與 0022 的 seed 完全一致", defaultKeys, seedKeys, "兩邊不同步的話，沒有那張表的環境會寄出不一樣的信");
+  checkTrue(
+    "反空殼：DEFAULT_EMAIL_COPY 有內容",
+    defaultKeys.length >= 14,
+    `${defaultKeys.length} 把`,
+  );
+  const seedKeys = [...seedBlock.matchAll(/\('(\w+)', '(\w+)',/g)]
+    .map((m) => `${m[1]}.${m[2]}`)
+    .sort();
+  check(
+    "DEFAULT_EMAIL_COPY 的 key 與 0022 的 seed 完全一致",
+    defaultKeys,
+    seedKeys,
+    "兩邊不同步的話，沒有那張表的環境會寄出不一樣的信",
+  );
 
   // 三語都要有值 —— 0001 的 is_localized() 要求三個 key 都在。
   for (const [key, value] of Object.entries(tpl.DEFAULT_EMAIL_COPY)) {
@@ -877,7 +1025,11 @@ check(
 const tplImports = [...stripTs(tplTs).matchAll(/^import\s+(type\s+)?.*from\s+"([^"]+)"/gm)];
 checkTrue("反空殼：抓得到 import 行", tplImports.length >= 1);
 for (const m of tplImports) {
-  checkTrue(`email-templates 的 import「${m[2]}」是 type-only`, Boolean(m[1]), "值 import 會讓 Node 的 type stripping 真的去解析 @/ 路徑");
+  checkTrue(
+    `email-templates 的 import「${m[2]}」是 type-only`,
+    Boolean(m[1]),
+    "值 import 會讓 Node 的 type stripping 真的去解析 @/ 路徑",
+  );
 }
 
 // =============================================================================
@@ -913,7 +1065,8 @@ async function q(sql) {
 
 async function must(sql) {
   const r = await q(sql);
-  if (!r.ok) throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
+  if (!r.ok)
+    throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
   return r.rows;
 }
 
@@ -941,8 +1094,12 @@ delete from public.products where id like '${SLUG_PREFIX}%';
 if (!PG_URL) {
   skipped.push("併發測試（缺 NOTIFY_SELFTEST_PG_URL）");
   console.log(yellow("\n[20–27] 併發測試 —— 跳過：沒有 NOTIFY_SELFTEST_PG_URL"));
-  console.log(yellow("       設好之後重跑，才會驗到 outbox 冪等、claim 不重複、notify claim 不重跑、"));
-  console.log(yellow("       退避、放棄重試、purge、on_roster 閘門與 migration 冪等。指令見本檔檔頭。"));
+  console.log(
+    yellow("       設好之後重跑，才會驗到 outbox 冪等、claim 不重複、notify claim 不重跑、"),
+  );
+  console.log(
+    yellow("       退避、放棄重試、purge、on_roster 閘門與 migration 冪等。指令見本檔檔頭。"),
+  );
 } else {
   try {
     if (process.env.NOTIFY_SELFTEST_APPLY === "1") {
@@ -1041,7 +1198,9 @@ if (!PG_URL) {
       check(
         "反面對照：0022 之後付款的訂單進得了 backlog",
         num(
-          await must(`select count(*)::int n from public.notify_backlog(1000) where order_id='${FRESH}'`),
+          await must(
+            `select count(*)::int n from public.notify_backlog(1000) where order_id='${FRESH}'`,
+          ),
         ),
         1,
       );
@@ -1053,7 +1212,9 @@ if (!PG_URL) {
       check(
         "⚠️ 重跑 migration 不會把新訂單也回填成「已完成」",
         num(
-          await must(`select count(*)::int n from public.notify_backlog(1000) where order_id='${FRESH}'`),
+          await must(
+            `select count(*)::int n from public.notify_backlog(1000) where order_id='${FRESH}'`,
+          ),
         ),
         1,
         "on conflict do nothing 只擋重複，但第二次套用時 FRESH 還沒有 notify 列 —— 這一條就是在盯這件事",
@@ -1103,8 +1264,16 @@ if (!PG_URL) {
     check(
       "前置：3 位報名，其中 2 位在簽到表上",
       [
-        num(await must(`select count(*)::int n from public.admin_event_roster where session_id='${SESSION}'`)),
-        num(await must(`select count(*)::int n from public.admin_event_roster where session_id='${SESSION}' and on_roster`)),
+        num(
+          await must(
+            `select count(*)::int n from public.admin_event_roster where session_id='${SESSION}'`,
+          ),
+        ),
+        num(
+          await must(
+            `select count(*)::int n from public.admin_event_roster where session_id='${SESSION}' and on_roster`,
+          ),
+        ),
       ],
       [3, 2],
     );
@@ -1116,14 +1285,19 @@ if (!PG_URL) {
     const dedupe = `${MAIL_PREFIX}order:${ORDER_PAID}`;
     const enq = await Promise.all(
       Array.from({ length: 20 }, () =>
-        q(`select public.enqueue_order_email('${ORDER_PAID}','${dedupe}','主旨','text','<p>h</p>') ok`),
+        q(
+          `select public.enqueue_order_email('${ORDER_PAID}','${dedupe}','主旨','text','<p>h</p>') ok`,
+        ),
       ),
     );
     check("20 個請求全部沒有出錯", enq.filter((r) => r.ok).length, 20);
-    if (enq.some((r) => !r.ok)) console.log(red(`      ${enq.find((r) => !r.ok).error.slice(0, 300)}`));
+    if (enq.some((r) => !r.ok))
+      console.log(red(`      ${enq.find((r) => !r.ok).error.slice(0, 300)}`));
     check(
       "email_outbox 恰好 1 列",
-      num(await must(`select count(*)::int n from public.email_outbox where dedupe_key='${dedupe}'`)),
+      num(
+        await must(`select count(*)::int n from public.email_outbox where dedupe_key='${dedupe}'`),
+      ),
       1,
     );
     check(
@@ -1157,18 +1331,25 @@ if (!PG_URL) {
     );
     check(
       "排進去的那一封收件人是已付款且有信箱的那一位",
-      one(await must(`select to_email from public.email_outbox where dedupe_key like '${MAIL_PREFIX}reg:%'`))
-        ?.to_email,
+      one(
+        await must(
+          `select to_email from public.email_outbox where dedupe_key like '${MAIL_PREFIX}reg:%'`,
+        ),
+      )?.to_email,
       "seat1@example.invalid",
     );
     // 反面對照：把未付款那一位的訂單改成已付款，同一批就排得進去了。
-    await must(`update public.orders set payment_status='paid', paid_at=now() where id='${ORDER_PENDING}'`);
+    await must(
+      `update public.orders set payment_status='paid', paid_at=now() where id='${ORDER_PENDING}'`,
+    );
     const enqAfterPaid = num(
       await must(`select public.enqueue_registration_emails('[${itemsJson}]'::jsonb) n`),
       "n",
     );
     check("反面對照：訂單付款之後就排得進去了", enqAfterPaid, 1);
-    await must(`update public.orders set payment_status='pending', paid_at=null where id='${ORDER_PENDING}'`);
+    await must(
+      `update public.orders set payment_status='pending', paid_at=null where id='${ORDER_PENDING}'`,
+    );
 
     // -------------------------------------------------------------------------
     // [24] notify claim 不重跑：兩個並行 claim 同一張訂單
@@ -1203,7 +1384,11 @@ if (!PG_URL) {
     );
     check(
       "notify_backlog 看不到已完成的那一張",
-      num(await must(`select count(*)::int n from public.notify_backlog(100) where order_id='${ORDER_PAID}'`)),
+      num(
+        await must(
+          `select count(*)::int n from public.notify_backlog(100) where order_id='${ORDER_PAID}'`,
+        ),
+      ),
       0,
     );
 
@@ -1227,9 +1412,15 @@ if (!PG_URL) {
       Array.from({ length: 5 }, () => q(`select id::text id from public.claim_email_batch(5)`)),
     );
     check("5 個請求全部沒有出錯", batches.filter((r) => r.ok).length, 5);
-    if (batches.some((r) => !r.ok)) console.log(red(`      ${batches.find((r) => !r.ok).error.slice(0, 300)}`));
+    if (batches.some((r) => !r.ok))
+      console.log(red(`      ${batches.find((r) => !r.ok).error.slice(0, 300)}`));
     const claimedIds = batches.flatMap((r) => (r.ok ? r.rows.map((x) => x.id) : []));
-    check("回傳的 id 攤平之後沒有重複", claimedIds.length - new Set(claimedIds).size, 0, "重複 = 同一封信被寄兩次");
+    check(
+      "回傳的 id 攤平之後沒有重複",
+      claimedIds.length - new Set(claimedIds).size,
+      0,
+      "重複 = 同一封信被寄兩次",
+    );
     checkTrue(`總數 ≤ 20（實際 ${claimedIds.length}）`, claimedIds.length <= 20);
     checkTrue(`總數 > 0（反空殼，實際 ${claimedIds.length}）`, claimedIds.length > 0);
     check(
@@ -1283,7 +1474,9 @@ if (!PG_URL) {
     `);
     // 失敗三次：每次都要先把 next_attempt_at 撥回現在才 claim 得到。
     for (let i = 0; i < 3; i += 1) {
-      await must(`update public.email_outbox set next_attempt_at = now() where dedupe_key='${backoffKey}'`);
+      await must(
+        `update public.email_outbox set next_attempt_at = now() where dedupe_key='${backoffKey}'`,
+      );
       await must(
         `select public.fail_email(id, 'selftest failure') from public.claim_email_batch(1)
           where dedupe_key = '${backoffKey}'`,
@@ -1305,14 +1498,18 @@ if (!PG_URL) {
     );
     // 再燒五次到第 8 次。
     for (let i = 0; i < 5; i += 1) {
-      await must(`update public.email_outbox set next_attempt_at = now() where dedupe_key='${backoffKey}'`);
+      await must(
+        `update public.email_outbox set next_attempt_at = now() where dedupe_key='${backoffKey}'`,
+      );
       await must(
         `select public.fail_email(id, 'selftest failure') from public.claim_email_batch(1)
           where dedupe_key = '${backoffKey}'`,
       );
     }
     const after8 = one(
-      await must(`select attempts, status, last_error from public.email_outbox where dedupe_key='${backoffKey}'`),
+      await must(
+        `select attempts, status, last_error from public.email_outbox where dedupe_key='${backoffKey}'`,
+      ),
     );
     check("第 8 次之後 attempts = 8", Number(after8?.attempts), 8);
     check("第 8 次之後 status = failed（後台看得到「有 N 封寄不出去」）", after8?.status, "failed");
@@ -1361,10 +1558,15 @@ if (!PG_URL) {
     check("body_purged_at 標上了", purged?.purged, true);
     check(
       "兩天前寄的那一封沒有被動到",
-      one(await must(`select body_text from public.email_outbox where dedupe_key='${freshKey}'`))?.body_text,
+      one(await must(`select body_text from public.email_outbox where dedupe_key='${freshKey}'`))
+        ?.body_text,
       "新內文",
     );
-    check("再跑一次清 0 列（冪等）", num(await must(`select public.purge_sent_email_bodies() n`), "n"), 0);
+    check(
+      "再跑一次清 0 列（冪等）",
+      num(await must(`select public.purge_sent_email_bodies() n`), "n"),
+      0,
+    );
 
     // -------------------------------------------------------------------------
     // [28] 提醒信要掃哪幾場
@@ -1390,7 +1592,9 @@ if (!PG_URL) {
       0,
     );
     await must(`update public.event_sessions set status='open' where id='${SESSION}'`);
-    await must(`update public.event_sessions set starts_at = now() + interval '5 days' where id='${SESSION}'`);
+    await must(
+      `update public.event_sessions set starts_at = now() + interval '5 days' where id='${SESSION}'`,
+    );
     check(
       "五天後的場次還不用提醒",
       num(
@@ -1419,12 +1623,20 @@ if (!PG_URL) {
     checkTrue("清理成功", cleanup.ok);
     check(
       "沒有殘留的 email_outbox 列",
-      num(await must(`select count(*)::int n from public.email_outbox where dedupe_key like '${MAIL_PREFIX}%'`)),
+      num(
+        await must(
+          `select count(*)::int n from public.email_outbox where dedupe_key like '${MAIL_PREFIX}%'`,
+        ),
+      ),
       0,
     );
     check(
       "沒有殘留的訂單",
-      num(await must(`select count(*)::int n from public.orders where idempotency_key like '${KEY_PREFIX}%'`)),
+      num(
+        await must(
+          `select count(*)::int n from public.orders where idempotency_key like '${KEY_PREFIX}%'`,
+        ),
+      ),
       0,
     );
   } catch (err) {

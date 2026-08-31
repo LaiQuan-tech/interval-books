@@ -144,7 +144,9 @@ checkTrue(
 );
 checkTrue(
   "函式對 anon/authenticated revoke",
-  exec0014.includes("revoke execute on function inv.allocate_fifo_on_sale() from anon, authenticated"),
+  exec0014.includes(
+    "revoke execute on function inv.allocate_fifo_on_sale() from anon, authenticated",
+  ),
 );
 
 // -----------------------------------------------------------------------------
@@ -153,7 +155,10 @@ checkTrue(
 
 console.log("\n[3] pos_checkout：整車一個交易");
 checkTrue("建了 public.pos_checkout", exec0014.includes("function public.pos_checkout("));
-checkTrue("security definer", /create or replace function public\.pos_checkout[\s\S]{0,900}?security definer/i.test(exec0014));
+checkTrue(
+  "security definer",
+  /create or replace function public\.pos_checkout[\s\S]{0,900}?security definer/i.test(exec0014),
+);
 checkTrue(
   "取鎖依 target_id 排序（兩個櫃檯同時賣 A+B 與 B+A 不會互等）",
   /ORDER BY t\.target_id/i.test(exec0014),
@@ -169,7 +174,10 @@ checkTrue("NaN／負數單價擋掉", exec0014.includes("POS_BAD_PRICE"));
 checkTrue("租借品擋掉（來源 canBeSold）", exec0014.includes("POS_PRODUCT_RENTAL"));
 checkTrue("未審核擋掉", exec0014.includes("POS_PRODUCT_UNAPPROVED"));
 checkTrue("已停用擋掉", exec0014.includes("POS_PRODUCT_INACTIVE"));
-checkTrue("寫入時 channel 固定 'pos'", /'pos', coalesce\(p_override_reservation, false\)/.test(exec0014));
+checkTrue(
+  "寫入時 channel 固定 'pos'",
+  /'pos', coalesce\(p_override_reservation, false\)/.test(exec0014),
+);
 checkTrue(
   "對 anon/authenticated revoke execute",
   exec0014.includes(
@@ -192,8 +200,16 @@ for (const v of VIEWS) {
     exec0014.includes(`revoke all on public.${v}`) &&
       new RegExp(`revoke all on public\\.${v}\\s+from anon, authenticated`).test(exec0014),
   );
-  checkTrue(`${v} 明確 grant select 給 service_role`, new RegExp(`grant select on public\\.${v}\\s+to service_role`).test(exec0014));
-  checkTrue(`${v} 是 security_invoker = false`, new RegExp(`create or replace view public\\.${v}\\s*\\n\\s*with \\(security_invoker = false\\)`).test(exec0014));
+  checkTrue(
+    `${v} 明確 grant select 給 service_role`,
+    new RegExp(`grant select on public\\.${v}\\s+to service_role`).test(exec0014),
+  );
+  checkTrue(
+    `${v} 是 security_invoker = false`,
+    new RegExp(
+      `create or replace view public\\.${v}\\s*\\n\\s*with \\(security_invoker = false\\)`,
+    ).test(exec0014),
+  );
 }
 // revoke 必須排在 grant 前面 —— 反過來會把剛給的權限一起收掉。
 checkTrue(
@@ -218,8 +234,14 @@ checkTrue(
     middleware,
   ),
 );
-checkTrue("staffFnMiddleware 是並排新增的另一支", middleware.includes("export function staffFnMiddleware"));
-checkTrue("staffFnMiddleware 收 permission 參數", /staffFnMiddleware\(permission\?: StaffPermission\)/.test(middleware));
+checkTrue(
+  "staffFnMiddleware 是並排新增的另一支",
+  middleware.includes("export function staffFnMiddleware"),
+);
+checkTrue(
+  "staffFnMiddleware 收 permission 參數",
+  /staffFnMiddleware\(permission\?: StaffPermission\)/.test(middleware),
+);
 
 checkTrue("requireAdmin 還在", auth.includes("export async function requireAdmin"));
 checkTrue(
@@ -229,7 +251,9 @@ checkTrue(
 checkTrue("requireStaff 新增了", auth.includes("export async function requireStaff"));
 checkTrue(
   "requireStaff 每次重讀 profiles（kill-switch，與 requireAdmin 同一條規矩）",
-  /export async function requireStaff[\s\S]{0,600}?loadBackOfficeProfile\(session\.userId\)/.test(auth),
+  /export async function requireStaff[\s\S]{0,600}?loadBackOfficeProfile\(session\.userId\)/.test(
+    auth,
+  ),
 );
 checkTrue(
   "pending 丟 PendingApprovalError 而不是 401",
@@ -245,7 +269,9 @@ checkTrue(
 );
 checkTrue(
   "customer / vendor 連 cookie 都拿不到",
-  /data\.role !== "admin" && data\.role !== "staff" && data\.role !== "pending"\) return null/.test(auth),
+  /data\.role !== "admin" && data\.role !== "staff" && data\.role !== "pending"\) return null/.test(
+    auth,
+  ),
 );
 
 console.log("\n[6] fns/pos.ts 掛對 middleware");
@@ -296,7 +322,10 @@ const posFiles = [
 ];
 for (const f of posFiles) check(`${f} 存在`, existsSync(join(ROOT, f)), true);
 const allPos = posFiles.map((f) => read(join(ROOT, f))).join("\n");
-checkTrue("沒有搬進 use-toast / toaster", !/use-toast|useToast|from "@\/hooks\/use-toast"/.test(allPos));
+checkTrue(
+  "沒有搬進 use-toast / toaster",
+  !/use-toast|useToast|from "@\/hooks\/use-toast"/.test(allPos),
+);
 checkTrue("要用 toast 的地方走 sonner", /from "sonner"/.test(allPos));
 checkTrue("LocalizedField 沒有出現在 POS（進銷存是單語 text）", !/LocalizedField/.test(allPos));
 

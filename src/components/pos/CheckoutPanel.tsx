@@ -46,7 +46,10 @@ export function CheckoutPanel({
 
   const totalQty = lines.reduce((n, l) => n + l.quantity, 0);
   const totalAmount = lines.reduce((n, l) => n + l.quantity * l.unitPrice, 0);
-  const listTotal = lines.reduce((n, l) => n + l.quantity * Number(l.product.selling_price ?? 0), 0);
+  const listTotal = lines.reduce(
+    (n, l) => n + l.quantity * Number(l.product.selling_price ?? 0),
+    0,
+  );
   const discount = listTotal - totalAmount;
 
   /** 這一車有幾件超過可售量。決定要不要逼店員走逃生門。 */

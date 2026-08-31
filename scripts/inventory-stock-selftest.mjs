@@ -129,8 +129,14 @@ check(
   ].filter((s) => exec0011.includes(s)).length,
   4,
 );
-checkTrue("revoke ... from public 這一句在", exec0011.includes("revoke execute on function %s from public"));
-checkTrue("grant 給 service_role", exec0011.includes("grant  execute on function %s to service_role"));
+checkTrue(
+  "revoke ... from public 這一句在",
+  exec0011.includes("revoke execute on function %s from public"),
+);
+checkTrue(
+  "grant 給 service_role",
+  exec0011.includes("grant  execute on function %s to service_role"),
+);
 
 // 併發正確性的關鍵：三支會動庫存的函式都要有 order by … for update。
 check(
@@ -165,7 +171,10 @@ checkTrue("切得出 commit 的函式本體", commitBody.length > 500);
 // commit 不可以有任何「庫存不足就拋錯」的路徑：錢已經收了，拋錯會讓訂單被
 // expire_unpaid_orders() 取消掉，變成「客人付了錢卻沒有訂單」。
 checkTrue("commit 沒有 INSUFFICIENT_STOCK 的 raise", !commitBody.includes("INSUFFICIENT_STOCK"));
-checkTrue("commit 只有 NULL_ORDER_ID 一種 raise", (commitBody.match(/raise exception/gi) ?? []).length === 1);
+checkTrue(
+  "commit 只有 NULL_ORDER_ID 一種 raise",
+  (commitBody.match(/raise exception/gi) ?? []).length === 1,
+);
 checkTrue("commit 會寫 stock_oversold_alerts", commitBody.includes("'online_commit'"));
 // 反面對照：reserve **必須**有那個 raise，否則上面那條「沒有」是因為整個檔案都沒有。
 const reserveBody = functionBody(exec0011, "public.reserve_inventory_stock");
@@ -201,11 +210,17 @@ checkTrue(
 
 // 型錄與庫存不可以同時管同一件商品。
 checkTrue("有 products 端的 stock NULL trigger", exec0011.includes("products_linked_stock_guard"));
-checkTrue("有 link 端的 stock NULL trigger", exec0011.includes("product_inventory_links_stock_guard"));
+checkTrue(
+  "有 link 端的 stock NULL trigger",
+  exec0011.includes("product_inventory_links_stock_guard"),
+);
 
 // POS 的逃生門。
 checkTrue("update_stock_on_sale 被覆寫", exec0011.includes("function inv.update_stock_on_sale()"));
-checkTrue("channel 預設 pos", exec0011.includes("add column if not exists channel text not null default 'pos'"));
+checkTrue(
+  "channel 預設 pos",
+  exec0011.includes("add column if not exists channel text not null default 'pos'"),
+);
 checkTrue("override 會留痕", exec0011.includes("'pos_override'"));
 
 // ⚠️ 0020 之後，`expire_unpaid_orders()` 與 `product_availability` 這兩樣東西的
@@ -217,10 +232,17 @@ checkTrue("override 會留痕", exec0011.includes("'pos_override'"));
 // expire 的回傳形狀不能變（改了要先 DROP，而 DROP 會影響已排程的呼叫）。
 checkTrue("expire_unpaid_orders 被覆寫", exec0011.includes("function public.expire_unpaid_orders"));
 checkTrue("expire 回傳形狀不變", exec0011.includes("restored_stock   integer"));
-checkTrue("expire 會刪保留列", /delete from public\.stock_reservations r\s*\n\s*where r\.order_id = any\(v_ids\)/.test(exec0011));
+checkTrue(
+  "expire 會刪保留列",
+  /delete from public\.stock_reservations r\s*\n\s*where r\.order_id = any\(v_ids\)/.test(exec0011),
+);
 
 console.log("\n[3] 0012 的設計不變量");
-checkTrue("兩個後台 view 都建了", exec0012.includes("view public.inv_listing_candidates") && exec0012.includes("view public.inv_listed_products"));
+checkTrue(
+  "兩個後台 view 都建了",
+  exec0012.includes("view public.inv_listing_candidates") &&
+    exec0012.includes("view public.inv_listed_products"),
+);
 checkTrue(
   "後台 view 不給 anon",
   exec0012.includes("revoke all on public.inv_listing_candidates from anon, authenticated") &&
@@ -260,7 +282,8 @@ async function q(sql) {
 /** 只在「這句一定要成功」的時候用。失敗就整支測試中止（前置條件壞了）。 */
 async function must(sql) {
   const r = await q(sql);
-  if (!r.ok) throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
+  if (!r.ok)
+    throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
   return r.rows;
 }
 
@@ -295,7 +318,9 @@ delete from inv.products where name like '${MARK}%';
 if (!TOKEN) {
   skipped.push("併發測試（缺 SUPABASE_ACCESS_TOKEN）");
   console.log(yellow("\n[4–11] 併發測試 —— 跳過：沒有 SUPABASE_ACCESS_TOKEN"));
-  console.log(yellow("       設好之後重跑，才會驗到超賣、冪等、POS 交叉、pack_size、過期、死鎖那七條。"));
+  console.log(
+    yellow("       設好之後重跑，才會驗到超賣、冪等、POS 交叉、pack_size、過期、死鎖那七條。"),
+  );
 } else {
   // ---------------------------------------------------------------------------
   // 前置：清掉殘骸，記下基準線，建立 fixture
@@ -312,11 +337,11 @@ if (!TOKEN) {
       + (select count(*)::int from public.orders where idempotency_key like '${KEY_PREFIX}%') n`),
   ).n;
   if (Number(debris) > 0) {
+    console.log(yellow(`  ⚠ 找到 ${debris} 筆上一輪留下的殘骸（上次被中斷了）。清掉再繼續。`));
     console.log(
-      yellow(`  ⚠ 找到 ${debris} 筆上一輪留下的殘骸（上次被中斷了）。清掉再繼續。`),
-    );
-    console.log(
-      yellow("     若 inventory-migration-selftest 這一輪也紅了，原因就是它排在前面、先看到了這些。"),
+      yellow(
+        "     若 inventory-migration-selftest 這一輪也紅了，原因就是它排在前面、先看到了這些。",
+      ),
     );
   }
   await must(CLEANUP_SQL);
@@ -434,7 +459,13 @@ if (!TOKEN) {
     check("19 個都是 INSUFFICIENT_STOCK（不是別的錯）", lostForRightReason, 19);
     check(
       "stock_reservations 恰好 1 列",
-      Number(one(await must(`select count(*)::int n from public.stock_reservations where inv_product_id='${P.single}'`)).n),
+      Number(
+        one(
+          await must(
+            `select count(*)::int n from public.stock_reservations where inv_product_id='${P.single}'`,
+          ),
+        ).n,
+      ),
       1,
     );
     check(
@@ -449,7 +480,13 @@ if (!TOKEN) {
     );
     check(
       "前台可售量歸零",
-      Number(one(await must(`select available_capped n from public.product_availability where product_id='${S.single}'`)).n),
+      Number(
+        one(
+          await must(
+            `select available_capped n from public.product_availability where product_id='${S.single}'`,
+          ),
+        ).n,
+      ),
       0,
     );
 
@@ -465,16 +502,25 @@ if (!TOKEN) {
       ),
     ).id;
 
-    const c1 = Number(one(await must(`select public.commit_inventory_reservations('${raceOrder}', null) n`)).n);
-    const c2 = Number(one(await must(`select public.commit_inventory_reservations('${raceOrder}', null) n`)).n);
-    const c3 = Number(one(await must(`select public.commit_inventory_reservations('${raceOrder}', null) n`)).n);
+    const c1 = Number(
+      one(await must(`select public.commit_inventory_reservations('${raceOrder}', null) n`)).n,
+    );
+    const c2 = Number(
+      one(await must(`select public.commit_inventory_reservations('${raceOrder}', null) n`)).n,
+    );
+    const c3 = Number(
+      one(await must(`select public.commit_inventory_reservations('${raceOrder}', null) n`)).n,
+    );
 
     check("第 1 次沒有賣超（回 0）", c1, 0);
     check("第 2 次回 0（重送）", c2, 0);
     check("第 3 次回 0（重送）", c3, 0);
     check(
       "inv.sales 只有 1 列 channel=online",
-      Number(one(await must(`select count(*)::int n from inv.sales where web_order_id='${raceOrder}'`)).n),
+      Number(
+        one(await must(`select count(*)::int n from inv.sales where web_order_id='${raceOrder}'`))
+          .n,
+      ),
       1,
     );
     check(
@@ -489,7 +535,13 @@ if (!TOKEN) {
     );
     check(
       "保留列已被 claim 掉",
-      Number(one(await must(`select count(*)::int n from public.stock_reservations where order_id='${raceOrder}'`)).n),
+      Number(
+        one(
+          await must(
+            `select count(*)::int n from public.stock_reservations where order_id='${raceOrder}'`,
+          ),
+        ).n,
+      ),
       0,
     );
 
@@ -518,7 +570,10 @@ if (!TOKEN) {
 
     const pos2 = await q(posSale());
     checkTrue("POS 賣第 2 個必須失敗（那 1 個是網站保留的）", !pos2.ok);
-    checkTrue("失敗原因是 INSUFFICIENT_STOCK", pos2.ok ? false : /INSUFFICIENT_STOCK/.test(pos2.error));
+    checkTrue(
+      "失敗原因是 INSUFFICIENT_STOCK",
+      pos2.ok ? false : /INSUFFICIENT_STOCK/.test(pos2.error),
+    );
     check(
       "失敗之後庫存沒有被動到",
       Number(one(await must(`select stock_quantity n from inv.products where id='${P.cross}'`)).n),
@@ -558,11 +613,15 @@ if (!TOKEN) {
     check("保留的目標是 base product，不是 pack", packRes?.inv_product_id, P.packBase);
     check("保留的數量已經乘過 pack_size（10）", Number(packRes?.quantity), 10);
 
-    const packOrder = one(await must(`select id from public.orders where idempotency_key='${KEY_PREFIX}pack-1'`)).id;
+    const packOrder = one(
+      await must(`select id from public.orders where idempotency_key='${KEY_PREFIX}pack-1'`),
+    ).id;
     await must(`select public.commit_inventory_reservations('${packOrder}', null)`);
     check(
       "base product 的庫存減 10，不是 1",
-      Number(one(await must(`select stock_quantity n from inv.products where id='${P.packBase}'`)).n),
+      Number(
+        one(await must(`select stock_quantity n from inv.products where id='${P.packBase}'`)).n,
+      ),
       90,
     );
     check(
@@ -609,19 +668,27 @@ if (!TOKEN) {
     } else {
       await must(`select * from public.expire_unpaid_orders(interval '0', 200)`);
       const expiredOrder = one(
-        await must(`select id, status from public.orders where idempotency_key='${KEY_PREFIX}expire-1'`),
+        await must(
+          `select id, status from public.orders where idempotency_key='${KEY_PREFIX}expire-1'`,
+        ),
       );
       check("訂單被取消", expiredOrder?.status, "cancelled");
       check(
         "保留列被刪掉",
         Number(
-          one(await must(`select count(*)::int n from public.stock_reservations where order_id='${expiredOrder.id}'`)).n,
+          one(
+            await must(
+              `select count(*)::int n from public.stock_reservations where order_id='${expiredOrder.id}'`,
+            ),
+          ).n,
         ),
         0,
       );
       check(
         "實體庫存從頭到尾沒變過",
-        Number(one(await must(`select stock_quantity n from inv.products where id='${P.expire}'`)).n),
+        Number(
+          one(await must(`select stock_quantity n from inv.products where id='${P.expire}'`)).n,
+        ),
         stockBefore,
       );
       check(
@@ -637,7 +704,13 @@ if (!TOKEN) {
     console.log("\n[10] 既有路徑不變 —— 沒有 link、public.products.stock=5");
     check(
       "沒有連結列",
-      Number(one(await must(`select count(*)::int n from public.product_inventory_links where product_id='${S.legacy}'`)).n),
+      Number(
+        one(
+          await must(
+            `select count(*)::int n from public.product_inventory_links where product_id='${S.legacy}'`,
+          ),
+        ).n,
+      ),
       0,
     );
     // ⚠️ 用一張**自己新建**的訂單，不要借用第 5 條那 20 張裡的任何一張。
@@ -659,7 +732,9 @@ if (!TOKEN) {
       ),
       0,
     );
-    await must(`select public.atomic_deduct_stock('[{"product_id":"${S.legacy}","quantity":2}]'::jsonb)`);
+    await must(
+      `select public.atomic_deduct_stock('[{"product_id":"${S.legacy}","quantity":2}]'::jsonb)`,
+    );
     check(
       "atomic_deduct_stock 照舊：5 → 3",
       Number(one(await must(`select stock n from public.products where id='${S.legacy}'`)).n),
@@ -667,7 +742,13 @@ if (!TOKEN) {
     );
     check(
       "可售量 view 對它回報型錄庫存",
-      Number(one(await must(`select available_capped n from public.product_availability where product_id='${S.legacy}'`)).n),
+      Number(
+        one(
+          await must(
+            `select available_capped n from public.product_availability where product_id='${S.legacy}'`,
+          ),
+        ).n,
+      ),
       3,
     );
 
@@ -700,12 +781,24 @@ if (!TOKEN) {
     check("沒有其他非預期錯誤", otherErrors.length, 0);
     check(
       "A 的保留總量 = 16",
-      Number(one(await must(`select coalesce(sum(quantity),0)::int n from public.stock_reservations where inv_product_id='${P.lockA}'`)).n),
+      Number(
+        one(
+          await must(
+            `select coalesce(sum(quantity),0)::int n from public.stock_reservations where inv_product_id='${P.lockA}'`,
+          ),
+        ).n,
+      ),
       16,
     );
     check(
       "B 的保留總量 = 16",
-      Number(one(await must(`select coalesce(sum(quantity),0)::int n from public.stock_reservations where inv_product_id='${P.lockB}'`)).n),
+      Number(
+        one(
+          await must(
+            `select coalesce(sum(quantity),0)::int n from public.stock_reservations where inv_product_id='${P.lockB}'`,
+          ),
+        ).n,
+      ),
       16,
     );
 
@@ -719,22 +812,34 @@ if (!TOKEN) {
       console.log(yellow("  ⚠ 缺 anon 金鑰，跳過"));
     } else {
       const h = { apikey: key, Authorization: `Bearer ${key}` };
-      const avail = await fetch(`${url}/rest/v1/product_availability?select=*&limit=200`, { headers: h });
+      const avail = await fetch(`${url}/rest/v1/product_availability?select=*&limit=200`, {
+        headers: h,
+      });
       checkTrue("anon 讀得到 product_availability", avail.ok);
       const rows = avail.ok ? await avail.json() : [];
       const cols = rows.length > 0 ? Object.keys(rows[0]).sort() : [];
-      check("而且只有三個欄位", JSON.stringify(cols), JSON.stringify(["available_capped", "in_stock", "product_id"]));
+      check(
+        "而且只有三個欄位",
+        JSON.stringify(cols),
+        JSON.stringify(["available_capped", "in_stock", "product_id"]),
+      );
 
       // 精確庫存的三條路：inv schema、後台 view、保留 ledger。三條都要打不開。
       const invTry = await fetch(`${url}/rest/v1/products?select=stock_quantity&limit=1`, {
         headers: { ...h, "Accept-Profile": "inv" },
       });
       checkTrue("anon 打不到 inv.products", invTry.status >= 400);
-      const listedTry = await fetch(`${url}/rest/v1/inv_listed_products?select=*&limit=1`, { headers: h });
+      const listedTry = await fetch(`${url}/rest/v1/inv_listed_products?select=*&limit=1`, {
+        headers: h,
+      });
       checkTrue("anon 打不到 inv_listed_products（後台精確庫存）", listedTry.status >= 400);
-      const resTry = await fetch(`${url}/rest/v1/stock_reservations?select=*&limit=1`, { headers: h });
+      const resTry = await fetch(`${url}/rest/v1/stock_reservations?select=*&limit=1`, {
+        headers: h,
+      });
       checkTrue("anon 打不到 stock_reservations", resTry.status >= 400);
-      const linkTry = await fetch(`${url}/rest/v1/product_inventory_links?select=*&limit=1`, { headers: h });
+      const linkTry = await fetch(`${url}/rest/v1/product_inventory_links?select=*&limit=1`, {
+        headers: h,
+      });
       checkTrue("anon 打不到 product_inventory_links", linkTry.status >= 400);
       // 對照組：anon 本來就讀得到 public.products，證明上面不是「金鑰整個壞掉」。
       const control = await fetch(`${url}/rest/v1/products?select=id&limit=1`, { headers: h });

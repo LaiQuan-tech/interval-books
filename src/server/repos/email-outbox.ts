@@ -73,7 +73,11 @@ export async function loadEmailCopy(): Promise<EmailCopy> {
   }
 
   const out: EmailCopy = {};
-  for (const row of (data ?? []) as { template_key: string; string_key: string; value: unknown }[]) {
+  for (const row of (data ?? []) as {
+    template_key: string;
+    string_key: string;
+    value: unknown;
+  }[]) {
     out[`${row.template_key}.${row.string_key}`] = row.value as Localized;
   }
   return out;
@@ -212,7 +216,9 @@ export async function finishEmail(input: {
   });
 
   if (error) {
-    console.error(`[repo/email-outbox] finish_email 失敗 id=${input.id}：${error.code} ${error.message}`);
+    console.error(
+      `[repo/email-outbox] finish_email 失敗 id=${input.id}：${error.code} ${error.message}`,
+    );
     return false;
   }
   return data === true;

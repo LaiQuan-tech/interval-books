@@ -8,7 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +34,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import {
   curatedThemeSchema,
@@ -154,7 +168,9 @@ function AdminCuratedPage() {
   async function handleThemeSubmit(values: CuratedThemeFormValues) {
     setThemeSubmitting(true);
     try {
-      await upsertCuratedTheme({ data: editingTheme ? { ...values, id: editingTheme.id } : values });
+      await upsertCuratedTheme({
+        data: editingTheme ? { ...values, id: editingTheme.id } : values,
+      });
       toast.success(editingTheme ? "已更新主題" : "已新增主題");
       setThemeDialogOpen(false);
       await router.invalidate();
@@ -202,7 +218,12 @@ function AdminCuratedPage() {
     try {
       await upsertCuratedItem({
         data: editingItem
-          ? { ...values, id: editingItem.id, theme_id: selectedThemeId, sort_order: editingItem.sort_order }
+          ? {
+              ...values,
+              id: editingItem.id,
+              theme_id: selectedThemeId,
+              sort_order: editingItem.sort_order,
+            }
           : { ...values, theme_id: selectedThemeId, sort_order: nextItemSortOrder },
       });
       toast.success(editingItem ? "已更新品項" : "已新增品項");
@@ -249,7 +270,9 @@ function AdminCuratedPage() {
 
     setReorderingId(moved.id);
     try {
-      await reorderCuratedItems({ data: { theme_id: selectedThemeId, ids: reordered.map((row) => row.id) } });
+      await reorderCuratedItems({
+        data: { theme_id: selectedThemeId, ids: reordered.map((row) => row.id) },
+      });
       await loadItems(selectedThemeId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "排序失敗，請稍後再試");
@@ -315,7 +338,10 @@ function AdminCuratedPage() {
               </TableRow>
             ) : (
               themes.map((t) => (
-                <TableRow key={t.id} className={selectedThemeId === t.id ? "bg-muted/50" : undefined}>
+                <TableRow
+                  key={t.id}
+                  className={selectedThemeId === t.id ? "bg-muted/50" : undefined}
+                >
                   <TableCell className="text-muted-foreground">{t.sort_order}</TableCell>
                   <TableCell className="max-w-sm truncate font-medium">{t.title.zh}</TableCell>
                   <TableCell>
@@ -419,7 +445,9 @@ function AdminCuratedPage() {
                           </Button>
                         </div>
                       </TableCell>
-                      <TableCell className="max-w-sm truncate font-medium">{item.name.zh}</TableCell>
+                      <TableCell className="max-w-sm truncate font-medium">
+                        {item.name.zh}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={item.is_published ? "default" : "secondary"}>
                           {item.is_published ? "已發布" : "草稿"}
@@ -495,7 +523,10 @@ function AdminCuratedPage() {
       </Dialog>
 
       {/* Delete theme confirmation */}
-      <AlertDialog open={deleteThemeTarget !== null} onOpenChange={(open) => !open && setDeleteThemeTarget(null)}>
+      <AlertDialog
+        open={deleteThemeTarget !== null}
+        onOpenChange={(open) => !open && setDeleteThemeTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這個主題嗎？</AlertDialogTitle>
@@ -520,11 +551,16 @@ function AdminCuratedPage() {
       </AlertDialog>
 
       {/* Delete item confirmation */}
-      <AlertDialog open={deleteItemTarget !== null} onOpenChange={(open) => !open && setDeleteItemTarget(null)}>
+      <AlertDialog
+        open={deleteItemTarget !== null}
+        onOpenChange={(open) => !open && setDeleteItemTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這個品項嗎？</AlertDialogTitle>
-            <AlertDialogDescription>「{deleteItemTarget?.name.zh}」刪除後無法復原。</AlertDialogDescription>
+            <AlertDialogDescription>
+              「{deleteItemTarget?.name.zh}」刪除後無法復原。
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletingItem}>取消</AlertDialogCancel>
@@ -578,7 +614,9 @@ function ThemeForm({ defaultValues, onSubmit, submitting, submitLabel }: ThemeFo
                     ref={field.ref}
                     onBlur={field.onBlur}
                     value={field.value}
-                    onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                    onChange={(e) =>
+                      field.onChange(e.target.value === "" ? 0 : Number(e.target.value))
+                    }
                   />
                 </FormControl>
                 <FormMessage />
@@ -596,7 +634,9 @@ function ThemeForm({ defaultValues, onSubmit, submitting, submitLabel }: ThemeFo
                   <FormControl>
                     <Switch checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
-                  <span className="text-sm text-muted-foreground">{field.value ? "已發布" : "草稿"}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {field.value ? "已發布" : "草稿"}
+                  </span>
                 </div>
                 <FormMessage />
               </FormItem>
@@ -643,7 +683,9 @@ function ItemForm({ defaultValues, onSubmit, submitting, submitLabel }: ItemForm
                 <FormControl>
                   <Switch checked={field.value} onCheckedChange={field.onChange} />
                 </FormControl>
-                <span className="text-sm text-muted-foreground">{field.value ? "已發布" : "草稿"}</span>
+                <span className="text-sm text-muted-foreground">
+                  {field.value ? "已發布" : "草稿"}
+                </span>
               </div>
               <FormMessage />
             </FormItem>

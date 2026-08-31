@@ -63,7 +63,12 @@ export type PurchaseFilter = {
   stockStatus: "all" | "in_stock" | "used_up";
   dateFrom: string | null;
   dateTo: string | null;
-  sort: "purchase_date_desc" | "purchase_date_asc" | "created_at" | "quantity_desc" | "remaining_asc";
+  sort:
+    | "purchase_date_desc"
+    | "purchase_date_asc"
+    | "created_at"
+    | "quantity_desc"
+    | "remaining_asc";
   page: number;
   pageSize: number;
 };
@@ -129,7 +134,10 @@ export async function listAdminPurchases(
     if (filter.expiryStatus === "no_expiry") {
       query = query.is("expiry_date", null);
     } else if (filter.expiryStatus === "expired") {
-      query = query.not("expiry_date", "is", null).lt("expiry_date", today).gt("remaining_quantity", 0);
+      query = query
+        .not("expiry_date", "is", null)
+        .lt("expiry_date", today)
+        .gt("remaining_quantity", 0);
     } else if (filter.expiryStatus === "warning") {
       query = query
         .not("expiry_date", "is", null)
@@ -193,7 +201,12 @@ export async function getPurchaseSummary(filter: PurchaseFilter): Promise<{
 
   if (error) throw new Error(`[repo/inv-purchases] 進貨統計讀取失敗：${error.message}`);
 
-  const rows = (data ?? []) as { quantity: number; remaining_quantity: number; subtotal: number; approval_status: string }[];
+  const rows = (data ?? []) as {
+    quantity: number;
+    remaining_quantity: number;
+    subtotal: number;
+    approval_status: string;
+  }[];
   return {
     batches: rows.length,
     quantity: rows.reduce((s, r) => s + (r.quantity ?? 0), 0),
@@ -210,7 +223,10 @@ export async function listPurchaseFormOptions(): Promise<{
   approvalSettings: { module: string; is_enabled: boolean }[];
 }> {
   const [cats, vendors, settings] = await Promise.all([
-    supabaseAdmin().from("inv_admin_categories").select("category_id, name, icon").order("display_order"),
+    supabaseAdmin()
+      .from("inv_admin_categories")
+      .select("category_id, name, icon")
+      .order("display_order"),
     supabaseAdmin()
       .from("inv_admin_vendors")
       .select("vendor_id, name, short_name")
@@ -220,12 +236,18 @@ export async function listPurchaseFormOptions(): Promise<{
   ]);
 
   if (cats.error) throw new Error(`[repo/inv-purchases] 分類讀取失敗：${cats.error.message}`);
-  if (vendors.error) throw new Error(`[repo/inv-purchases] 供應商讀取失敗：${vendors.error.message}`);
-  if (settings.error) throw new Error(`[repo/inv-purchases] 審核設定讀取失敗：${settings.error.message}`);
+  if (vendors.error)
+    throw new Error(`[repo/inv-purchases] 供應商讀取失敗：${vendors.error.message}`);
+  if (settings.error)
+    throw new Error(`[repo/inv-purchases] 審核設定讀取失敗：${settings.error.message}`);
 
   return {
     categories: (cats.data ?? []) as { category_id: string; name: string; icon: string | null }[],
-    vendors: (vendors.data ?? []) as { vendor_id: string; name: string; short_name: string | null }[],
+    vendors: (vendors.data ?? []) as {
+      vendor_id: string;
+      name: string;
+      short_name: string | null;
+    }[],
     approvalSettings: (settings.data ?? []) as { module: string; is_enabled: boolean }[],
   };
 }
@@ -256,7 +278,9 @@ export async function listProductPickerRows(): Promise<ProductPickerRow[]> {
   for (let page = 0; page < 20; page += 1) {
     const { data, error } = await supabaseAdmin()
       .from("inv_admin_products")
-      .select("inv_product_id, name, issue_number, series, barcode, cost_price, stock_quantity, product_type, category_id")
+      .select(
+        "inv_product_id, name, issue_number, series, barcode, cost_price, stock_quantity, product_type, category_id",
+      )
       .eq("is_active", true)
       .order("name", { ascending: true })
       .order("inv_product_id", { ascending: true })
@@ -306,7 +330,12 @@ export async function deletePurchase(id: string): Promise<{
   // 已經被 FIFO 消耗過的批次會被 rollback_stock_on_purchase_delete() 擋下來，
   // 訊息是寫給店員看的整句中文（含「請開一張在庫異動單」），原樣往上丟。
   if (error) throw new Error(speak(error.message, "進貨刪除失敗"));
-  return data as { deleted: boolean; quantity: number; stock_rolled_back: boolean; product_id: string };
+  return data as {
+    deleted: boolean;
+    quantity: number;
+    stock_rolled_back: boolean;
+    product_id: string;
+  };
 }
 
 export async function batchUpdatePurchases(input: {

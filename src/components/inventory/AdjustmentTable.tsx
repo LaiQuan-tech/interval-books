@@ -105,7 +105,9 @@ export function AdjustmentTable({ rows, busyId, onView }: Props) {
                 </span>
               </TableCell>
 
-              <TableCell className="text-right tabular-nums text-sm">{money(row.total_cost)}</TableCell>
+              <TableCell className="text-right tabular-nums text-sm">
+                {money(row.total_cost)}
+              </TableCell>
 
               <TableCell>
                 <Badge variant={statusVariant(row.status)} className="font-normal">

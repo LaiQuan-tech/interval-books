@@ -307,9 +307,7 @@ function toSession(r: Row): ShopSession | null {
  */
 async function attachSessions(products: ShopProduct[]): Promise<void> {
   const db = supabase;
-  const bookings = products.filter(
-    (p) => p.productType === "event" || p.productType === "journey",
-  );
+  const bookings = products.filter((p) => p.productType === "event" || p.productType === "journey");
   if (!db || bookings.length === 0) return;
   try {
     const { data, error } = await db

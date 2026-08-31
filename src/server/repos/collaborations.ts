@@ -60,7 +60,9 @@ export async function getCollaborationById(id: string): Promise<CollaborationRow
  * (plain `text primary key`, not identity — supabase/migrations/0001_init.sql:331-341),
  * so id generation has to happen here rather than being left to Postgres.
  */
-export async function upsertCollaboration(input: CollaborationUpsertInput): Promise<CollaborationRow> {
+export async function upsertCollaboration(
+  input: CollaborationUpsertInput,
+): Promise<CollaborationRow> {
   const id = input.id && input.id.trim() ? input.id : randomUUID();
 
   const { data, error } = await supabaseAdmin()

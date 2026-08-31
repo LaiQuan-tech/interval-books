@@ -64,7 +64,11 @@ export async function listExhibitions(): Promise<ExhibitionRow[]> {
 }
 
 export async function getExhibitionById(id: string): Promise<ExhibitionRow | null> {
-  const { data, error } = await supabaseAdmin().from("exhibitions").select(COLUMNS).eq("id", id).maybeSingle();
+  const { data, error } = await supabaseAdmin()
+    .from("exhibitions")
+    .select(COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
 
   if (error) throw new Error(`[repo/exhibitions] getById 失敗：${error.message}`);
   return (data as ExhibitionRow | null) ?? null;
@@ -102,7 +106,9 @@ export async function upsertExhibition(input: ExhibitionUpsertInput): Promise<Ex
 
   if (error) {
     if (error.code === "23505") {
-      throw new Error(`[repo/exhibitions] upsert 失敗：網址代稱「${input.slug}」已被使用，請換一個不重複的代稱。`);
+      throw new Error(
+        `[repo/exhibitions] upsert 失敗：網址代稱「${input.slug}」已被使用，請換一個不重複的代稱。`,
+      );
     }
     throw new Error(`[repo/exhibitions] upsert 失敗：${error.message}`);
   }

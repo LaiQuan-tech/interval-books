@@ -259,7 +259,11 @@ export async function summarisePosSales(
   const { data, error } = await query.limit(20000);
   if (error) throw new Error(`[repo/inv-sales] 銷售合計讀取失敗：${error.message}`);
 
-  const rows = (data ?? []) as { quantity: number; amount: number | null; cost_price: number | null }[];
+  const rows = (data ?? []) as {
+    quantity: number;
+    amount: number | null;
+    cost_price: number | null;
+  }[];
   return {
     count: rows.length,
     quantity: rows.reduce((n, r) => n + r.quantity, 0),
@@ -269,7 +273,9 @@ export async function summarisePosSales(
   };
 }
 
-export async function listStockAlerts(status: "all" | "open" | "resolved"): Promise<StockAlertRow[]> {
+export async function listStockAlerts(
+  status: "all" | "open" | "resolved",
+): Promise<StockAlertRow[]> {
   let query = supabaseAdmin()
     .from("inv_stock_alerts")
     .select("*")

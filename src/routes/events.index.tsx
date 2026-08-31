@@ -109,13 +109,21 @@ function Events() {
 
       <section className="container-editorial pb-12">
         <div className="mx-auto w-4/5 aspect-[3/4] md:aspect-[16/10] overflow-hidden bg-muted">
-          <img src={heroSrc} alt={t(p.title(PAGE.title))} className="h-full w-full object-cover" loading="lazy" />
+          <img
+            src={heroSrc}
+            alt={t(p.title(PAGE.title))}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
         </div>
       </section>
 
       <section className="container-editorial pb-12 flex flex-wrap gap-3 text-xs tracking-widest">
         {filterIds.map((f) => {
-          const label = f === "all" ? t(p.block("filters.all", ALL)) : t(labelById.get(f) ?? { zh: f, en: f, ja: f });
+          const label =
+            f === "all"
+              ? t(p.block("filters.all", ALL))
+              : t(labelById.get(f) ?? { zh: f, en: f, ja: f });
           const active = filter === f;
           return (
             <button
@@ -136,7 +144,9 @@ function Events() {
       <section className="container-editorial pb-32 grid gap-px bg-border border border-border md:grid-cols-2">
         {list.map((e) => (
           <article key={e.id} className="bg-background p-8 md:p-10 flex flex-col">
-            <p className="eyebrow text-2xl">{t(labelById.get(e.category) ?? { zh: e.category, en: e.category, ja: e.category })}</p>
+            <p className="eyebrow text-2xl">
+              {t(labelById.get(e.category) ?? { zh: e.category, en: e.category, ja: e.category })}
+            </p>
             <h3 className="display mt-4 text-2xl md:text-3xl leading-snug">{t(e.title)}</h3>
             <p className="mt-4 text-sm text-muted-foreground">{e.date}</p>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(e.summary)}</p>

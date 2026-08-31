@@ -6,7 +6,14 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { localizedSchema } from "@/lib/admin/schemas";
@@ -152,7 +159,9 @@ function AdminStringsPage() {
                                   onBlur={field.onBlur}
                                   value={field.value}
                                   onChange={(e) =>
-                                    field.onChange(e.target.value === "" ? 0 : Number(e.target.value))
+                                    field.onChange(
+                                      e.target.value === "" ? 0 : Number(e.target.value),
+                                    )
                                   }
                                 />
                               </FormControl>

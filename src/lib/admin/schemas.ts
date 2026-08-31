@@ -383,38 +383,37 @@ const PRODUCT_STATUSES = ["draft", "active", "archived"] as const;
  * `seats_taken` 從來就不是這裡的欄位，理由見 src/server/repos/products.ts：
  * 表單寫回一個幾分鐘前讀到的計數器，就是 reserve_session_seat() 存在的理由。
  */
-export const productSchema = z
-  .object({
-    id: z.string().trim().min(1).optional(),
-    slug: z.string().trim().min(1, "請輸入網址代稱"),
-    product_type: z.enum(PRODUCT_TYPES),
-    // Optional link back to the CMS row this product is sold from — plain
-    // fields, not a picker (see src/routes/admin/_shell.products.tsx).
-    source_type: z.enum(PRODUCT_SOURCE_TYPES).nullable().optional(),
-    source_id: z.string().trim().nullable().optional(),
-    title: localizedSchema,
-    summary: localizedSchema,
-    description: localizedSchema,
-    // TWD, whole dollars — never cents (see migration comment).
-    price: z.number().int("價格必須是整數，不接受小數").min(0, "價格不可為負數"),
-    compare_at_price: z
-      .number()
-      .int("原價必須是整數，不接受小數")
-      .min(0, "原價不可為負數")
-      .nullable()
-      .optional(),
-    // Physical goods only. NULL means "not stock-managed".
-    stock: z
-      .number()
-      .int("庫存必須是整數，不接受小數")
-      .min(0, "庫存不可為負數")
-      .nullable()
-      .optional(),
-    image_key: z.string().trim().nullable().optional(),
-    requires_shipping: z.boolean(),
-    status: z.enum(PRODUCT_STATUSES),
-    sort_order: z.number().int("排序必須是整數"),
-  });
+export const productSchema = z.object({
+  id: z.string().trim().min(1).optional(),
+  slug: z.string().trim().min(1, "請輸入網址代稱"),
+  product_type: z.enum(PRODUCT_TYPES),
+  // Optional link back to the CMS row this product is sold from — plain
+  // fields, not a picker (see src/routes/admin/_shell.products.tsx).
+  source_type: z.enum(PRODUCT_SOURCE_TYPES).nullable().optional(),
+  source_id: z.string().trim().nullable().optional(),
+  title: localizedSchema,
+  summary: localizedSchema,
+  description: localizedSchema,
+  // TWD, whole dollars — never cents (see migration comment).
+  price: z.number().int("價格必須是整數，不接受小數").min(0, "價格不可為負數"),
+  compare_at_price: z
+    .number()
+    .int("原價必須是整數，不接受小數")
+    .min(0, "原價不可為負數")
+    .nullable()
+    .optional(),
+  // Physical goods only. NULL means "not stock-managed".
+  stock: z
+    .number()
+    .int("庫存必須是整數，不接受小數")
+    .min(0, "庫存不可為負數")
+    .nullable()
+    .optional(),
+  image_key: z.string().trim().nullable().optional(),
+  requires_shipping: z.boolean(),
+  status: z.enum(PRODUCT_STATUSES),
+  sort_order: z.number().int("排序必須是整數"),
+});
 
 export type ProductFormValues = z.infer<typeof productSchema>;
 

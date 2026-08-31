@@ -35,7 +35,6 @@ import { invProductSchema, INV_PRODUCT_TYPES } from "@/lib/admin/schemas";
 import { extractIssueFromName, todayInTaipei } from "@/lib/admin/inv-product-utils";
 import type { AdminCategory, AdminProductRow, AdminVendor } from "@/server/repos/inv-products";
 
-
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;

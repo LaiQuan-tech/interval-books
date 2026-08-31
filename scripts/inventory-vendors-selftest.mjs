@@ -101,9 +101,7 @@ function strip(sql) {
  * 去修程式。
  */
 function stripTs(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 }
 
 function read(path) {
@@ -139,14 +137,26 @@ const MIG_DIR = join(ROOT, "supabase/migrations");
 const migFiles = readdirSync(MIG_DIR);
 for (let n = 1; n <= 18; n += 1) {
   const prefix = String(n).padStart(4, "0");
-  check(`migration ${prefix} 仍在`, migFiles.some((f) => f.startsWith(`${prefix}_`)), true);
+  check(
+    `migration ${prefix} 仍在`,
+    migFiles.some((f) => f.startsWith(`${prefix}_`)),
+    true,
+  );
 }
 // 0020 加了 public.event_registrations —— 這個專案第二張放 PII 的表。它**不動**
 // pii_access_log 的 subject_table / reason CHECK，也不動 inv_vendor_sensitive()，
 // 所以這支測試的斷言全部原樣成立。名單的明文揭露與 CSV 匯出（會用到 pii_access_log
 // 的新 reason）留到 0021，那一期要回來重讀 §1 那幾條。
-check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
-check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
+check(
+  "0020 在（場次名額）",
+  migFiles.some((f) => f.startsWith("0020_")),
+  true,
+);
+check(
+  "0021 在（名單 PII）",
+  migFiles.some((f) => f.startsWith("0021_")),
+  true,
+);
 // 0022（交易信 outbox 與付款通知）把人叫回來重讀 §1 第二次。答案是：**它完全
 // 沒有碰 pii_access_log。** 這是刻意的決定，寫在 0022 檔頭 §0.5 —— 寄信需要地址，
 // 但「系統為了寄信而使用地址」與「有人在查這個人的資料」不是同一件事（0019 §1.1
@@ -159,16 +169,32 @@ check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), t
 // inv_vendor_sensitive()、staff_permissions 與那個不可竄改 trigger 的斷言，
 // 全部原樣成立。notify-selftest [2] 用兩條 grep 守著「0022 沒有出現
 // pii_access_log 與 pii_log_access 這兩個字」。
-check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_")), true);
+check(
+  "0022 在（交易信 outbox）",
+  migFiles.some((f) => f.startsWith("0022_")),
+  true,
+);
 // 0024 是黑貓 PAY 線上刷卡加的（見 supabase/migrations/0024_blackcat_payment.sql）。
 // 它沒有碰進銷存的任何一張表，所以這一支測試的其他斷言原樣成立。
-check("0024 在（黑貓 PAY 金流欄位）", migFiles.some((f) => f.startsWith("0024_")), true);
+check(
+  "0024 在（黑貓 PAY 金流欄位）",
+  migFiles.some((f) => f.startsWith("0024_")),
+  true,
+);
 // 0025_event_speaker.sql（活動掛講者：public.events.speaker_id -> public.artists.id）
 // 是這一期加的。它只在 public.events 上加一欄與一個索引，**inv 的任何一張表、
 // 任何一支函式都沒有被碰到**，也沒有任何 drop。下面的斷言全部原樣成立。
 // 0025 自己的內容由 artists-selftest 驗。
-check("0025 在（活動掛講者）", migFiles.some((f) => f.startsWith("0025_")), true);
-check("沒有多出 0026（0025 是最後一號）", migFiles.some((f) => f.startsWith("0026_")), false);
+check(
+  "0025 在（活動掛講者）",
+  migFiles.some((f) => f.startsWith("0025_")),
+  true,
+);
+check(
+  "沒有多出 0026（0025 是最後一號）",
+  migFiles.some((f) => f.startsWith("0026_")),
+  false,
+);
 
 // ── 0021 真的回來重讀 §1 了，而且它動了那兩條 CHECK ──────────────────────
 //
@@ -185,7 +211,11 @@ check("沒有多出 0026（0025 是最後一號）", migFiles.some((f) => f.star
 //      「連 service_role 都 revoke」是 §1.3 的兩道門，少一道稽核軌跡就刪得掉。
 const sql0021 = read(join(MIG_DIR, "0021_roster_pii.sql"));
 const exec0021 = strip(sql0021);
-checkTrue("反空殼：0021 不是空檔（> 8000 字）", exec0021.length > 8000, `實際 ${exec0021.length} 字`);
+checkTrue(
+  "反空殼：0021 不是空檔（> 8000 字）",
+  exec0021.length > 8000,
+  `實際 ${exec0021.length} 字`,
+);
 checkTrue(
   "0021 放寬 subject_table 時沒有弄丟 0019 的兩個值",
   ["inv.vendors", "inv.vendor_bank_accounts"].every((t) => exec0021.includes(`'${t}'`)),
@@ -320,7 +350,10 @@ checkTrue(
 
 console.log("\n[4] pii_access_log：append-only 且沒有繞道");
 
-checkTrue("有建 public.pii_access_log", /create table if not exists public\.pii_access_log/.test(exec));
+checkTrue(
+  "有建 public.pii_access_log",
+  /create table if not exists public\.pii_access_log/.test(exec),
+);
 checkTrue(
   "連 service_role 的直接 DML 權限都 revoke 掉",
   /revoke all on table public\.pii_access_log from service_role/.test(exec),
@@ -346,10 +379,7 @@ checkTrue(
     exec,
   ),
 );
-checkTrue(
-  "TRUNCATE 也掛上",
-  /before truncate on public\.pii_access_log/.test(exec),
-);
+checkTrue("TRUNCATE 也掛上", /before truncate on public\.pii_access_log/.test(exec));
 
 // 稽核軌跡的 view 只有 select，沒有任何寫入 grant。
 checkTrue(
@@ -382,10 +412,7 @@ checkTrue(
   "順序在同一個交易裡不影響結果，但寫在前面讓「一定會 log」讀第一眼就看得出來",
 );
 
-checkTrue(
-  "欄位是白名單（v_allowed）",
-  /v_allowed\s+text\[\]\s*:=\s*array\[/.test(sensitive),
-);
+checkTrue("欄位是白名單（v_allowed）", /v_allowed\s+text\[\]\s*:=\s*array\[/.test(sensitive));
 checkTrue(
   "白名單裡沒有 '*' 或 'all'",
   !/'\*'/.test(sensitive) && !/'all'/.test(sensitive),
@@ -397,10 +424,7 @@ checkTrue(
     (f) => sensitive.includes(f),
   ),
 );
-checkTrue(
-  "銀行帳號另外記一筆 subject_table",
-  /'inv\.vendor_bank_accounts'/.test(sensitive),
-);
+checkTrue("銀行帳號另外記一筆 subject_table", /'inv\.vendor_bank_accounts'/.test(sensitive));
 
 // 對照組：這是**唯一**一支會回傳原值的 public 函式。
 const rawReturners = [...exec.matchAll(/create or replace function (public\.[a-z_]+)\s*\(/g)]
@@ -465,7 +489,8 @@ checkTrue(
 );
 checkTrue(
   "vendor_my_id 同時檢查 is_active / status / approval_status",
-  /u\.is_active/.test(myId) && /v\.status\s*=\s*'active'/.test(myId) &&
+  /u\.is_active/.test(myId) &&
+    /v\.status\s*=\s*'active'/.test(myId) &&
     /v\.approval_status\s*=\s*'approved'/.test(myId),
 );
 
@@ -478,10 +503,7 @@ checkTrue(
   !/inputValidator\([\s\S]{0,600}?vendorId/.test(portalCode),
   "過濾用的 vendor_id 一律來自 session（context.vendor.vendorId）",
 );
-checkTrue(
-  "對照組：它確實從 context.vendor 拿 userId",
-  /context\.vendor\.userId/.test(portalCode),
-);
+checkTrue("對照組：它確實從 context.vendor 拿 userId", /context\.vendor\.userId/.test(portalCode));
 checkTrue(
   "每一支（除登入/登出/guard 外）都掛 vendorFnMiddleware",
   (portalCode.match(/vendorFnMiddleware\(\)/g) ?? []).length >= 5,
@@ -494,7 +516,10 @@ checkTrue("廠商入口的 _shell.tsx 存在", vendorShell.length > 500);
 checkTrue(
   "beforeLoad 回傳的 route context 不含 vendorId",
   !/vendorId/.test(
-    vendorShellCode.slice(vendorShellCode.indexOf("beforeLoad"), vendorShellCode.indexOf("component:")),
+    vendorShellCode.slice(
+      vendorShellCode.indexOf("beforeLoad"),
+      vendorShellCode.indexOf("component:"),
+    ),
   ),
   "context 裡有它，遲早有人會順手塞進某一支 payload —— UI 拿不到就沒得傳",
 );
@@ -504,10 +529,7 @@ checkTrue(
     /unlinked[\s\S]{0,120}?\/vendor\/pending/.test(vendorShellCode),
   "把 unlinked 併進 signed_out，廠商會被丟回登入頁然後一直重打對的密碼",
 );
-checkTrue(
-  "_shell.tsx 檔頭寫明 beforeLoad 不是安全邊界",
-  /不是安全邊界/.test(vendorShell),
-);
+checkTrue("_shell.tsx 檔頭寫明 beforeLoad 不是安全邊界", /不是安全邊界/.test(vendorShell));
 
 for (const f of ["_shell.index.tsx", "_shell.products.tsx"]) {
   const page = stripTs(read(join(ROOT, "src/routes/vendor", f)));
@@ -536,7 +558,7 @@ checkTrue(
 console.log("\n[7] repo 層：一律列明欄位");
 
 checkTrue(
-  "repos/inv-vendors.ts 沒有 select(\"*\")",
+  'repos/inv-vendors.ts 沒有 select("*")',
   !/\.select\(\s*["'`]\*/.test(repoCode),
   "來源 VendorManagement.tsx:73 是 select('*')，然後在畫面上補一句 slice(0,3)+'***'",
 );
@@ -606,8 +628,7 @@ checkTrue(
 );
 checkTrue(
   "而且權限是從 context 重讀的，不是前端送的",
-  /context\.staff\.permissions/.test(fnsAdminCode) &&
-    !/data\.permissions/.test(fnsAdminCode),
+  /context\.staff\.permissions/.test(fnsAdminCode) && !/data\.permissions/.test(fnsAdminCode),
 );
 checkTrue(
   "店員不能用 self_service 當查閱事由",
@@ -635,20 +656,14 @@ checkTrue(
   ),
 );
 checkTrue("有 vendorFnMiddleware", /export function vendorFnMiddleware\(\)/.test(middlewareCode));
-checkTrue(
-  "vendorFnMiddleware 走 requireVendor()",
-  /requireVendor\(\)/.test(middlewareCode),
-);
+checkTrue("vendorFnMiddleware 走 requireVendor()", /requireVendor\(\)/.test(middlewareCode));
 
 // cookie 名字必須不同
 const vendorAuth = read(SRC_VENDOR_AUTH);
 const session = read(SRC_SESSION);
 checkTrue('後台 cookie 是 "ib_admin"', /name:\s*"ib_admin"/.test(session));
 checkTrue('廠商 cookie 是 "ib_vendor"', /name:\s*"ib_vendor"/.test(vendorAuth));
-checkTrue(
-  "廠商 session 另外驗一個 kind='vendor'",
-  /kind !== "vendor"/.test(stripTs(vendorAuth)),
-);
+checkTrue("廠商 session 另外驗一個 kind='vendor'", /kind !== "vendor"/.test(stripTs(vendorAuth)));
 checkTrue(
   "requireVendor 每次都重讀 profiles（cookie 是身分，權限每次重問）",
   /export async function requireVendor[\s\S]{0,600}?loadVendorProfile\(session\.userId\)/.test(
@@ -673,10 +688,7 @@ checkTrue(
   !/inv\.initial_approval_status\(/.test(submit),
   "approval_settings 回答的是「我信不信我自己的店員」，跟外部投稿無關",
 );
-checkTrue(
-  "product_type 寫死 consignment（不從 payload 拿）",
-  /'consignment',/.test(submit),
-);
+checkTrue("product_type 寫死 consignment（不從 payload 拿）", /'consignment',/.test(submit));
 checkTrue("submitted_via 寫死 vendor_portal", /'vendor_portal'/.test(submit));
 checkTrue(
   "編輯時的 WHERE 有 vendor_id + pending + vendor_portal 三個條件",
@@ -735,10 +747,7 @@ checkTrue(
   "它補上了套餐檢查",
   /PRODUCT_IN_COMBO/.test(delProduct) && /inv\.combo_set_items/.test(delProduct),
 );
-checkTrue(
-  "而且訊息裡列得出是哪一個套餐",
-  /string_agg\(cs\.name/.test(delProduct),
-);
+checkTrue("而且訊息裡列得出是哪一個套餐", /string_agg\(cs\.name/.test(delProduct));
 for (const kept of ["PRODUCT_HAS_SALES", "PRODUCT_IS_LISTED", "PRODUCT_NOT_FOUND"]) {
   checkTrue(`對照組：0016 原本的 ${kept} 一個字都沒有放寬`, delProduct.includes(kept));
 }
@@ -756,10 +765,7 @@ checkTrue(
   /VENDOR_IN_USE/.test(deleteVendor) &&
     /v_products > 0 OR v_purchases > 0 OR v_returns > 0 OR v_portal > 0/.test(deleteVendor),
 );
-checkTrue(
-  "而且訊息裡有數量與正確做法",
-  /解約請把往來狀態改成/.test(deleteVendor),
-);
+checkTrue("而且訊息裡有數量與正確做法", /解約請把往來狀態改成/.test(deleteVendor));
 
 // -----------------------------------------------------------------------------
 // [11] 唯一性 index（來源靠前端兩步 UPDATE 維持）
@@ -804,10 +810,7 @@ const artistsDdl = (() => {
   return i < 0 ? "" : exec.slice(i, exec.indexOf("\n);", i));
 })();
 checkTrue("artists 的 CREATE TABLE 抓得到", artistsDdl.length > 200);
-checkTrue(
-  "artists 沒有 user_id 欄位（身分對照在 vendor_users）",
-  !/\buser_id\b/.test(artistsDdl),
-);
+checkTrue("artists 沒有 user_id 欄位（身分對照在 vendor_users）", !/\buser_id\b/.test(artistsDdl));
 checkTrue(
   "artist_products 沒有被建出來（已廢除）",
   !/create table[\s\S]{0,40}artist_products/i.test(exec),
@@ -895,9 +898,15 @@ const schemas = read(SRC_SCHEMAS);
 const schemasCode = stripTs(schemas);
 
 const ENUM_MIRRORS = [
-  ["VENDOR_ENTITY_TYPES", ["domestic_company", "domestic_individual", "foreign", "foreign_individual"]],
+  [
+    "VENDOR_ENTITY_TYPES",
+    ["domestic_company", "domestic_individual", "foreign", "foreign_individual"],
+  ],
   ["VENDOR_STATUSES", ["active", "suspended", "inactive"]],
-  ["VENDOR_VOUCHER_CATEGORIES", ["invoice", "receipt", "official_document", "labor_payment", "none"]],
+  [
+    "VENDOR_VOUCHER_CATEGORIES",
+    ["invoice", "receipt", "official_document", "labor_payment", "none"],
+  ],
   ["VENDOR_EINVOICE_TYPES", ["none", "b2b", "b2c"]],
   ["VENDOR_PAYMENT_TERMS", ["immediate", "monthly", "negotiated"]],
   ["VENDOR_SETTLEMENT_TYPES", ["invoice_date", "end_of_month", "monthly"]],
@@ -917,7 +926,10 @@ for (const [name, values] of ENUM_MIRRORS) {
 checkTrue(
   "vendorSchema 沒有 approval_status",
   !/approval_status/.test(
-    schemasCode.slice(schemasCode.indexOf("export const vendorSchema"), schemasCode.indexOf("export const vendorFilterSchema")),
+    schemasCode.slice(
+      schemasCode.indexOf("export const vendorSchema"),
+      schemasCode.indexOf("export const vendorFilterSchema"),
+    ),
   ),
 );
 for (const forbidden of ["approved_by", "created_by", "vendor_code"]) {
@@ -936,7 +948,13 @@ const submitSchema = schemasCode.slice(
   schemasCode.indexOf("export const vendorProductSubmitSchema"),
   schemasCode.indexOf("export type VendorProductSubmitValues"),
 );
-for (const forbidden of ["approval_status", "vendor_id", "stock_quantity", "cost_price", "product_type"]) {
+for (const forbidden of [
+  "approval_status",
+  "vendor_id",
+  "stock_quantity",
+  "cost_price",
+  "product_type",
+]) {
   checkTrue(`vendorProductSubmitSchema 沒有 ${forbidden}`, !submitSchema.includes(forbidden));
 }
 
@@ -950,8 +968,14 @@ for (const [label, expr] of [
   ["AdminVendorDetail 沒有 tax_id", 'AssertFalse<HasKey<AdminVendorDetail, "tax_id">>'],
   ["AdminVendorDetail 沒有 id_number", 'AssertFalse<HasKey<AdminVendorDetail, "id_number">>'],
   ["AdminVendorDetail 沒有 foreign_id", 'AssertFalse<HasKey<AdminVendorDetail, "foreign_id">>'],
-  ["AdminVendorDetail 沒有 residence_permit_number", 'AssertFalse<HasKey<AdminVendorDetail, "residence_permit_number">>'],
-  ["AdminVendorBankAccount 沒有 account_number", 'AssertFalse<HasKey<AdminVendorBankAccount, "account_number">>'],
+  [
+    "AdminVendorDetail 沒有 residence_permit_number",
+    'AssertFalse<HasKey<AdminVendorDetail, "residence_permit_number">>',
+  ],
+  [
+    "AdminVendorBankAccount 沒有 account_number",
+    'AssertFalse<HasKey<AdminVendorBankAccount, "account_number">>',
+  ],
   ["AdminVendorRow 沒有 tax_id", 'AssertFalse<HasKey<AdminVendorRow, "tax_id">>'],
   ["VendorPortalProduct 沒有 cost_price", 'AssertFalse<HasKey<VendorPortalProduct, "cost_price">>'],
 ]) {
@@ -967,7 +991,9 @@ for (const positive of [
 checkTrue(
   "沒有任何地方 import 它（不進 bundle，但 tsc 會檢查）",
   !/from "@\/server\/repos\/inv-vendors\.pii-types"/.test(
-    read(join(ROOT, "src/server/repos/inv-vendors.ts")) + read(SRC_FNS_ADMIN) + read(SRC_FNS_PORTAL),
+    read(join(ROOT, "src/server/repos/inv-vendors.ts")) +
+      read(SRC_FNS_ADMIN) +
+      read(SRC_FNS_PORTAL),
   ),
 );
 
@@ -977,10 +1003,7 @@ checkTrue(
   "來源前端輸入百分比、存檔 ÷100，少除一次會存進 8.0（800%）而 DB 沒有 CHECK",
 );
 checkTrue("結算日 schema 是 1–31", /min\(1, "日期必須介於 1 與 31"\)/.test(schemasCode));
-checkTrue(
-  "查閱事由是列舉不是自由文字",
-  /export const PII_ACCESS_REASONS = \[/.test(schemasCode),
-);
+checkTrue("查閱事由是列舉不是自由文字", /export const PII_ACCESS_REASONS = \[/.test(schemasCode));
 checkTrue(
   "PII 欄位白名單與 0019 §4 一致",
   ["tax_id", "id_number", "foreign_id", "residence_permit_number", "bank_accounts"].every((f) =>
@@ -1040,7 +1063,7 @@ for (const fn of uniqueFns) {
 
 const shell = read(SRC_SHELL);
 checkTrue(
-  '側欄有「廠商」且 staff: true',
+  "側欄有「廠商」且 staff: true",
   /to:\s*"\/admin\/inventory-vendors",[^{}]*label:\s*"廠商",[^{}]*staff:\s*true/.test(shell),
 );
 checkTrue(
@@ -1186,7 +1209,9 @@ if (!TOKEN) {
   // ── [17] 稽核軌跡改不動也刪不掉 ────────────────────────────────────────
   console.log("\n[17] 實測：稽核軌跡 append-only");
 
-  const upd = await q(`update public.pii_access_log set actor_email = 'x' where actor_email = 'selftest@local';`);
+  const upd = await q(
+    `update public.pii_access_log set actor_email = 'x' where actor_email = 'selftest@local';`,
+  );
   checkTrue("UPDATE 被擋", !upd.ok && /PII_LOG_IMMUTABLE/.test(upd.error ?? ""));
   const del = await q(`delete from public.pii_access_log where actor_email = 'selftest@local';`);
   checkTrue("DELETE 被擋", !del.ok && /PII_LOG_IMMUTABLE/.test(del.error ?? ""));
@@ -1318,7 +1343,11 @@ if (!TOKEN) {
   const staffSave = await q(`
     select (public.inv_save_product((select user_id from inv.profiles limit 1), null,
       jsonb_build_object('name', '${MARK}店員建的', 'selling_price', '100'))->>'approval_status') s;`);
-  check("對照組：店員建的商品確實變成 approved（證明開關真的關著）", staffSave.rows[0]?.s, "approved");
+  check(
+    "對照組：店員建的商品確實變成 approved（證明開關真的關著）",
+    staffSave.rows[0]?.s,
+    "approved",
+  );
   await q(
     `update inv.approval_settings set is_enabled = ${wasOn.rows[0]?.is_enabled} where module = 'products';`,
   );

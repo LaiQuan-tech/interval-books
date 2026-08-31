@@ -40,10 +40,7 @@ const PAGE = {
 
 export const Route = createFileRoute("/exhibitions")({
   loader: async () => {
-    const [page, exhibitions] = await Promise.all([
-      fetchPage("exhibitions"),
-      fetchExhibitions(),
-    ]);
+    const [page, exhibitions] = await Promise.all([fetchPage("exhibitions"), fetchExhibitions()]);
     return { page, exhibitions };
   },
   head: ({ loaderData }) => {
@@ -84,10 +81,19 @@ function Exhibitions() {
 
       <section className="container-editorial pb-32 space-y-32">
         {exhibitions.map((ex, i) => (
-          <article key={ex.id} id={ex.slug} className="grid md:grid-cols-12 gap-10 lg:gap-16 scroll-mt-24">
+          <article
+            key={ex.id}
+            id={ex.slug}
+            className="grid md:grid-cols-12 gap-10 lg:gap-16 scroll-mt-24"
+          >
             <div className={`md:col-span-7 ${i % 2 === 1 ? "md:order-2" : ""}`}>
               <div className="aspect-[4/3] overflow-hidden bg-muted">
-                <img src={imageFor(ex.imageKey, exhibitionImg)} alt={t(ex.title)} loading="lazy" className="h-full w-full object-cover" />
+                <img
+                  src={imageFor(ex.imageKey, exhibitionImg)}
+                  alt={t(ex.title)}
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
               </div>
             </div>
             <div className="md:col-span-5 flex flex-col justify-center">
@@ -101,12 +107,14 @@ function Exhibitions() {
                 onClick={() => setOpen(open === ex.slug ? null : ex.slug)}
                 className="mt-6 self-start text-xs tracking-widest text-clay hover-underline"
               >
-                {t(p.block("details", PAGE.details))}  {open === ex.slug ? "−" : "+"}
+                {t(p.block("details", PAGE.details))} {open === ex.slug ? "−" : "+"}
               </button>
 
               {open === ex.slug && (
                 <div className="mt-5 border-l-2 border-clay/40 pl-5">
-                  <p className="text-sm leading-relaxed text-muted-foreground">{t(ex.description)}</p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {t(ex.description)}
+                  </p>
                   <p className="mt-5 text-xs text-muted-foreground tracking-widest">
                     {t(p.block("visitNote", PAGE.visitNote))}
                   </p>

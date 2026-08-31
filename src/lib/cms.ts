@@ -239,8 +239,14 @@ export const FALLBACK_EVENT_CATEGORIES: EventCategoryEntry[] = [
   { id: "讀書會", label: { zh: "讀書會", en: "Reading Circles", ja: "読書会" } },
   { id: "療癒生活節", label: { zh: "療癒生活節", en: "Healing Festival", ja: "ヒーリング祭" } },
   { id: "策旅說明會", label: { zh: "策旅說明會", en: "Journey Briefings", ja: "旅の説明会" } },
-  { id: "陶藝家展售", label: { zh: "陶藝家展售", en: "Ceramicist Showcases", ja: "陶芸家の展示販売" } },
-  { id: "身心靈工作坊", label: { zh: "身心靈工作坊", en: "Mind & Body Workshops", ja: "心身ワークショップ" } },
+  {
+    id: "陶藝家展售",
+    label: { zh: "陶藝家展售", en: "Ceramicist Showcases", ja: "陶芸家の展示販売" },
+  },
+  {
+    id: "身心靈工作坊",
+    label: { zh: "身心靈工作坊", en: "Mind & Body Workshops", ja: "心身ワークショップ" },
+  },
   { id: "好書交流", label: { zh: "好書交流", en: "Book Exchange", ja: "本の交流" } },
 ];
 
@@ -368,7 +374,13 @@ function buildUi(rows: Row[]): UiStrings {
       else if (key === "brandSub") ui.brandSub = value;
       continue;
     }
-    if (group === "nav" || group === "footer" || group === "buttons" || group === "sections" || group === "notFound") {
+    if (
+      group === "nav" ||
+      group === "footer" ||
+      group === "buttons" ||
+      group === "sections" ||
+      group === "notFound"
+    ) {
       ui[group][key] = value;
     }
   }
@@ -703,11 +715,9 @@ export async function fetchJourneys(): Promise<JourneyEntry[]> {
 }
 
 export async function fetchNews(): Promise<NewsEntry[]> {
-  const rows = await select(
-    "news",
-    "id,title,summary,description,display_date,sort_order",
-    { order: "sort_order" },
-  );
+  const rows = await select("news", "id,title,summary,description,display_date,sort_order", {
+    order: "sort_order",
+  });
   if (!rows || !rows.length) return FALLBACK_NEWS;
   const mapped: NewsEntry[] = [];
   for (const r of rows) {
@@ -756,7 +766,9 @@ export async function fetchCuratedThemes(): Promise<CuratedThemeEntry[]> {
 }
 
 export async function fetchCollaborations(): Promise<CollaborationEntry[]> {
-  const rows = await select("collaborations", "id,title,description,sort_order", { order: "sort_order" });
+  const rows = await select("collaborations", "id,title,description,sort_order", {
+    order: "sort_order",
+  });
   if (!rows || !rows.length) return FALLBACK_COLLABORATIONS;
   const mapped: CollaborationEntry[] = [];
   for (const r of rows) {

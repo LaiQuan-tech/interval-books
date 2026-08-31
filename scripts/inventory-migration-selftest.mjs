@@ -147,11 +147,7 @@ const exec0009 = sql0009
   .join("\n");
 
 console.log("\n[2] inv schema 的安全模型（0009 的可執行 SQL）");
-check(
-  "CREATE POLICY 出現次數",
-  (exec0009.match(/CREATE POLICY/gi) ?? []).length,
-  0,
-);
+check("CREATE POLICY 出現次數", (exec0009.match(/CREATE POLICY/gi) ?? []).length, 0);
 check(
   "給 anon / authenticated 的 GRANT 次數",
   (exec0009.match(/grant[\s\S]{0,200}?\bto\s+(anon|authenticated)\b/gi) ?? []).length,
@@ -162,7 +158,10 @@ checkTrue(
   "有 revoke all on schema inv from anon, authenticated",
   /revoke all on schema inv from anon, authenticated;/i.test(exec0009),
 );
-checkTrue("有 grant usage on schema inv to service_role", /grant usage on schema inv to service_role;/i.test(exec0009));
+checkTrue(
+  "有 grant usage on schema inv to service_role",
+  /grant usage on schema inv to service_role;/i.test(exec0009),
+);
 checkTrue(
   "檔尾把 inv 全部物件授給 service_role",
   /grant all on all tables in schema inv to service_role;/i.test(exec0009) &&
@@ -232,22 +231,34 @@ checkTrue(
 );
 
 console.log("\n[5] 身分模型（0010）");
-checkTrue("放寬 role CHECK 前先 drop 舊的", /drop constraint if exists profiles_role_check/i.test(sql0010));
+checkTrue(
+  "放寬 role CHECK 前先 drop 舊的",
+  /drop constraint if exists profiles_role_check/i.test(sql0010),
+);
 for (const role of ["customer", "pending", "staff", "vendor", "admin"]) {
   checkTrue(`role 允許 '${role}'`, new RegExp(`'${role}'`).test(sql0010));
 }
-checkTrue("建立 public.staff_permissions", /create table if not exists public\.staff_permissions/i.test(sql0010));
+checkTrue(
+  "建立 public.staff_permissions",
+  /create table if not exists public\.staff_permissions/i.test(sql0010),
+);
 checkTrue(
   "staff_permissions 對 anon/authenticated 收權",
   /revoke all on table public\.staff_permissions from anon, authenticated;/i.test(sql0010),
 );
-checkTrue("staff_permissions 開 RLS", /alter table public\.staff_permissions enable row level security;/i.test(sql0010));
+checkTrue(
+  "staff_permissions 開 RLS",
+  /alter table public\.staff_permissions enable row level security;/i.test(sql0010),
+);
 check(
   "staff_permissions 的 permission CHECK 列了幾種",
   (sql0010.match(/'approve_\w+'/g) ?? []).length,
   7,
 );
-checkTrue("0010 沒有修改 0002 的檔案內容（只在自己檔內 drop/add constraint）", !/0002_admin\.sql\s*$/m.test(sql0010));
+checkTrue(
+  "0010 沒有修改 0002 的檔案內容（只在自己檔內 drop/add constraint）",
+  !/0002_admin\.sql\s*$/m.test(sql0010),
+);
 
 // ══════════════════════════════════════════════════════════════════════════
 // 第二段：連線 —— 對目標資料庫實際對帳
@@ -262,7 +273,8 @@ async function q(sql) {
     headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
     body: JSON.stringify({ query: sql }),
   });
-  if (!res.ok) throw new Error(`Management API HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok)
+    throw new Error(`Management API HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return res.json();
 }
 
@@ -364,7 +376,9 @@ if (!TOKEN) {
   check("該商品現在的庫存", fixRow?.stock_now, 0);
 
   console.log("\n[9] 身分：7 個 auth user、7 筆 profiles、10 筆細權限");
-  const ids = Object.keys(EXPECTED_ROLES).map((i) => `'${i}'`).join(",");
+  const ids = Object.keys(EXPECTED_ROLES)
+    .map((i) => `'${i}'`)
+    .join(",");
   const idn = (
     await q(`
     select
@@ -396,12 +410,32 @@ if (!TOKEN) {
       (select max((regexp_match(vendor_code, '(\\d+)$'))[1]::int) from inv.vendors) max_b,
       (select max((regexp_match(return_number, '-(\\d+)$'))[1]::int) from inv.vendor_returns) max_c`)
   )[0];
-  checkTrue("stock_adjustment_seq ≥ 備份值", seqs.a >= EXPECTED_SEQ_MIN.stock_adjustment_seq, `${seqs.a}`);
+  checkTrue(
+    "stock_adjustment_seq ≥ 備份值",
+    seqs.a >= EXPECTED_SEQ_MIN.stock_adjustment_seq,
+    `${seqs.a}`,
+  );
   checkTrue("vendor_code_seq ≥ 備份值", seqs.b >= EXPECTED_SEQ_MIN.vendor_code_seq, `${seqs.b}`);
-  checkTrue("vendor_return_seq ≥ 備份值", seqs.c >= EXPECTED_SEQ_MIN.vendor_return_seq, `${seqs.c}`);
-  checkTrue("stock_adjustment_seq ≥ 現有最大單號", seqs.a >= seqs.max_a, `${seqs.a} ≥ ${seqs.max_a}`);
-  checkTrue("vendor_code_seq ≥ 現有最大廠商編號", seqs.b >= seqs.max_b, `${seqs.b} ≥ ${seqs.max_b}`);
-  checkTrue("vendor_return_seq ≥ 現有最大退貨單號", seqs.c >= seqs.max_c, `${seqs.c} ≥ ${seqs.max_c}`);
+  checkTrue(
+    "vendor_return_seq ≥ 備份值",
+    seqs.c >= EXPECTED_SEQ_MIN.vendor_return_seq,
+    `${seqs.c}`,
+  );
+  checkTrue(
+    "stock_adjustment_seq ≥ 現有最大單號",
+    seqs.a >= seqs.max_a,
+    `${seqs.a} ≥ ${seqs.max_a}`,
+  );
+  checkTrue(
+    "vendor_code_seq ≥ 現有最大廠商編號",
+    seqs.b >= seqs.max_b,
+    `${seqs.b} ≥ ${seqs.max_b}`,
+  );
+  checkTrue(
+    "vendor_return_seq ≥ 現有最大退貨單號",
+    seqs.c >= seqs.max_c,
+    `${seqs.c} ≥ ${seqs.max_c}`,
+  );
 
   console.log("\n[11] 資料庫層的權限與 trigger 現況");
   const dbsec = (

@@ -151,8 +151,9 @@ export function ProductTable({
                 <TableCell className="tabular-nums">{row.issue_number ?? "—"}</TableCell>
                 <TableCell className="text-sm">{row.category_name ?? "—"}</TableCell>
                 <TableCell className="text-sm">
-                  {INV_PRODUCT_TYPE_LABELS[row.product_type as keyof typeof INV_PRODUCT_TYPE_LABELS] ??
-                    row.product_type}
+                  {INV_PRODUCT_TYPE_LABELS[
+                    row.product_type as keyof typeof INV_PRODUCT_TYPE_LABELS
+                  ] ?? row.product_type}
                 </TableCell>
                 <TableCell className="text-sm">
                   {row.vendor_short_name || row.vendor_name || "—"}

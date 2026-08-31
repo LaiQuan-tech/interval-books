@@ -69,7 +69,10 @@ function Contact() {
       <section className="container-editorial pb-32 grid gap-16 md:grid-cols-2 max-w-4xl">
         <div>
           <p className="eyebrow text-2xl">{t(p.block("email", PAGE.email))}</p>
-          <a href={`mailto:${contactEmail}`} className="display mt-4 block text-2xl md:text-3xl hover-underline break-all">
+          <a
+            href={`mailto:${contactEmail}`}
+            className="display mt-4 block text-2xl md:text-3xl hover-underline break-all"
+          >
             {contactEmail}
           </a>
 
@@ -87,16 +90,48 @@ function Contact() {
         <div className="space-y-10">
           <div>
             <p className="eyebrow text-2xl">{t(p.block("site", PAGE.site))}</p>
-            <a href={siteUrl} target="_blank" rel="noreferrer" className="mt-3 block text-base hover-underline">
+            <a
+              href={siteUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 block text-base hover-underline"
+            >
               {siteUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
             </a>
           </div>
           <div>
             <p className="eyebrow text-2xl">{t(p.block("social", PAGE.social))}</p>
             <ul className="mt-4 space-y-2 text-base">
-              <li><a href={social.instagram} target="_blank" rel="noreferrer" className="hover-underline">Instagram　@intervalbookstw</a></li>
-              <li><a href={social.facebook} target="_blank" rel="noreferrer" className="hover-underline text-muted-foreground">Facebook</a></li>
-              <li><a href={social.line} target="_blank" rel="noreferrer" className="hover-underline text-muted-foreground">LINE</a></li>
+              <li>
+                <a
+                  href={social.instagram}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover-underline"
+                >
+                  Instagram　@intervalbookstw
+                </a>
+              </li>
+              <li>
+                <a
+                  href={social.facebook}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover-underline text-muted-foreground"
+                >
+                  Facebook
+                </a>
+              </li>
+              <li>
+                <a
+                  href={social.line}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover-underline text-muted-foreground"
+                >
+                  LINE
+                </a>
+              </li>
             </ul>
           </div>
         </div>

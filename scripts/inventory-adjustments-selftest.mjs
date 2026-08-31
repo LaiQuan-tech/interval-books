@@ -90,9 +90,7 @@ function strip(sql) {
  * **寫得越清楚的註解越會讓測試變紅**，那會逼下一個人去刪註解而不是去修程式。
  */
 function stripTs(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 }
 
 function read(path) {
@@ -110,12 +108,20 @@ const MIG_DIR = join(ROOT, "supabase/migrations");
 const migFiles = readdirSync(MIG_DIR);
 for (let n = 1; n <= 16; n += 1) {
   const prefix = String(n).padStart(4, "0");
-  check(`migration ${prefix} 仍在`, migFiles.some((f) => f.startsWith(`${prefix}_`)), true);
+  check(
+    `migration ${prefix} 仍在`,
+    migFiles.some((f) => f.startsWith(`${prefix}_`)),
+    true,
+  );
 }
 // 4c 加了 0018（套餐／二手書／OCR bucket）。這一條原本是「0017 是最後一號」，
 // 目的不是凍結號碼，是**擋住有人偷偷改既有 migration 的行為**：要改就開新號。
 // 所以往前推一格，繼續守著。0018 自己的內容由 inventory-combos-selftest 驗。
-check("0018 在（4c 加的）", migFiles.some((f) => f.startsWith("0018_")), true);
+check(
+  "0018 在（4c 加的）",
+  migFiles.some((f) => f.startsWith("0018_")),
+  true,
+);
 // ⚠️ 這一條的作用是「下一期的人一定要回來看這支測試」。0019（廠商／PII 治理）
 // 加進來時它就是這樣把人叫回來的 —— 那一期改了 sales_product_id_fkey 與
 // combo_set_items_product_id_fkey 的 ON DELETE 行為（SET NULL/CASCADE → RESTRICT），
@@ -125,14 +131,22 @@ check("0018 在（4c 加的）", migFiles.some((f) => f.startsWith("0018_")), tr
 // expire_unpaid_orders() 與 product_availability，並且把名額從 public.products
 // 搬到 public.event_sessions —— 三件事都不碰 inv 的在庫異動，所以下面的斷言全部
 // 原樣成立。0020 自己的內容由 event-registration-selftest 驗。
-check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
+check(
+  "0020 在（場次名額）",
+  migFiles.some((f) => f.startsWith("0020_")),
+  true,
+);
 // 0021（名單的遮罩 view、明文揭露與 CSV 匯出）第三次把人叫回來。逐條重讀過：
 // 它動的是 public.pii_access_log 的兩條 CHECK、public.staff_permissions 的
 // permission CHECK（第九種權限 event.roster.read），以及兩張 event_* 表上的
 // view 與函式。**inv 的任何一張表、任何一支函式都沒有被碰到**，尤其是
 // inv.inventory_adjustments 與 inv_admin_product_movements —— 下面的斷言全部原樣
 // 成立。0021 自己的內容由 roster-csv-selftest 驗。
-check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
+check(
+  "0021 在（名單 PII）",
+  migFiles.some((f) => f.startsWith("0021_")),
+  true,
+);
 // 0022（交易信 outbox 與付款通知）第四次把人叫回來。逐條重讀過：它新增的是
 // public.email_outbox / public.email_copy 兩張表與十二支 public.* 函式，另外往
 // public.order_post_payment_log 補了一批「這一步關掉了」的列（那是寫**列**不是
@@ -140,16 +154,32 @@ check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), t
 // inv.inventory_adjustments 與 inv_admin_product_movements；0022 連一個 drop 都
 // 沒有，alter table 也只打在自己新建的那兩張表上。下面的斷言全部原樣成立。
 // 0022 自己的內容由 notify-selftest 驗。
-check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_")), true);
+check(
+  "0022 在（交易信 outbox）",
+  migFiles.some((f) => f.startsWith("0022_")),
+  true,
+);
 // 0024 是黑貓 PAY 線上刷卡加的（見 supabase/migrations/0024_blackcat_payment.sql）。
 // 它沒有碰進銷存的任何一張表，所以這一支測試的其他斷言原樣成立。
-check("0024 在（黑貓 PAY 金流欄位）", migFiles.some((f) => f.startsWith("0024_")), true);
+check(
+  "0024 在（黑貓 PAY 金流欄位）",
+  migFiles.some((f) => f.startsWith("0024_")),
+  true,
+);
 // 0025_event_speaker.sql（活動掛講者：public.events.speaker_id -> public.artists.id）
 // 是這一期加的。它只在 public.events 上加一欄與一個索引，**inv 的任何一張表、
 // 任何一支函式都沒有被碰到**，也沒有任何 drop。下面的斷言全部原樣成立。
 // 0025 自己的內容由 artists-selftest 驗。
-check("0025 在（活動掛講者）", migFiles.some((f) => f.startsWith("0025_")), true);
-check("沒有多出 0026（0025 是最後一號）", migFiles.some((f) => f.startsWith("0026_")), false);
+check(
+  "0025 在（活動掛講者）",
+  migFiles.some((f) => f.startsWith("0025_")),
+  true,
+);
+check(
+  "沒有多出 0026（0025 是最後一號）",
+  migFiles.some((f) => f.startsWith("0026_")),
+  false,
+);
 
 const sql = read(MIG_0017);
 const exec = strip(sql);
@@ -186,7 +216,9 @@ checkTrue(
 // 兩次，而且沒有任何地方會報錯。所以決定要做成守衛。
 checkTrue(
   "有 BEFORE INSERT 的凍結 trigger",
-  /create trigger freeze_inventory_adjustments\s+before insert on inv\.inventory_adjustments/i.test(exec),
+  /create trigger freeze_inventory_adjustments\s+before insert on inv\.inventory_adjustments/i.test(
+    exec,
+  ),
 );
 checkTrue("凍結 trigger 會 RAISE", /INVENTORY_ADJUSTMENTS_FROZEN/.test(exec));
 checkTrue(
@@ -223,7 +255,11 @@ checkTrue(
 );
 
 // 三支寫入函式都要用它，而且不可以從 payload 讀 status。
-for (const fn of ["inv_save_stock_adjustment", "inv_record_stock_count", "inv_submit_stock_adjustment"]) {
+for (const fn of [
+  "inv_save_stock_adjustment",
+  "inv_record_stock_count",
+  "inv_submit_stock_adjustment",
+]) {
   const start = exec.indexOf(`create or replace function public.${fn}(`);
   const end = exec.indexOf(`comment on function public.${fn}`);
   const body = start >= 0 && end > start ? exec.slice(start, end) : "";
@@ -329,7 +365,9 @@ checkTrue(
 );
 checkTrue(
   "一出生就 confirmed 的走 BEFORE INSERT",
-  /create trigger allocate_fifo_before_adjustment_insert\s+before insert on inv\.stock_adjustments/i.test(exec),
+  /create trigger allocate_fifo_before_adjustment_insert\s+before insert on inv\.stock_adjustments/i.test(
+    exec,
+  ),
 );
 checkTrue(
   "兩條路徑都有 unit_cost IS NULL 的防重複分攤 guard",
@@ -392,9 +430,20 @@ for (const f of FUNC_SIGS) {
 
 const VIEWS = ["inv_admin_purchases", "inv_admin_stock_adjustments", "inv_admin_product_movements"];
 for (const v of VIEWS) {
-  checkTrue(`${v} 是 security_invoker = false`, new RegExp(`create or replace view public\\.${v}\\s*\\n?with \\(security_invoker = false\\)`).test(exec));
-  checkTrue(`${v} 對 anon/authenticated revoke all`, new RegExp(`revoke all on public\\.${v}\\s+from anon, authenticated`).test(exec));
-  checkTrue(`${v} grant select 給 service_role`, new RegExp(`grant select on public\\.${v}\\s+to service_role`).test(exec));
+  checkTrue(
+    `${v} 是 security_invoker = false`,
+    new RegExp(
+      `create or replace view public\\.${v}\\s*\\n?with \\(security_invoker = false\\)`,
+    ).test(exec),
+  );
+  checkTrue(
+    `${v} 對 anon/authenticated revoke all`,
+    new RegExp(`revoke all on public\\.${v}\\s+from anon, authenticated`).test(exec),
+  );
+  checkTrue(
+    `${v} grant select 給 service_role`,
+    new RegExp(`grant select on public\\.${v}\\s+to service_role`).test(exec),
+  );
   checkTrue(`${v} 有 comment`, new RegExp(`comment on view public\\.${v}`).test(exec));
   // revoke 一定要排在 grant 前面 —— Supabase 對 public schema 有 ALTER DEFAULT
   // PRIVILEGES，新 view 一出生就對 anon/authenticated 是 ALL。0013 就是在修這個。
@@ -463,11 +512,18 @@ for (const [name, path] of [
   const src = read(path);
   const code = stripTs(src);
   checkTrue(`${name} 不是空檔`, code.length > 3000);
-  checkTrue(`${name} 第一行是 server-only`, /^import "@tanstack\/react-start\/server-only";/m.test(src));
+  checkTrue(
+    `${name} 第一行是 server-only`,
+    /^import "@tanstack\/react-start\/server-only";/m.test(src),
+  );
 
   const errChecks = (code.match(/if \(error\) throw new Error/g) ?? []).length;
   const errUses = (code.match(/\berror\b\s*[,)}]/g) ?? []).length;
-  checkTrue(`${name} 每個 error 都被 throw（${errChecks} 處）`, errChecks >= 8, `errUses=${errUses}`);
+  checkTrue(
+    `${name} 每個 error 都被 throw（${errChecks} 處）`,
+    errChecks >= 8,
+    `errUses=${errUses}`,
+  );
   checkTrue(
     `${name} 沒有把錯誤吞成空陣列`,
     !/catch\s*\([\s\S]{0,40}\)\s*\{\s*return\s*(\[\]|null)/.test(code),
@@ -496,9 +552,10 @@ const compFiles = existsSync(COMP_DIR)
       .filter((f) => /^(Purchase|Adjustment|StockCount|BatchStockCount|VendorSelect)/.test(f))
       .map((f) => `src/components/inventory/${f}`)
   : [];
-const HOOKS = ["src/lib/admin/usePurchaseActions.ts", "src/lib/admin/useAdjustmentActions.ts"].filter((f) =>
-  existsSync(join(ROOT, f)),
-);
+const HOOKS = [
+  "src/lib/admin/usePurchaseActions.ts",
+  "src/lib/admin/useAdjustmentActions.ts",
+].filter((f) => existsSync(join(ROOT, f)));
 
 const ALL_FRONT = [...FRONT, ...compFiles, ...HOOKS];
 for (const f of FRONT) check(`${f} 存在`, existsSync(join(ROOT, f)), true);
@@ -532,7 +589,10 @@ checkTrue(
   !/recognize-purchase-order|recognize-book|recognize-product|lovable/i.test(codeFront),
 );
 checkTrue("沒有 xlsx 的靜態 import", !/^import .*["']xlsx["']/m.test(codeFront));
-checkTrue("沒有 react-query", !/@tanstack\/react-query|useQuery|useMutation|queryClient/.test(codeFront));
+checkTrue(
+  "沒有 react-query",
+  !/@tanstack\/react-query|useQuery|useMutation|queryClient/.test(codeFront),
+);
 checkTrue("沒有搬進 use-toast / toaster", !/use-toast|useToast|Toaster/.test(codeFront));
 checkTrue("LocalizedField 沒有出現（進銷存是單語 text）", !/LocalizedField/.test(codeFront));
 checkTrue(
@@ -546,7 +606,10 @@ checkTrue(
   ),
   "顯示預估差異可以，但 payload 只能有 actual_quantity",
 );
-checkTrue("日期用 todayInTaipei 不是 toISOString", !/toISOString\(\)\.slice\(0,\s*10\)/.test(codeFront));
+checkTrue(
+  "日期用 todayInTaipei 不是 toISOString",
+  !/toISOString\(\)\.slice\(0,\s*10\)/.test(codeFront),
+);
 
 console.log("\n[10b] 每個新檔案都在 300 行以內");
 // 這一期的硬要求：來源 5,500 行拆成一堆 300 行以內的檔案。沒有這一條的話，
@@ -575,7 +638,10 @@ for (const [to, label] of [
   );
 }
 // ⚠️ 側欄把模組藏起來不是授權。真正的擋在每一支 server fn 的 middleware。
-checkTrue("_shell.tsx 沒有被改成用 approve_* 做側欄過濾", !/approve_(purchases|stock_adjustments)/.test(stripTs(shell)));
+checkTrue(
+  "_shell.tsx 沒有被改成用 approve_* 做側欄過濾",
+  !/approve_(purchases|stock_adjustments)/.test(stripTs(shell)),
+);
 
 // -----------------------------------------------------------------------------
 // [11]–[16] 實測
@@ -801,7 +867,11 @@ if (!TOKEN) {
     "pending_approval/100/100",
   );
   // ⚠️ format('%s', boolean) 在 PL/pgSQL 印的是 t/f 不是 true/false。
-  check("核准 → changed=true，庫存 100→97（只扣一次），FIFO 成本算得出來", r12.map.get("盤虧核准"), "true/97/t");
+  check(
+    "核准 → changed=true，庫存 100→97（只扣一次），FIFO 成本算得出來",
+    r12.map.get("盤虧核准"),
+    "true/97/t",
+  );
   check("重複核准 → changed=false，沒有扣第二次", r12.map.get("重複核准"), "false/97");
   check("盤盈核准 → 97→102（只加一次）", r12.map.get("盤盈核准"), "102");
   check("差異 0 → created=0 skipped=1", r12.map.get("差異0"), "0/1");
@@ -980,24 +1050,27 @@ if (!TOKEN) {
   );
   check(
     "測試異動單全部刪光",
-    (await q(`select count(*)::int as n from inv.stock_adjustments where notes like '${MARK}%';`)).rows[0]?.n,
+    (await q(`select count(*)::int as n from inv.stock_adjustments where notes like '${MARK}%';`))
+      .rows[0]?.n,
     0,
   );
   check(
     "測試進貨全部刪光",
-    (await q(`select count(*)::int as n from inv.purchases where item_name like '${MARK}%';`)).rows[0]?.n,
+    (await q(`select count(*)::int as n from inv.purchases where item_name like '${MARK}%';`))
+      .rows[0]?.n,
     0,
   );
 
-  const after = (
-    await q(`
+  const after =
+    (
+      await q(`
     select (select count(*)::int from inv.products) p,
            (select count(*)::int from inv.purchases) pu,
            (select count(*)::int from inv.sales) s,
            (select count(*)::int from inv.stock_adjustments) sa,
            (select count(*)::int from inv.inventory_adjustments) ia,
            (select count(*)::int from public.publications) pub;`)
-  ).rows[0] ?? {};
+    ).rows[0] ?? {};
 
   check("inv.products 回到測試前", after.p, base.p);
   check("inv.purchases 回到測試前", after.pu, base.pu);
@@ -1007,7 +1080,8 @@ if (!TOKEN) {
   check("public.publications 仍是 126 筆", after.pub, 126);
   check(
     "掛得上型錄的刊物仍是 19 本",
-    (await q(`select count(*)::int as n from public.publications where product_id is not null;`)).rows[0]?.n,
+    (await q(`select count(*)::int as n from public.publications where product_id is not null;`))
+      .rows[0]?.n,
     19,
   );
 
@@ -1028,9 +1102,17 @@ if (!TOKEN) {
 
   // 白名單以外的 module 一定被拒 + 對照組
   console.log("\n[18] 實測：inv_approve_record 的白名單");
-  const target = await q(`select id from inv.stock_adjustments where status = 'pending_approval' limit 1;`);
+  const target = await q(
+    `select id from inv.stock_adjustments where status = 'pending_approval' limit 1;`,
+  );
   const anyId = target.rows[0]?.id ?? "00000000-0000-0000-0000-000000000000";
-  for (const bad of ["profiles", "auth.users", "inv.stock_adjustments", "stock_adjustments; drop table inv.products", ""]) {
+  for (const bad of [
+    "profiles",
+    "auth.users",
+    "inv.stock_adjustments",
+    "stock_adjustments; drop table inv.products",
+    "",
+  ]) {
     const attempt = await q(
       `select public.inv_approve_record('${uid}'::uuid, '${bad.replace(/'/g, "''")}', '${anyId}'::uuid, true);`,
     );

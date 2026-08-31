@@ -72,11 +72,20 @@ function confirmCopy(kind: ConfirmKind, row: AdminAdjustmentRow) {
 
 export function AdjustmentDialogs(props: Props) {
   const {
-    approvalOn, canApprove, busyId, refresh,
-    formOpen, setFormOpen,
-    detail, setDetail,
-    confirming, setConfirming,
-    onSubmit, onApprove, onResubmit, onConfirmed,
+    approvalOn,
+    canApprove,
+    busyId,
+    refresh,
+    formOpen,
+    setFormOpen,
+    detail,
+    setDetail,
+    confirming,
+    setConfirming,
+    onSubmit,
+    onApprove,
+    onResubmit,
+    onConfirmed,
   } = props;
 
   const copy = confirming ? confirmCopy(confirming.kind, confirming.row) : null;

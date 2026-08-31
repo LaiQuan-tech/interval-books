@@ -92,10 +92,10 @@ export function payuniMerId(): string {
 export function payuniConfigured(): boolean {
   return Boolean(
     payuniMerId() &&
-      process.env.PAYUNI_HASH_KEY &&
-      process.env.PAYUNI_HASH_IV &&
-      process.env.PAYUNI_WEBHOOK_SECRET &&
-      payuniNotifyUrl() !== null,
+    process.env.PAYUNI_HASH_KEY &&
+    process.env.PAYUNI_HASH_IV &&
+    process.env.PAYUNI_WEBHOOK_SECRET &&
+    payuniNotifyUrl() !== null,
   );
 }
 

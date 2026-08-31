@@ -8,8 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +41,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { journeySchema, type JourneyFormValues } from "@/lib/admin/schemas";
 import { listJourneys, removeJourney, upsertJourney } from "@/lib/admin/fns/journeys";
@@ -230,7 +251,10 @@ function AdminJourneysPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這檔策旅嗎？</AlertDialogTitle>
@@ -327,7 +351,9 @@ function JourneyForm({ defaultValues, onSubmit, submitting, submitLabel }: Journ
                   <FormControl>
                     <Switch checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
-                  <span className="text-sm text-muted-foreground">{field.value ? "已啟用" : "未啟用"}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {field.value ? "已啟用" : "未啟用"}
+                  </span>
                 </div>
                 <FormMessage />
               </FormItem>
@@ -349,7 +375,9 @@ function JourneyForm({ defaultValues, onSubmit, submitting, submitLabel }: Journ
                     ref={field.ref}
                     onBlur={field.onBlur}
                     value={field.value}
-                    onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                    onChange={(e) =>
+                      field.onChange(e.target.value === "" ? 0 : Number(e.target.value))
+                    }
                   />
                 </FormControl>
                 <FormMessage />
@@ -367,7 +395,9 @@ function JourneyForm({ defaultValues, onSubmit, submitting, submitLabel }: Journ
                   <FormControl>
                     <Switch checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
-                  <span className="text-sm text-muted-foreground">{field.value ? "已發布" : "草稿"}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {field.value ? "已發布" : "草稿"}
+                  </span>
                 </div>
                 <FormMessage />
               </FormItem>

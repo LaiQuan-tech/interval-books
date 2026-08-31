@@ -41,10 +41,7 @@ const PAGE = {
 
 export const Route = createFileRoute("/journeys")({
   loader: async () => {
-    const [page, journeys] = await Promise.all([
-      fetchPage("journeys"),
-      fetchJourneys(),
-    ]);
+    const [page, journeys] = await Promise.all([fetchPage("journeys"), fetchJourneys()]);
     return { page, journeys };
   },
   head: ({ loaderData }) => {
@@ -86,9 +83,16 @@ function Journeys() {
         {journeys.map((j) => (
           <article key={j.id} className="flex flex-col">
             <div className="aspect-[4/3] overflow-hidden bg-muted">
-              <img src={journeyImg} alt={t(j.title)} loading="lazy" className="h-full w-full object-cover" />
+              <img
+                src={journeyImg}
+                alt={t(j.title)}
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
             </div>
-            <p className="eyebrow text-2xl mt-6">{t(j.days)}  ／  {t(j.theme)}</p>
+            <p className="eyebrow text-2xl mt-6">
+              {t(j.days)} ／ {t(j.theme)}
+            </p>
             <h3 className="display mt-3 text-2xl leading-snug whitespace-pre-line">{t(j.title)}</h3>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(j.summary)}</p>
             <a
@@ -97,7 +101,7 @@ function Journeys() {
               rel="noreferrer"
               className="mt-6 inline-block self-start tracking-widest text-clay hover-underline text-base"
             >
-              {t(ui.buttons.toJourney)}  →
+              {t(ui.buttons.toJourney)} →
             </a>
           </article>
         ))}
@@ -106,11 +110,17 @@ function Journeys() {
       <section className="container-editorial pb-32">
         <div className="border-t border-border pt-16 grid md:grid-cols-2 gap-10">
           <div>
-            <p className="eyebrow text-2xl">{t(p.block("coCreateEyebrow", PAGE.coCreateEyebrow))}</p>
-            <h2 className="display mt-4 text-3xl md:text-4xl">{t(p.block("collab", PAGE.collab))}</h2>
+            <p className="eyebrow text-2xl">
+              {t(p.block("coCreateEyebrow", PAGE.coCreateEyebrow))}
+            </p>
+            <h2 className="display mt-4 text-3xl md:text-4xl">
+              {t(p.block("collab", PAGE.collab))}
+            </h2>
           </div>
           <div>
-            <p className="text-base leading-relaxed text-foreground/80">{t(p.block("collabBody", PAGE.collabBody))}</p>
+            <p className="text-base leading-relaxed text-foreground/80">
+              {t(p.block("collabBody", PAGE.collabBody))}
+            </p>
             <a
               href={`mailto:${contactEmail}`}
               className="mt-6 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"

@@ -17,7 +17,10 @@ type Props = { status: string | null | undefined; className?: string };
 export function ApprovalStatusBadge({ status, className }: Props) {
   if (status === "approved") {
     return (
-      <Badge variant="outline" className={`gap-1 border-emerald-600/30 font-normal text-emerald-700 ${className ?? ""}`}>
+      <Badge
+        variant="outline"
+        className={`gap-1 border-emerald-600/30 font-normal text-emerald-700 ${className ?? ""}`}
+      >
         <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
         已審核
       </Badge>
@@ -43,7 +46,10 @@ export function ApprovalStatusBadge({ status, className }: Props) {
   if (status === null || status === undefined || status === "") return null;
 
   return (
-    <Badge variant="outline" className={`gap-1 font-normal text-muted-foreground ${className ?? ""}`}>
+    <Badge
+      variant="outline"
+      className={`gap-1 font-normal text-muted-foreground ${className ?? ""}`}
+    >
       <HelpCircle className="h-3 w-3" aria-hidden="true" />
       {status}
     </Badge>
@@ -60,9 +66,13 @@ export function PriceChangeBadge({
 }) {
   if (status !== "pending") return null;
   return (
-    <Badge variant="secondary" className="gap-1 border-amber-500/30 bg-amber-500/10 font-normal text-amber-700">
+    <Badge
+      variant="secondary"
+      className="gap-1 border-amber-500/30 bg-amber-500/10 font-normal text-amber-700"
+    >
       <Clock className="h-3 w-3" aria-hidden="true" />
-      調價待審 {pendingPrice === null ? "" : `→ NT$ ${Number(pendingPrice).toLocaleString("zh-TW")}`}
+      調價待審{" "}
+      {pendingPrice === null ? "" : `→ NT$ ${Number(pendingPrice).toLocaleString("zh-TW")}`}
     </Badge>
   );
 }

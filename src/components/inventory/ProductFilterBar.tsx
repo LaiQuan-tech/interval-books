@@ -17,7 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { INV_PRODUCT_TYPES, INV_PRODUCT_TYPE_LABELS, type ProductFilterValues } from "@/lib/admin/schemas";
+import {
+  INV_PRODUCT_TYPES,
+  INV_PRODUCT_TYPE_LABELS,
+  type ProductFilterValues,
+} from "@/lib/admin/schemas";
 import type { AdminCategory, AdminVendor } from "@/server/repos/inv-products";
 
 /** Radix Select 不接受空字串當 value，所以「全部」用這個哨兵值。 */
@@ -73,7 +77,9 @@ export function ProductFilterBar({
               placeholder="商品名稱、期數、條碼、系列、出版社"
               value={value.keyword ?? ""}
               disabled={disabled}
-              onChange={(e) => set({ keyword: e.target.value.trim() === "" ? null : e.target.value })}
+              onChange={(e) =>
+                set({ keyword: e.target.value.trim() === "" ? null : e.target.value })
+              }
             />
           </div>
         </div>
@@ -150,14 +156,18 @@ export function ProductFilterBar({
           <Select
             value={value.approvalStatus}
             disabled={disabled}
-            onValueChange={(v) => set({ approvalStatus: v as ProductFilterValues["approvalStatus"] })}
+            onValueChange={(v) =>
+              set({ approvalStatus: v as ProductFilterValues["approvalStatus"] })
+            }
           >
             <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部狀態</SelectItem>
-              <SelectItem value="pending">待審核{pendingCount > 0 ? `（${pendingCount}）` : ""}</SelectItem>
+              <SelectItem value="pending">
+                待審核{pendingCount > 0 ? `（${pendingCount}）` : ""}
+              </SelectItem>
               <SelectItem value="approved">已審核</SelectItem>
               <SelectItem value="rejected">已退回</SelectItem>
             </SelectContent>

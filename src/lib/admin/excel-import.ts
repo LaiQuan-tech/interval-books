@@ -56,6 +56,10 @@ export const EMPTY_MAPPING: ColumnMapping = {
 };
 
 /** 每個欄位的候選標題，**依優先序**排列（越前面分數越高）。與來源一致。 */
+// prettier-ignore —— 這是一張「欄位名同義詞」對照表，一個欄位一行才讀得懂。
+// 讓 prettier 展開的話會變成一個字串一行（+91 行），既難讀，也會把這個檔案
+// 推過 inventory-products-selftest 的 300 行上限。
+// prettier-ignore
 const FIELD_PATTERNS: Record<keyof ColumnMapping, string[]> = {
   name: ["書名", "商品名", "品名", "名稱", "產品名", "書籍名", "刊物名", "標題", "title", "name", "product", "item", "商品", "書"],
   issue_number: ["期數", "期號", "期", "issue", "no.", "vol", "卷", "號", "冊", "集", "number", "edition", "版次"],

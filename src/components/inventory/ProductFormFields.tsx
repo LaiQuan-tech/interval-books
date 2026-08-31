@@ -199,9 +199,7 @@ export function ProductFormFields({
           value={form.cost_price}
           onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
         />
-        {errors.cost_price ? (
-          <p className="text-xs text-destructive">{errors.cost_price}</p>
-        ) : null}
+        {errors.cost_price ? <p className="text-xs text-destructive">{errors.cost_price}</p> : null}
       </div>
 
       <div className="space-y-1.5">
@@ -274,6 +272,5 @@ export function ProductFormFields({
         />
       </div>
     </div>
-
   );
 }

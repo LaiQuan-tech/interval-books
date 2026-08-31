@@ -191,10 +191,7 @@ checkTrue(
   "新增商品的 approval_status 是呼叫這支函式，不是從 payload 拿",
   exec.includes("inv.initial_approval_status('products')"),
 );
-checkTrue(
-  "一起建的進貨也一樣",
-  exec.includes("inv.initial_approval_status('purchases')"),
-);
+checkTrue("一起建的進貨也一樣", exec.includes("inv.initial_approval_status('purchases')"));
 // payload 裡的 approval_status 必須完全沒有被讀到。
 const saveBody = exec.slice(
   exec.indexOf("function public.inv_save_product("),
@@ -238,9 +235,9 @@ for (const v of VIEWS) {
   );
   checkTrue(
     `${v} 是 security_invoker = false`,
-    new RegExp(`create or replace view public\\.${v}\\s*\\n\\s*with \\(security_invoker = false\\)`).test(
-      exec,
-    ),
+    new RegExp(
+      `create or replace view public\\.${v}\\s*\\n\\s*with \\(security_invoker = false\\)`,
+    ).test(exec),
   );
 }
 // revoke 必須排在 grant 前面 —— 反過來會把剛給的權限一起收掉。
@@ -302,10 +299,7 @@ for (const f of FUNCS) {
 console.log("\n[5] fns/inv-products.ts 掛對 middleware");
 const fns = stripTs(read(SRC_FNS));
 checkTrue("檔案存在且有內容", fns.length > 2000);
-checkTrue(
-  "一支都沒有誤掛 adminFnMiddleware",
-  !/\.middleware\(\[\s*adminFnMiddleware/.test(fns),
-);
+checkTrue("一支都沒有誤掛 adminFnMiddleware", !/\.middleware\(\[\s*adminFnMiddleware/.test(fns));
 checkTrue("也沒有把 adminFnMiddleware import 進來", !/^import .*adminFnMiddleware/m.test(fns));
 checkTrue(
   "每一支 server fn 都有 middleware（數量 = createServerFn 的數量）",
@@ -335,11 +329,15 @@ const middleware = read(SRC_MIDDLEWARE);
 const auth = read(SRC_AUTH);
 checkTrue(
   "adminFnMiddleware 仍然呼叫 requireAdmin()",
-  /export const adminFnMiddleware[\s\S]{0,400}?const admin = await requireAdmin\(\);/.test(middleware),
+  /export const adminFnMiddleware[\s\S]{0,400}?const admin = await requireAdmin\(\);/.test(
+    middleware,
+  ),
 );
 checkTrue(
   "requireAdmin() 仍然要求 role === 'admin'（透過 loadAdminProfile）",
-  /export async function requireAdmin\(\)[\s\S]{0,500}?loadAdminProfile\(session\.userId\)/.test(auth),
+  /export async function requireAdmin\(\)[\s\S]{0,500}?loadAdminProfile\(session\.userId\)/.test(
+    auth,
+  ),
 );
 checkTrue(
   "loadAdminProfile 仍然擋非 admin",
@@ -348,7 +346,10 @@ checkTrue(
 
 console.log("\n[5c] zod 端的 module enum");
 const schemas = read(SRC_SCHEMAS);
-checkTrue("APPROVAL_MODULES 有七個", (schemas.match(/APPROVAL_MODULES = \[([\s\S]*?)\]/)?.[1].match(/"/g)?.length ?? 0) / 2 === 7);
+checkTrue(
+  "APPROVAL_MODULES 有七個",
+  (schemas.match(/APPROVAL_MODULES = \[([\s\S]*?)\]/)?.[1].match(/"/g)?.length ?? 0) / 2 === 7,
+);
 for (const m of MODULES) {
   checkTrue(`APPROVAL_MODULES 含 ${m}`, new RegExp(`"${m}"`).test(schemas));
 }
@@ -409,16 +410,15 @@ checkTrue(
 checkTrue("沒有 xlsx 的靜態 import", !/^import .*["']xlsx["']/m.test(codeFront));
 checkTrue(
   "html5-qrcode 也是 dynamic import",
-  /await import\("html5-qrcode"\)/.test(read(join(ROOT, "src/components/inventory/BarcodeInput.tsx"))),
+  /await import\("html5-qrcode"\)/.test(
+    read(join(ROOT, "src/components/inventory/BarcodeInput.tsx")),
+  ),
 );
 checkTrue("沒有 html5-qrcode 的靜態 import", !/^import .*html5-qrcode/m.test(codeFront));
 
 checkTrue("沒有搬進 use-toast / toaster", !/use-toast|useToast/.test(codeFront));
 checkTrue("要用 toast 的地方走 sonner", /from "sonner"/.test(allFront));
-checkTrue(
-  "LocalizedField 沒有出現（進銷存是單語 text）",
-  !/LocalizedField/.test(codeFront),
-);
+checkTrue("LocalizedField 沒有出現（進銷存是單語 text）", !/LocalizedField/.test(codeFront));
 checkTrue("ImageField 有被重用（商品照片）", /ImageField/.test(codeFront));
 
 // 這一期的硬要求：來源 6,100 行拆成一堆 300 行以內的檔案。沒有這一條的話，
@@ -480,7 +480,9 @@ checkTrue("excel-import.ts 只做解析，沒有任何 supabase", !/supabase|rpc
 checkTrue("五級去重規則搬過來了", /sameItem/.test(excel) && /barcode/.test(excel));
 checkTrue(
   "匯入寫入只有 importProducts 這一條路",
-  /await import\("@\/lib\/admin\/fns\/inv-products"\)[\s\S]{0,200}?importProducts/.test(importDialog),
+  /await import\("@\/lib\/admin\/fns\/inv-products"\)[\s\S]{0,200}?importProducts/.test(
+    importDialog,
+  ),
 );
 checkTrue(
   "條碼寫進 barcode 欄位（來源塞進 notes，所以下次匯入永遠比對不到自己）",
@@ -516,8 +518,12 @@ async function q(query) {
  *    rollback_fifo_cost() 會去 UPDATE inv.purchases，商品先沒了 trigger 就補不回去。
  */
 async function cleanup() {
-  await q(`delete from inv.sales     where product_id in (select id from inv.products where name like '${MARK}%');`);
-  await q(`delete from inv.purchases where product_id in (select id from inv.products where name like '${MARK}%');`);
+  await q(
+    `delete from inv.sales     where product_id in (select id from inv.products where name like '${MARK}%');`,
+  );
+  await q(
+    `delete from inv.purchases where product_id in (select id from inv.products where name like '${MARK}%');`,
+  );
   await q(`delete from inv.products  where name like '${MARK}%';`);
 }
 
@@ -534,7 +540,9 @@ if (!TOKEN) {
 
   // 這段測試假設 approval_settings.products 是開著的。先讀，不改 —— 這是正式
   // 資料庫，測試不該改變它的設定。
-  const setting = await q(`select is_enabled from inv.approval_settings where module = 'products';`);
+  const setting = await q(
+    `select is_enabled from inv.approval_settings where module = 'products';`,
+  );
   const productsApprovalOn = setting.rows[0]?.is_enabled === true;
   check("approval_settings.products 是開著的（這一段的前提）", productsApprovalOn, true);
 
@@ -567,7 +575,13 @@ if (!TOKEN) {
 
   console.log("\n[8] 實測：白名單以外的 module 一定被拒");
   const pid = (await q(`select id from inv.products where name = '${MARK}測試刊物';`)).rows[0]?.id;
-  for (const bad of ["profiles", "auth.users", "inv.vendors", "products; drop table inv.products", ""]) {
+  for (const bad of [
+    "profiles",
+    "auth.users",
+    "inv.vendors",
+    "products; drop table inv.products",
+    "",
+  ]) {
     const attempt = await q(
       `select public.inv_approve_record('${uid}'::uuid, '${bad.replace(/'/g, "''")}', '${pid}'::uuid, true);`,
     );
@@ -578,33 +592,50 @@ if (!TOKEN) {
     );
   }
   // 對照組：白名單內的一定要成功，否則上面五條「被拒」是假性通過。
-  const good = await q(`select public.inv_approve_record('${uid}'::uuid, 'products', '${pid}'::uuid, true) as r;`);
+  const good = await q(
+    `select public.inv_approve_record('${uid}'::uuid, 'products', '${pid}'::uuid, true) as r;`,
+  );
   checkTrue("對照組：module='products' 是通的", good.ok, String(good.error).slice(0, 160));
   check(
     "商品變成 approved",
-    (await q(`select approval_status from inv.products where id = '${pid}';`)).rows[0]?.approval_status,
+    (await q(`select approval_status from inv.products where id = '${pid}';`)).rows[0]
+      ?.approval_status,
     "approved",
   );
 
   console.log("\n[9] 實測：調價 → 待審 → 核准後才生效");
-  const priceSetting = await q(`select is_enabled from inv.approval_settings where module = 'price_changes';`);
-  check("approval_settings.price_changes 是開著的（這一段的前提）", priceSetting.rows[0]?.is_enabled, true);
+  const priceSetting = await q(
+    `select is_enabled from inv.approval_settings where module = 'price_changes';`,
+  );
+  check(
+    "approval_settings.price_changes 是開著的（這一段的前提）",
+    priceSetting.rows[0]?.is_enabled,
+    true,
+  );
 
   await q(`select public.inv_request_price_change('${uid}'::uuid, '${pid}'::uuid, 210, 420);`);
-  const pending = (await q(`
+  const pending =
+    (
+      await q(`
     select selling_price::float8 as selling_price, pending_selling_price::float8 as pending_selling_price,
            pending_cost_price::float8 as pending_cost_price, price_change_status
-      from inv.products where id = '${pid}';`)).rows[0] ?? {};
+      from inv.products where id = '${pid}';`)
+    ).rows[0] ?? {};
   check("送出後正式售價不動", pending.selling_price, 350);
   check("新售價進 pending_selling_price", pending.pending_selling_price, 420);
   check("新成本進 pending_cost_price", pending.pending_cost_price, 210);
   check("price_change_status = pending", pending.price_change_status, "pending");
 
-  await q(`select public.inv_approve_record('${uid}'::uuid, 'price_changes', '${pid}'::uuid, true);`);
-  const applied = (await q(`
+  await q(
+    `select public.inv_approve_record('${uid}'::uuid, 'price_changes', '${pid}'::uuid, true);`,
+  );
+  const applied =
+    (
+      await q(`
     select selling_price::float8 as selling_price, cost_price::float8 as cost_price,
            pending_selling_price, price_change_status
-      from inv.products where id = '${pid}';`)).rows[0] ?? {};
+      from inv.products where id = '${pid}';`)
+    ).rows[0] ?? {};
   check("核准後售價生效", applied.selling_price, 420);
   check("核准後成本生效", applied.cost_price, 210);
   check("pending_selling_price 被清掉", applied.pending_selling_price, null);
@@ -623,11 +654,14 @@ if (!TOKEN) {
   await q(`select public.inv_approve_record('${uid}'::uuid, 'products', '${pid}'::uuid, false);`);
   check(
     "退回生效",
-    (await q(`select approval_status from inv.products where id = '${pid}';`)).rows[0]?.approval_status,
+    (await q(`select approval_status from inv.products where id = '${pid}';`)).rows[0]
+      ?.approval_status,
     "rejected",
   );
   await q(`select public.inv_resubmit_product('${pid}'::uuid);`);
-  const resub = (await q(`select approval_status, approved_at from inv.products where id = '${pid}';`)).rows[0] ?? {};
+  const resub =
+    (await q(`select approval_status, approved_at from inv.products where id = '${pid}';`))
+      .rows[0] ?? {};
   check("重新送審後回到 pending", resub.approval_status, "pending");
   check("上一輪的 approved_at 被清掉", resub.approved_at, null);
 
@@ -641,7 +675,8 @@ if (!TOKEN) {
   checkTrue("匯入成功", imported.ok, String(imported.error).slice(0, 160));
   check(
     "匯入建了 2 件",
-    (await q(`select count(*)::int as n from inv.products where name like '${MARK}匯入%';`)).rows[0]?.n,
+    (await q(`select count(*)::int as n from inv.products where name like '${MARK}匯入%';`)).rows[0]
+      ?.n,
     2,
   );
   check(
@@ -651,12 +686,18 @@ if (!TOKEN) {
   );
   check(
     "匯入一起建了 2 筆進貨",
-    (await q(`select count(*)::int as n from inv.purchases p join inv.products pr on pr.id = p.product_id where pr.name like '${MARK}匯入%';`)).rows[0]?.n,
+    (
+      await q(
+        `select count(*)::int as n from inv.purchases p join inv.products pr on pr.id = p.product_id where pr.name like '${MARK}匯入%';`,
+      )
+    ).rows[0]?.n,
     2,
   );
 
   // 匯入的交易性：一列壞掉整批都不寫。
-  const beforeBad = (await q(`select count(*)::int as n from inv.products where name like '${MARK}%';`)).rows[0]?.n;
+  const beforeBad = (
+    await q(`select count(*)::int as n from inv.products where name like '${MARK}%';`)
+  ).rows[0]?.n;
   const bad = await q(`
     select public.inv_import_products('${uid}'::uuid,
       '[{"name":"${MARK}好的一列","selling_price":"100","quantity":1},
@@ -679,14 +720,20 @@ if (!TOKEN) {
        (select p.id from inv.purchases p join inv.products pr on pr.id = p.product_id
          where pr.name = '${MARK}匯入A'), true);`,
   );
-  checkTrue("前置：匯入A 的進貨核准成功", approvePurchase.ok, String(approvePurchase.error).slice(0, 160));
+  checkTrue(
+    "前置：匯入A 的進貨核准成功",
+    approvePurchase.ok,
+    String(approvePurchase.error).slice(0, 160),
+  );
   const aid = (await q(`select id from inv.products where name = '${MARK}匯入A';`)).rows[0]?.id;
   check(
     "前置：核准進貨後庫存變成 3",
-    (await q(`select stock_quantity from inv.products where id = '${aid}';`)).rows[0]?.stock_quantity,
+    (await q(`select stock_quantity from inv.products where id = '${aid}';`)).rows[0]
+      ?.stock_quantity,
     3,
   );
-  const sale = await q(`insert into inv.sales (user_id, product_id, sale_date, quantity, unit_price, amount, cost_price)
+  const sale =
+    await q(`insert into inv.sales (user_id, product_id, sale_date, quantity, unit_price, amount, cost_price)
            values ('${uid}'::uuid, '${aid}'::uuid, current_date, 1, 100, 100, 10);`);
   checkTrue("前置：銷售寫得進去", sale.ok, String(sale.error).slice(0, 160));
   check(
@@ -713,7 +760,8 @@ if (!TOKEN) {
   );
   check(
     "測試進貨全部刪光",
-    (await q(`select count(*)::int as n from inv.purchases where notes like '%${MARK}%';`)).rows[0]?.n,
+    (await q(`select count(*)::int as n from inv.purchases where notes like '%${MARK}%';`)).rows[0]
+      ?.n,
     0,
   );
   check(

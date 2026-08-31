@@ -20,12 +20,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { categoryLabel, reasonLabel, statusLabel, statusVariant } from "@/lib/admin/inv-adjustment-labels";
+import {
+  categoryLabel,
+  reasonLabel,
+  statusLabel,
+  statusVariant,
+} from "@/lib/admin/inv-adjustment-labels";
 import { INV_PRODUCT_TYPE_LABELS } from "@/lib/admin/schemas";
 import type { AdminAdjustmentRow, StockCountProductRow } from "@/server/repos/inv-adjustments";
 
 export function isLowStock(row: StockCountProductRow): boolean {
-  return row.low_stock_alert !== null && row.low_stock_alert > 0 && row.stock_quantity <= row.low_stock_alert;
+  return (
+    row.low_stock_alert !== null &&
+    row.low_stock_alert > 0 &&
+    row.stock_quantity <= row.low_stock_alert
+  );
 }
 
 function typeLabel(code: string) {
@@ -82,11 +91,15 @@ export function StockCountTable({ rows, busy, onCount }: Props) {
                 <TableCell className="text-sm">{typeLabel(row.product_type)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex flex-col items-end">
-                    <span className={low ? "font-medium tabular-nums text-destructive" : "tabular-nums"}>
+                    <span
+                      className={low ? "font-medium tabular-nums text-destructive" : "tabular-nums"}
+                    >
                       {row.stock_quantity} 件
                     </span>
                     {row.low_stock_alert !== null ? (
-                      <span className="text-xs text-muted-foreground">警示 {row.low_stock_alert}</span>
+                      <span className="text-xs text-muted-foreground">
+                        警示 {row.low_stock_alert}
+                      </span>
                     ) : null}
                   </div>
                 </TableCell>

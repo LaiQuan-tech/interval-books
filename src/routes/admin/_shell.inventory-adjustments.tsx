@@ -20,7 +20,11 @@ import { Loader2, Plus, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AdjustmentDialogs, type ConfirmKind, type PendingConfirm } from "@/components/inventory/AdjustmentDialogs";
+import {
+  AdjustmentDialogs,
+  type ConfirmKind,
+  type PendingConfirm,
+} from "@/components/inventory/AdjustmentDialogs";
 import { AdjustmentFilterBar } from "@/components/inventory/AdjustmentFilterBar";
 import { AdjustmentTable } from "@/components/inventory/AdjustmentTable";
 import { ProductPagination } from "@/components/inventory/ProductPagination";
@@ -46,9 +50,8 @@ const DEFAULT_FILTER: AdjustmentFilterValues = {
 
 export const Route = createFileRoute("/admin/_shell/inventory-adjustments")({
   loader: async () => {
-    const { getAdjustmentSummary, listAdjustmentFormOptions, listAdminAdjustments } = await import(
-      "@/lib/admin/fns/inv-adjustments"
-    );
+    const { getAdjustmentSummary, listAdjustmentFormOptions, listAdminAdjustments } =
+      await import("@/lib/admin/fns/inv-adjustments");
     const [page, summary, options] = await Promise.all([
       listAdminAdjustments({ data: DEFAULT_FILTER }),
       getAdjustmentSummary({ data: { dateFrom: null, dateTo: null } }),
@@ -81,9 +84,8 @@ function InventoryAdjustmentsPage() {
   const reload = useCallback(async (next: AdjustmentFilterValues) => {
     setLoading(true);
     try {
-      const { getAdjustmentSummary, listAdminAdjustments } = await import(
-        "@/lib/admin/fns/inv-adjustments"
-      );
+      const { getAdjustmentSummary, listAdminAdjustments } =
+        await import("@/lib/admin/fns/inv-adjustments");
       // 統計卡與清單吃同一組日期區間，所以兩支一起重抓。
       const [page, stats] = await Promise.all([
         listAdminAdjustments({ data: next }),
@@ -198,8 +200,8 @@ function InventoryAdjustmentsPage() {
 
       {!canApprove ? (
         <p className="text-xs text-muted-foreground">
-          你可以建立、送出與沖帳，但沒有審核權限（approve_stock_adjustments），所以看不到
-          「審核通過 / 退回」那兩顆按鈕。請找管理員授權。
+          你可以建立、送出與沖帳，但沒有審核權限（approve_stock_adjustments），所以看不到 「審核通過
+          / 退回」那兩顆按鈕。請找管理員授權。
         </p>
       ) : null}
 

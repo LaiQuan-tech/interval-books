@@ -85,7 +85,9 @@ export function AdjustmentDetailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-mono text-base">{row.adjustment_number ?? "（無單號）"}</DialogTitle>
+          <DialogTitle className="font-mono text-base">
+            {row.adjustment_number ?? "（無單號）"}
+          </DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-1.5">
             <Badge variant={categoryVariant(row.category)} className="font-normal">
               {categoryLabel(row.category)}
@@ -117,7 +119,9 @@ export function AdjustmentDetailDialog({
           </Field>
           <Field label="異動數量">
             <span
-              className={row.quantity < 0 ? "font-medium text-destructive" : "font-medium text-emerald-700"}
+              className={
+                row.quantity < 0 ? "font-medium text-destructive" : "font-medium text-emerald-700"
+              }
             >
               {row.quantity > 0 ? "+" : ""}
               {row.quantity}
@@ -151,7 +155,9 @@ export function AdjustmentDetailDialog({
             {row.creator_name ?? "—"}・{when(row.created_at)}
           </Field>
           <Field label="審核">
-            {row.approved_at ? `${row.approved_by_name ?? "—"}・${when(row.approved_at)}` : "尚未審核"}
+            {row.approved_at
+              ? `${row.approved_by_name ?? "—"}・${when(row.approved_at)}`
+              : "尚未審核"}
           </Field>
           <Field label="沖帳原單">
             {row.reversal_of_number ? (
@@ -216,21 +222,39 @@ export function AdjustmentDetailDialog({
                 disabled={busy}
                 onClick={() => onApprove(row)}
               >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
                 審核通過
               </Button>
             </>
           ) : null}
 
           {row.status === "rejected" ? (
-            <Button variant="outline" className="gap-1.5" disabled={busy} onClick={() => onResubmit(row)}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              disabled={busy}
+              onClick={() => onResubmit(row)}
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
               重新送審
             </Button>
           ) : null}
 
           {reversible ? (
-            <Button variant="outline" className="gap-1.5" disabled={busy} onClick={() => onAskReverse(row)}>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              disabled={busy}
+              onClick={() => onAskReverse(row)}
+            >
               <RotateCcw className="h-4 w-4" />
               沖帳
             </Button>

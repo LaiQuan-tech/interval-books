@@ -185,7 +185,11 @@ const exec0021 = stripComments(sql0021);
 const exec0019 = stripComments(readFile(MIG_0019));
 
 // 反空殼：先證明檔案真的有內容，否則下面每一條 includes() 都是假性結果。
-checkTrue("反空殼：0021 不是空檔（> 8000 字）", exec0021.length > 8000, `實際 ${exec0021.length} 字`);
+checkTrue(
+  "反空殼：0021 不是空檔（> 8000 字）",
+  exec0021.length > 8000,
+  `實際 ${exec0021.length} 字`,
+);
 checkTrue("0021 有 begin; … commit;", /^begin;/m.test(exec0021) && /^commit;/m.test(exec0021));
 checkTrue("反空殼：0019 也讀得到（下面要跟它比對）", exec0019.length > 15000);
 
@@ -284,15 +288,25 @@ checkTrue(
 console.log("\n[4] 名單 view");
 
 const rosterView = viewBody(exec0021, "public.admin_event_roster");
-checkTrue("反空殼：切得出 admin_event_roster 的定義", rosterView.length > 500, `實際 ${rosterView.length} 字`);
+checkTrue(
+  "反空殼：切得出 admin_event_roster 的定義",
+  rosterView.length > 500,
+  `實際 ${rosterView.length} 字`,
+);
 checkTrue(
   "security_invoker = false（比照 inv_admin_vendor_list）",
   /create or replace view public\.admin_event_roster\s*\n?\s*with \(security_invoker = false\)/.test(
     exec0021,
   ),
 );
-checkTrue("view 用 inv.mask_email 遮信箱", /inv\.mask_email\(r\.email\)\s+as email_masked/.test(rosterView));
-checkTrue("view 用 inv.mask_tail 遮電話（留後 4 碼）", /inv\.mask_tail\(r\.phone, 4\)\s+as phone_masked/.test(rosterView));
+checkTrue(
+  "view 用 inv.mask_email 遮信箱",
+  /inv\.mask_email\(r\.email\)\s+as email_masked/.test(rosterView),
+);
+checkTrue(
+  "view 用 inv.mask_tail 遮電話（留後 4 碼）",
+  /inv\.mask_tail\(r\.phone, 4\)\s+as phone_masked/.test(rosterView),
+);
 // 姓名不遮罩 —— 遮了現場點不了名（與 0019 讓廠商名稱明文是同一條線）。
 checkTrue("姓名是明文（點名要用）", /r\.name\s+as name/.test(rosterView));
 // ⚠️ 這是這個 view 最重要的一條：**select list 裡不可以有裸的 email / phone**。
@@ -307,7 +321,10 @@ check(
   false,
 );
 // 「有沒有填」與「填了什麼」是兩件事（同 0019 §3.1 的 has_tax_id）。
-checkTrue("view 有 has_email / has_phone", /has_email/.test(rosterView) && /has_phone/.test(rosterView));
+checkTrue(
+  "view 有 has_email / has_phone",
+  /has_email/.test(rosterView) && /has_phone/.test(rosterView),
+);
 checkTrue(
   "view 只給 service_role",
   /revoke all\s+on public\.admin_event_roster from anon, authenticated/.test(exec0021) &&
@@ -366,12 +383,16 @@ for (const p of [
 
 const authTs = readFile(join(ROOT, "src/server/auth.ts"));
 checkTrue("反空殼：auth.ts 讀得到", authTs.length > 3000);
-checkTrue("auth.ts 的 STAFF_PERMISSIONS 也有（兩邊逐字對齊）", /"event\.roster\.read"/.test(authTs));
+checkTrue(
+  "auth.ts 的 STAFF_PERMISSIONS 也有（兩邊逐字對齊）",
+  /"event\.roster\.read"/.test(authTs),
+);
 // 兩邊的數量必須一樣：CHECK 是真正的值域，auth.ts 是鏡射。
 const checkBlock = exec0021.slice(
   exec0021.indexOf("add constraint staff_permissions_permission_check"),
 );
-const permsInCheck = (checkBlock.slice(0, checkBlock.indexOf("));")).match(/'[a-z_.]+'/g) ?? []).length;
+const permsInCheck = (checkBlock.slice(0, checkBlock.indexOf("));")).match(/'[a-z_.]+'/g) ?? [])
+  .length;
 const permsBlock = authTs.slice(
   authTs.indexOf("export const STAFF_PERMISSIONS = ["),
   authTs.indexOf("] as const;", authTs.indexOf("export const STAFF_PERMISSIONS = [")),
@@ -398,8 +419,16 @@ const exportBody = exec0021.slice(
   exec0021.indexOf("comment on function public.export_event_roster"),
 );
 
-checkTrue("反空殼：切得出 reveal_registration_contact 的函式體", reveal.length > 400, `實際 ${reveal.length} 字`);
-checkTrue("反空殼：切得出 export_event_roster 的函式體", exportBody.length > 600, `實際 ${exportBody.length} 字`);
+checkTrue(
+  "反空殼：切得出 reveal_registration_contact 的函式體",
+  reveal.length > 400,
+  `實際 ${reveal.length} 字`,
+);
+checkTrue(
+  "反空殼：切得出 export_event_roster 的函式體",
+  exportBody.length > 600,
+  `實際 ${exportBody.length} 字`,
+);
 
 for (const [name, body] of [
   ["reveal_registration_contact", reveal],
@@ -447,10 +476,7 @@ check(
   1,
   "拆成每人一筆會讓「有人一次帶走整場名單」在稽核畫面上看不見",
 );
-checkTrue(
-  "reveal 記下的 fields 是實際送出去的兩欄",
-  /array\['email', 'phone'\]/.test(reveal),
-);
+checkTrue("reveal 記下的 fields 是實際送出去的兩欄", /array\['email', 'phone'\]/.test(reveal));
 checkTrue(
   "export 記下的 fields 是實際送出去的三欄",
   /array\['name', 'email', 'phone'\]/.test(exportBody),
@@ -524,7 +550,11 @@ if (csvMod) {
     csvCell("0912345678", { forceText: true }),
     '"=""0912345678"""',
   );
-  check("forceText 保留開頭的 0", csvCell("0912345678", { forceText: true }).includes("0912"), true);
+  check(
+    "forceText 保留開頭的 0",
+    csvCell("0912345678", { forceText: true }).includes("0912"),
+    true,
+  );
   check(
     "訂單編號 forceText",
     csvCell("IB-202600000001", { forceText: true }),
@@ -536,7 +566,7 @@ if (csvMod) {
     "forceText 不會再加公式前綴的單引號",
     csvCell("=1+1", { forceText: true }),
     '"=""=1+1"""',
-    "兩個一起用會變成 =\"'=1+1\"，那個單引號在儲存格裡看得見",
+    '兩個一起用會變成 ="\'=1+1"，那個單引號在儲存格裡看得見',
   );
   check(
     "forceText 的內容有引號時 escape 成兩個",
@@ -564,10 +594,13 @@ if (csvMod) {
   );
 
   // ── 紀律 3：BOM 與 CRLF ────────────────────────────────────────────────
-  const csv = toCsv([{ a: "王小明", b: "0912345678" }], [
-    { header: "姓名", value: (r) => r.a },
-    { header: "電話", value: (r) => r.b, forceText: true },
-  ]);
+  const csv = toCsv(
+    [{ a: "王小明", b: "0912345678" }],
+    [
+      { header: "姓名", value: (r) => r.a },
+      { header: "電話", value: (r) => r.b, forceText: true },
+    ],
+  );
   check("toCsv 開頭是 BOM", csv.charCodeAt(0), 0xfeff);
   checkTrue("toCsv 用 CRLF 換行", csv.includes("\r\n"));
   check("toCsv 沒有裸 LF", /[^\r]\n/.test(csv), false, "Excel 對純 LF 的相容性不穩");
@@ -616,8 +649,8 @@ if (rosterCsvMod) {
       ROSTER_CSV_COLUMNS,
     );
     checkTrue("端到端：惡意姓名在輸出裡被前置單引號", line.includes(`"'=HYPERLINK(`));
-    checkTrue("端到端：電話保留開頭的 0", line.includes('0912345678'));
-    checkTrue("端到端：訂單編號強制文字", line.includes('IB-202600000001'));
+    checkTrue("端到端：電話保留開頭的 0", line.includes("0912345678"));
+    checkTrue("端到端：訂單編號強制文字", line.includes("IB-202600000001"));
     check("端到端：沒有裸的 =HYPERLINK", /,=HYPERLINK/.test(line), false);
 
     // ── 端到端：用嚴格的 RFC 4180 解析器回頭讀自己的輸出 ────────────────
@@ -738,7 +771,8 @@ if (rosterCsvMod) {
           ROSTER_CSV_COLUMNS.map((c) =>
             brokenCell(c.value(mkRow("0900000000,=1+1", "王小明")), { forceText: c.forceText }),
           ).join(","),
-        ].join("\r\n") + "\r\n";
+        ].join("\r\n") +
+        "\r\n";
       const brokenRows = parseCsv(brokenCsv);
       check(
         "反面對照：舊的 forceText 寫法會被抓到欄位數不符",
@@ -781,7 +815,8 @@ const dialogTs = readFile(join(ROOT, "src/components/admin/RegistrationRevealDia
 const csvTs = readFile(join(ROOT, "src/lib/csv.ts"));
 const rosterCsvTs = readFile(join(ROOT, "src/lib/admin/roster-csv.ts"));
 
-checkTrue("反空殼：五個新／改的檔案都讀得到",
+checkTrue(
+  "反空殼：五個新／改的檔案都讀得到",
   regRepoTs.length > 3000 &&
     regFnTs.length > 2000 &&
     routeTs.length > 5000 &&
@@ -806,11 +841,22 @@ check(
 // COLUMNS 常數裡不可以有裸的 email / phone。
 const columnsLine = (regRepoTs.match(/const ROSTER_COLUMNS =[\s\S]*?;/) ?? [""])[0];
 checkTrue("反空殼：切得出 ROSTER_COLUMNS", columnsLine.length > 100);
-check("COLUMNS 沒有裸 email", /\bemail\b(?!_masked)/.test(columnsLine.replace("has_email", "")), false);
-check("COLUMNS 沒有裸 phone", /\bphone\b(?!_masked)/.test(columnsLine.replace("has_phone", "")), false);
+check(
+  "COLUMNS 沒有裸 email",
+  /\bemail\b(?!_masked)/.test(columnsLine.replace("has_email", "")),
+  false,
+);
+check(
+  "COLUMNS 沒有裸 phone",
+  /\bphone\b(?!_masked)/.test(columnsLine.replace("has_phone", "")),
+  false,
+);
 
 // ── 明文只有兩個出口，而且都走 RPC ───────────────────────────────────────
-checkTrue("repo 有 revealRegistrationContact", /export async function revealRegistrationContact/.test(regRepoTs));
+checkTrue(
+  "repo 有 revealRegistrationContact",
+  /export async function revealRegistrationContact/.test(regRepoTs),
+);
 checkTrue("repo 有 exportEventRoster", /export async function exportEventRoster/.test(regRepoTs));
 checkTrue("reveal 走 rpc", /rpc\("reveal_registration_contact"/.test(regRepoTs));
 checkTrue("export 走 rpc", /rpc\("export_event_roster"/.test(regRepoTs));
@@ -858,13 +904,16 @@ for (const f of walkSrc()) {
 checkTrue("反空殼：真的掃到碰名單的檔案", rosterTouchers.length >= 1, rosterTouchers.join(", "));
 // 反面對照：偵測器要抓得到一段確定違規的程式碼。
 check(
-  "反面對照：偵測器對 payment_status === \"paid\" 會命中",
+  '反面對照：偵測器對 payment_status === "paid" 會命中',
   /["']paid["']/.test('if (row.payment_status === "paid") {}'),
   true,
 );
 
 // ── server fn 那一層 ─────────────────────────────────────────────────────
-checkTrue("四支 fn 都掛 staffFnMiddleware()", (regFnTs.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? []).length === 4);
+checkTrue(
+  "四支 fn 都掛 staffFnMiddleware()",
+  (regFnTs.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? []).length === 4,
+);
 check(
   "middleware 的掛載數 = 匯出的 server fn 數",
   (regFnTs.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? []).length,
@@ -881,7 +930,10 @@ checkTrue(
 );
 // ⚠️ 事由由動作決定，不由前端送（0021 §1）。
 check("fn 的 inputValidator 沒有 reason 欄位", /reason:/.test(stripTs(regFnTs)), false);
-checkTrue("reason 寫死在 repo", /p_reason: "attendee_contact"/.test(regRepoTs) && /p_reason: "roster_export"/.test(regRepoTs));
+checkTrue(
+  "reason 寫死在 repo",
+  /p_reason: "attendee_contact"/.test(regRepoTs) && /p_reason: "roster_export"/.test(regRepoTs),
+);
 
 // ── CSV 是 server fn，不是 HTTP 路由 ─────────────────────────────────────
 console.log("\n[11] CSV 不是 HTTP 路由");
@@ -894,13 +946,26 @@ check(
   walkSrc(join(ROOT, "src/routes")).some((f) => /csv/i.test(f)),
   false,
 );
-checkTrue("匯出的 fn 回的是字串與檔名，不是 Response", /csv: toCsv\(/.test(regFnTs) && /filename: rosterFilename\(/.test(regFnTs));
+checkTrue(
+  "匯出的 fn 回的是字串與檔名，不是 Response",
+  /csv: toCsv\(/.test(regFnTs) && /filename: rosterFilename\(/.test(regFnTs),
+);
 check("匯出的 fn 沒有 new Response", /new Response\(/.test(regFnTs), false);
 check("匯出的 fn 沒有 Content-Disposition", /Content-Disposition/i.test(regFnTs), false);
 // 前端用 Blob 下載。
-checkTrue("畫面用 Blob + a.download 下載", /new Blob\(\[csv\]/.test(routeTs) && /a\.download = filename/.test(routeTs));
-check("Blob 沒有再加一次 BOM", /\\uFEFF|﻿"/.test(routeTs.slice(routeTs.indexOf("new Blob"), routeTs.indexOf("new Blob") + 200)), false);
-checkTrue("下載後有 revokeObjectURL（不留著 blob URL）", /URL\.revokeObjectURL\(url\)/.test(routeTs));
+checkTrue(
+  "畫面用 Blob + a.download 下載",
+  /new Blob\(\[csv\]/.test(routeTs) && /a\.download = filename/.test(routeTs),
+);
+check(
+  "Blob 沒有再加一次 BOM",
+  /\\uFEFF|﻿"/.test(routeTs.slice(routeTs.indexOf("new Blob"), routeTs.indexOf("new Blob") + 200)),
+  false,
+);
+checkTrue(
+  "下載後有 revokeObjectURL（不留著 blob URL）",
+  /URL\.revokeObjectURL\(url\)/.test(routeTs),
+);
 
 // ── 畫面 ─────────────────────────────────────────────────────────────────
 console.log("\n[12] 畫面");
@@ -911,7 +976,10 @@ checkTrue(
   "0020 與 0021 是兩個旗標（0021 沒套時場次照樣維護得動）",
   /schemaMissing/.test(routeTs) && /rosterReady/.test(routeTs),
 );
-checkTrue("兩個旗標各有一段說明文字", /0020_event_sessions_registrations\.sql/.test(routeTs) && /0021_roster_pii\.sql/.test(routeTs));
+checkTrue(
+  "兩個旗標各有一段說明文字",
+  /0020_event_sessions_registrations\.sql/.test(routeTs) && /0021_roster_pii\.sql/.test(routeTs),
+);
 check(
   "loader 只吞「不存在」這一種錯誤，其餘往上丟",
   (routeTs.match(/if \(!isSchemaMissing\(err\)\) throw err;/g) ?? []).length,
@@ -930,10 +998,16 @@ checkTrue("匯出成功的 toast 也印 log_id", /紀錄編號 \$\{log_id\}/.tes
 // disabled 只是畫面，但仍然要在。
 checkTrue("沒有權限時揭露鈕 disabled", /!canReadRoster/.test(dialogTs));
 checkTrue("沒有權限時匯出鈕 disabled", /!canReadRoster/.test(routeTs));
-checkTrue("權限來自 route context 而不是 loader 資料", /user\.permissions\.includes\("event\.roster\.read"\)/.test(routeTs));
+checkTrue(
+  "權限來自 route context 而不是 loader 資料",
+  /user\.permissions\.includes\("event\.roster\.read"\)/.test(routeTs),
+);
 // 側欄。
 const shellTs = readFile(join(ROOT, "src/routes/admin/_shell.tsx"));
-checkTrue("側欄的活動報名掛在 event.roster.read 上", /permission: "event\.roster\.read"/.test(shellTs));
+checkTrue(
+  "側欄的活動報名掛在 event.roster.read 上",
+  /permission: "event\.roster\.read"/.test(shellTs),
+);
 checkTrue("側欄的過濾真的讀 permission", /user\.permissions\.includes\(needed\)/.test(shellTs));
 
 // =============================================================================
@@ -969,7 +1043,8 @@ async function q(sql) {
 
 async function must(sql) {
   const r = await q(sql);
-  if (!r.ok) throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
+  if (!r.ok)
+    throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
   return r.rows;
 }
 
@@ -1003,7 +1078,9 @@ delete from auth.users where id = '${ACTOR}';
 if (!PG_URL) {
   skipped.push("連線測試（缺 ROSTER_SELFTEST_PG_URL）");
   console.log(yellow("\n[13–18] 連線測試 —— 跳過：沒有 ROSTER_SELFTEST_PG_URL"));
-  console.log(yellow("       設好之後重跑，才會驗到 log 恰好 +1／+3、trigger 擋得住竄改、遮罩的實際輸出、"));
+  console.log(
+    yellow("       設好之後重跑，才會驗到 log 恰好 +1／+3、trigger 擋得住竄改、遮罩的實際輸出、"),
+  );
   console.log(yellow("       以及 0021 的冪等。指令見本檔檔頭。"));
 } else {
   try {
@@ -1056,17 +1133,25 @@ if (!PG_URL) {
     for (const fn of ["reveal_registration_contact", "export_event_roster"]) {
       check(
         `public.${fn}() 存在`,
-        num(one(await must(`select count(*)::int n from pg_proc p
+        num(
+          one(
+            await must(`select count(*)::int n from pg_proc p
                               join pg_namespace ns on ns.oid = p.pronamespace
-                             where ns.nspname='public' and p.proname='${fn}'`))?.n),
+                             where ns.nspname='public' and p.proname='${fn}'`),
+          )?.n,
+        ),
         1,
       );
     }
     check(
       "inv.mask_email() 存在",
-      num(one(await must(`select count(*)::int n from pg_proc p
+      num(
+        one(
+          await must(`select count(*)::int n from pg_proc p
                             join pg_namespace ns on ns.oid = p.pronamespace
-                           where ns.nspname='inv' and p.proname='mask_email'`))?.n),
+                           where ns.nspname='inv' and p.proname='mask_email'`),
+        )?.n,
+      ),
       1,
     );
 
@@ -1087,9 +1172,7 @@ if (!PG_URL) {
       ["service_role:SELECT"],
     );
     for (const role of ["anon", "authenticated"]) {
-      const denied = await q(
-        `set role ${role}; select count(*) from public.admin_event_roster;`,
-      );
+      const denied = await q(`set role ${role}; select count(*) from public.admin_event_roster;`);
       check(`${role} 讀不到 admin_event_roster`, denied.ok, false);
       checkTrue(
         `${role} 拿到的是 permission denied`,
@@ -1185,10 +1268,23 @@ if (!PG_URL) {
     );
     check("view 回 3 列", viewRows.length, 3);
     check("其中 2 列 on_roster", viewRows.filter((r) => r.on_roster === true).length, 2);
-    check("未付款那一列 on_roster = false", viewRows.filter((r) => r.on_roster === false).length, 1);
-    checkTrue("姓名是明文", viewRows.every((r) => /參加者/.test(r.name)));
-    checkTrue("信箱是遮罩過的", viewRows.every((r) => /^\w\*+@example\.invalid$/.test(r.email_masked)));
-    checkTrue("電話是遮罩過的", viewRows.every((r) => /^\*+\d{4}$/.test(r.phone_masked)));
+    check(
+      "未付款那一列 on_roster = false",
+      viewRows.filter((r) => r.on_roster === false).length,
+      1,
+    );
+    checkTrue(
+      "姓名是明文",
+      viewRows.every((r) => /參加者/.test(r.name)),
+    );
+    checkTrue(
+      "信箱是遮罩過的",
+      viewRows.every((r) => /^\w\*+@example\.invalid$/.test(r.email_masked)),
+    );
+    checkTrue(
+      "電話是遮罩過的",
+      viewRows.every((r) => /^\*+\d{4}$/.test(r.phone_masked)),
+    );
 
     const before = num(one(await must("select count(*)::int n from public.pii_access_log"))?.n);
 
@@ -1197,12 +1293,16 @@ if (!PG_URL) {
       await must(`select public.export_event_roster(
                     '${ACTOR}', 'roster-selftest@example.invalid', '${sessionId}') j`),
     )?.j;
-    const afterExport = num(one(await must("select count(*)::int n from public.pii_access_log"))?.n);
+    const afterExport = num(
+      one(await must("select count(*)::int n from public.pii_access_log"))?.n,
+    );
     check("export 一次 → pii_access_log 恰好 +1", afterExport - before, 1);
     check("匯出的列數只含已付款", (exported?.rows ?? []).length, 2);
     checkTrue(
       "匯出的內容是明文",
-      (exported?.rows ?? []).every((r) => /@example\.invalid$/.test(r.email) && /^09\d{8}$/.test(r.phone)),
+      (exported?.rows ?? []).every(
+        (r) => /@example\.invalid$/.test(r.email) && /^09\d{8}$/.test(r.phone),
+      ),
     );
     check(
       "未付款的人不在匯出裡",
@@ -1228,7 +1328,9 @@ if (!PG_URL) {
       await must(`select public.reveal_registration_contact(
                     '${ACTOR}', 'roster-selftest@example.invalid', '${id}') j`);
     }
-    const afterReveal = num(one(await must("select count(*)::int n from public.pii_access_log"))?.n);
+    const afterReveal = num(
+      one(await must("select count(*)::int n from public.pii_access_log"))?.n,
+    );
     check("reveal 三次 → pii_access_log 恰好 +3", afterReveal - afterExport, 3);
     // ⚠️ 用 subject_id 圈住這三筆，不要數 reason='attendee_contact' 的總數 ——
     //    pii_access_log 清不掉，所以同一個測試庫跑第二次時絕對值一定會變大。
@@ -1247,7 +1349,9 @@ if (!PG_URL) {
     );
     // 名單頁的列表本身不寫 log —— 讀 view 一百次也不會多一列。
     for (let i = 0; i < 5; i += 1) {
-      await must(`select count(*)::int n from public.admin_event_roster where session_id = '${sessionId}'`);
+      await must(
+        `select count(*)::int n from public.admin_event_roster where session_id = '${sessionId}'`,
+      );
     }
     check(
       "讀 view 五次 → pii_access_log 不變（遮罩過的東西不記）",
@@ -1257,12 +1361,22 @@ if (!PG_URL) {
 
     // ---- 竄改那幾列 → 被 trigger 擋下 -----------------------------------
     console.log("\n[18] 稽核軌跡刪不掉、改不了");
-    const upd = await q(`update public.pii_access_log set reason = 'payment' where reason = 'roster_export'`);
+    const upd = await q(
+      `update public.pii_access_log set reason = 'payment' where reason = 'roster_export'`,
+    );
     check("update 被擋下", upd.ok, false);
-    checkTrue("而且是 PII_LOG_IMMUTABLE", /PII_LOG_IMMUTABLE/.test(upd.error ?? ""), (upd.error ?? "").slice(0, 200));
+    checkTrue(
+      "而且是 PII_LOG_IMMUTABLE",
+      /PII_LOG_IMMUTABLE/.test(upd.error ?? ""),
+      (upd.error ?? "").slice(0, 200),
+    );
     const del = await q(`delete from public.pii_access_log where reason = 'attendee_contact'`);
     check("delete 被擋下", del.ok, false);
-    checkTrue("而且是 PII_LOG_IMMUTABLE", /PII_LOG_IMMUTABLE/.test(del.error ?? ""), (del.error ?? "").slice(0, 200));
+    checkTrue(
+      "而且是 PII_LOG_IMMUTABLE",
+      /PII_LOG_IMMUTABLE/.test(del.error ?? ""),
+      (del.error ?? "").slice(0, 200),
+    );
     const trunc = await q(`truncate public.pii_access_log`);
     check("truncate 被擋下", trunc.ok, false);
     check(
@@ -1275,7 +1389,10 @@ if (!PG_URL) {
     const badReason = await q(`select public.export_event_roster(
       '${ACTOR}', 'x@example.invalid', '${sessionId}', 'whatever')`);
     check("亂寫的 reason 被 CHECK 擋下", badReason.ok, false);
-    checkTrue("而且是 check 違規", /pii_access_log_reason_check|violates check/i.test(badReason.error ?? ""));
+    checkTrue(
+      "而且是 check 違規",
+      /pii_access_log_reason_check|violates check/i.test(badReason.error ?? ""),
+    );
     // 找不到對象時不可以留下紀錄（0019 §4.1：記的是「有沒有看到」，不是「有沒有嘗試」）。
     const beforeMiss = num(one(await must("select count(*)::int n from public.pii_access_log"))?.n);
     const missing = await q(`select public.reveal_registration_contact(

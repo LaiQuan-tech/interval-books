@@ -401,7 +401,11 @@ checkTrue("而且它仍然是永久失敗（重試同一個載具永遠同一個
   check("帶載具時 payload 有 CarrierType", withCarrier.CarrierType, "3J0002");
   checkTrue("拿掉載具後 payload 沒有 CarrierType", !("CarrierType" in without));
   checkTrue("拿掉載具後 payload 沒有 CarrierId1", !("CarrierId1" in without));
-  check("兩者的 TotalAmount 完全一樣（降級不動金額）", without.TotalAmount, withCarrier.TotalAmount);
+  check(
+    "兩者的 TotalAmount 完全一樣（降級不動金額）",
+    without.TotalAmount,
+    withCarrier.TotalAmount,
+  );
   check("兩者的 OrderId 一樣（靠 Amego 的唯一性防重複開立）", without.OrderId, withCarrier.OrderId);
 }
 

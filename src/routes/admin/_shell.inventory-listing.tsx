@@ -59,7 +59,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { inventoryListingSchema, type InventoryListingFormValues } from "@/lib/admin/schemas";
 import {
@@ -199,7 +206,11 @@ function AdminInventoryListingPage() {
                   <TableCell className="text-right font-medium">{row.available}</TableCell>
                   <TableCell>
                     <Badge variant={row.status === "active" ? "default" : "secondary"}>
-                      {row.status === "active" ? "已上架" : row.status === "draft" ? "草稿" : "封存"}
+                      {row.status === "active"
+                        ? "已上架"
+                        : row.status === "draft"
+                          ? "草稿"
+                          : "封存"}
                     </Badge>
                   </TableCell>
                   <TableCell>

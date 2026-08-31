@@ -108,14 +108,20 @@ export function StockCountDialog({ open, onOpenChange, product, approvalOn, onDo
 
   const parsedActual = actual.trim() === "" ? null : Number(actual);
   const diff =
-    parsedActual === null || Number.isNaN(parsedActual) ? null : parsedActual - product.stock_quantity;
+    parsedActual === null || Number.isNaN(parsedActual)
+      ? null
+      : parsedActual - product.stock_quantity;
   const consignmentShrinkage = product.product_type === "consignment" && diff !== null && diff < 0;
 
   async function submit() {
     if (!product) return;
     const payload = {
       rows: [{ product_id: product.inv_product_id, actual_quantity: Number(actual) }],
-      options: { reason, notes: notes.trim() === "" ? null : notes, adjustment_date: todayInTaipei() },
+      options: {
+        reason,
+        notes: notes.trim() === "" ? null : notes,
+        adjustment_date: todayInTaipei(),
+      },
     };
     const parsed = stockCountSchema.safeParse(payload);
     if (!parsed.success) {
@@ -184,7 +190,9 @@ export function StockCountDialog({ open, onOpenChange, product, approvalOn, onDo
           </div>
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">實盤數量</p>
-            <p className="text-sm tabular-nums">{parsedActual === null ? "—" : `${parsedActual} 件`}</p>
+            <p className="text-sm tabular-nums">
+              {parsedActual === null ? "—" : `${parsedActual} 件`}
+            </p>
           </div>
           <div className="space-y-0.5">
             <p className="text-xs text-muted-foreground">預估差異</p>

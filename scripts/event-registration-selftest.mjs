@@ -121,7 +121,9 @@ console.log("\n[1] migration 檔案盤點");
 check("0020 存在", existsSync(MIG_0020), true);
 // 這一期不准動到既有的 0001–0019，所以它們也必須都還在。
 const migrations = existsSync(join(ROOT, "supabase/migrations"))
-  ? readdirSync(join(ROOT, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort()
+  ? readdirSync(join(ROOT, "supabase/migrations"))
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
   : [];
 // 0021（名單的遮罩 view、明文揭露與 CSV 匯出）加進來時，這幾條會把人叫回來。
 // 逐條重讀過：0021 **不動** 0020 的任何一張表、任何一支函式，它只是在
@@ -150,7 +152,12 @@ check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
 check("0023 仍在原位", migrations[22], "0023_fix_cron_guard.sql");
 check("0024 仍在原位", migrations[23], "0024_blackcat_payment.sql");
 check("編號連續且 0025 是最後一支", migrations[24], "0025_event_speaker.sql");
-for (const f of ["0004_commerce_products.sql", "0006_order_expiry.sql", "0011_inventory_single_source.sql", "0019_vendors_pii_portal.sql"]) {
+for (const f of [
+  "0004_commerce_products.sql",
+  "0006_order_expiry.sql",
+  "0011_inventory_single_source.sql",
+  "0019_vendors_pii_portal.sql",
+]) {
   check(`${f} 仍在`, migrations.includes(f), true);
 }
 
@@ -166,8 +173,14 @@ checkTrue("0020 不是空檔（> 8000 字）", exec0020.length > 8000);
 // [2] 名額搬家：products 那兩欄被綁死，event_sessions 才是真相
 // =============================================================================
 console.log("\n[2] 名額搬到 event_sessions");
-checkTrue("建了 event_sessions", exec0020.includes("create table if not exists public.event_sessions"));
-checkTrue("建了 event_registrations", exec0020.includes("create table if not exists public.event_registrations"));
+checkTrue(
+  "建了 event_sessions",
+  exec0020.includes("create table if not exists public.event_sessions"),
+);
+checkTrue(
+  "建了 event_registrations",
+  exec0020.includes("create table if not exists public.event_registrations"),
+);
 checkTrue(
   "products 的兩條舊 CHECK 被拆掉",
   exec0020.includes("drop constraint if exists products_capacity_shape") &&
@@ -205,15 +218,27 @@ checkTrue(
   "② 鎖場次（for no key update）",
   /from public\.event_sessions s[\s\S]{0,300}for no key update/.test(reserveBody),
 );
-check("② 沒有殘留的 for update（會與外鍵的 KEY SHARE 死鎖）", /\bfor update\b/.test(reserveBody), false);
+check(
+  "② 沒有殘留的 for update（會與外鍵的 KEY SHARE 死鎖）",
+  /\bfor update\b/.test(reserveBody),
+  false,
+);
 checkTrue(
   "② 先把整張訂單的場次依 id 排序鎖起來（呼叫端不必記得排序）",
-  /where oi\.order_id = p_order_id[\s\S]{0,200}order by s\.id\s+for no key update/.test(reserveBody),
+  /where oi\.order_id = p_order_id[\s\S]{0,200}order by s\.id\s+for no key update/.test(
+    reserveBody,
+  ),
 );
-check("release 也用 for no key update", /\bfor update\b/.test(functionBody(exec0020, "public.release_session_seat")), false);
+check(
+  "release 也用 for no key update",
+  /\bfor update\b/.test(functionBody(exec0020, "public.release_session_seat")),
+  false,
+);
 check(
   "expire 的 4c 也用 for no key update",
-  /from public\.event_sessions s[\s\S]{0,300}for update;/.test(functionBody(exec0020, "public.expire_unpaid_orders")),
+  /from public\.event_sessions s[\s\S]{0,300}for update;/.test(
+    functionBody(exec0020, "public.expire_unpaid_orders"),
+  ),
   false,
 );
 checkTrue("③ 跨商品竄改的門", reserveBody.includes("SESSION_PRODUCT_MISMATCH"));
@@ -248,8 +273,14 @@ checkTrue(
   "用 DELETE…RETURNING 當冪等 claim",
   /delete from public\.event_registrations r[\s\S]{0,200}returning/.test(releaseBody),
 );
-checkTrue("有 exception when others（絕不 throw）", /exception\s+when others then/.test(releaseBody));
-checkTrue("null 參數回 0 而不是 raise", /if p_order_item_id is null then\s+return 0;/.test(releaseBody));
+checkTrue(
+  "有 exception when others（絕不 throw）",
+  /exception\s+when others then/.test(releaseBody),
+);
+checkTrue(
+  "null 參數回 0 而不是 raise",
+  /if p_order_item_id is null then\s+return 0;/.test(releaseBody),
+);
 check("release 一句 raise 都沒有", (releaseBody.match(/raise exception/gi) ?? []).length, 0);
 checkTrue("扣回去用 greatest(0, …)", /greatest\(0, s\.seats_taken - v_freed\)/.test(releaseBody));
 
@@ -268,7 +299,10 @@ function returnsTableBlock(sql) {
   const start = sql.indexOf("returns table", i);
   const end = sql.indexOf(")", sql.indexOf("restored_seats", start));
   if (start === -1 || end === -1) return "";
-  return sql.slice(start, end + 1).replace(/\s+/g, " ").trim();
+  return sql
+    .slice(start, end + 1)
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 const shape0011 = returnsTableBlock(exec0011);
@@ -292,13 +326,18 @@ checkTrue(
     expireBody0020,
   ),
 );
-checkTrue("0011 的 4b 保留列刪除還在", expireBody0020.includes("delete from public.stock_reservations"));
+checkTrue(
+  "0011 的 4b 保留列刪除還在",
+  expireBody0020.includes("delete from public.stock_reservations"),
+);
 
 // =============================================================================
 // [6] product_availability 的活動分支改讀場次（漏了會 fail-open）
 // =============================================================================
 console.log("\n[6] product_availability");
-const availView = exec0020.slice(exec0020.indexOf("create or replace view public.product_availability"));
+const availView = exec0020.slice(
+  exec0020.indexOf("create or replace view public.product_availability"),
+);
 checkTrue("view 被覆寫", availView.length > 500);
 checkTrue(
   "活動分支讀 event_sessions",
@@ -341,7 +380,11 @@ check(
   false,
 );
 // event_sessions 是公開資訊（名額本來就 anon 讀得到），所以它有一條 policy。
-check("0020 只建了一條 policy（event_sessions）", (exec0020.match(/create policy/gi) ?? []).length, 1);
+check(
+  "0020 只建了一條 policy（event_sessions）",
+  (exec0020.match(/create policy/gi) ?? []).length,
+  1,
+);
 checkTrue(
   "event_sessions 的 policy 只放行 open 的場次",
   /create policy event_sessions_select_public[\s\S]{0,400}status = 'open'/.test(exec0020),
@@ -356,11 +399,19 @@ checkTrue(
   exec0020.includes("public.reserve_session_seat(uuid, bigint, uuid, integer, jsonb)") &&
     exec0020.includes("public.release_session_seat(bigint)"),
 );
-checkTrue("revoke ... from public 這一句在", exec0020.includes("revoke execute on function %s from public"));
-checkTrue("grant 給 service_role", exec0020.includes("grant  execute on function %s to service_role"));
+checkTrue(
+  "revoke ... from public 這一句在",
+  exec0020.includes("revoke execute on function %s from public"),
+);
+checkTrue(
+  "grant 給 service_role",
+  exec0020.includes("grant  execute on function %s to service_role"),
+);
 checkTrue(
   "覆寫掉的 expire 也重新 grant 一次",
-  exec0020.includes("grant  execute on function public.expire_unpaid_orders(interval, integer) to service_role"),
+  exec0020.includes(
+    "grant  execute on function public.expire_unpaid_orders(interval, integer) to service_role",
+  ),
 );
 check(
   "兩支函式都是 security definer",
@@ -377,7 +428,10 @@ checkTrue(
   "加了欄位",
   /alter table public\.order_items\s+add column if not exists session_id uuid/.test(exec0020),
 );
-checkTrue("外鍵是 on delete restrict", /references public\.event_sessions \(id\) on delete restrict/.test(exec0020));
+checkTrue(
+  "外鍵是 on delete restrict",
+  /references public\.event_sessions \(id\) on delete restrict/.test(exec0020),
+);
 checkTrue(
   "CHECK 兩個方向都管",
   /order_items_session_shape check \([\s\S]{0,200}product_type in \('event', 'journey'\) and session_id is not null[\s\S]{0,200}product_type in \('goods', 'book'\) and session_id is null/.test(
@@ -391,15 +445,34 @@ check("沒有為此加 trigger", /create trigger \w*order_items\w*session/i.test
 // [9] 回填
 // =============================================================================
 console.log("\n[9] 回填");
-checkTrue("為每個 event/journey 商品建場次", /insert into public\.event_sessions[\s\S]{0,600}from public\.products p[\s\S]{0,200}product_type in \('event', 'journey'\)/.test(exec0020));
+checkTrue(
+  "為每個 event/journey 商品建場次",
+  /insert into public\.event_sessions[\s\S]{0,600}from public\.products p[\s\S]{0,200}product_type in \('event', 'journey'\)/.test(
+    exec0020,
+  ),
+);
 checkTrue(
   "回填的場次是 closed（fail-closed）",
   /'closed',\s*\n\s*0\s*\n\s*from public\.products p/.test(exec0020),
 );
-checkTrue("可重跑：用 not exists 擋", /not exists \(select 1 from public\.event_sessions s where s\.product_id = p\.id\)/.test(exec0020));
-checkTrue("既有 order_items 指向場次", /update public\.order_items oi\s+set session_id =/.test(exec0020));
-checkTrue("既有訂單補第一位參加者", /insert into public\.event_registrations[\s\S]{0,600}o\.customer_name/.test(exec0020));
-checkTrue("最後把 products 的名額清空", /update public\.products\s+set capacity = null,\s+seats_taken = 0/.test(exec0020));
+checkTrue(
+  "可重跑：用 not exists 擋",
+  /not exists \(select 1 from public\.event_sessions s where s\.product_id = p\.id\)/.test(
+    exec0020,
+  ),
+);
+checkTrue(
+  "既有 order_items 指向場次",
+  /update public\.order_items oi\s+set session_id =/.test(exec0020),
+);
+checkTrue(
+  "既有訂單補第一位參加者",
+  /insert into public\.event_registrations[\s\S]{0,600}o\.customer_name/.test(exec0020),
+);
+checkTrue(
+  "最後把 products 的名額清空",
+  /update public\.products\s+set capacity = null,\s+seats_taken = 0/.test(exec0020),
+);
 
 // =============================================================================
 // [10] 排程：把手動下的 expire-unpaid-orders 補進 repo
@@ -411,7 +484,10 @@ checkTrue(
   "缺 pg_cron 時 raise warning 而不是安靜跳過",
   /to_regproc\('cron\.schedule[\s\S]{0,300}raise warning 'PG_CRON_NOT_INSTALLED/.test(exec0020),
 );
-checkTrue("排程在 commit 之後（cron.schedule 會自己開交易）", exec0020.lastIndexOf("commit;") < exec0020.indexOf("'expire-unpaid-orders'"));
+checkTrue(
+  "排程在 commit 之後（cron.schedule 會自己開交易）",
+  exec0020.lastIndexOf("commit;") < exec0020.indexOf("'expire-unpaid-orders'"),
+);
 
 // =============================================================================
 // [11] TypeScript 那一側的設計不變量
@@ -436,19 +512,29 @@ checkTrue("反空殼：兩支新 fn 都存在", regFnTs.length > 500 && sessionF
 
 // --- 購物車的 line key -------------------------------------------------------
 checkTrue("cart.ts 匯出 cartLineKey", /export function cartLineKey\(/.test(cartTs));
-checkTrue("line key 是 productId:sessionId", /return `\$\{productId\}:\$\{sessionId \?\? ""\}`/.test(cartTs));
+checkTrue(
+  "line key 是 productId:sessionId",
+  /return `\$\{productId\}:\$\{sessionId \?\? ""\}`/.test(cartTs),
+);
 checkTrue("STORAGE_VERSION 升到 2", /const STORAGE_VERSION = 2;/.test(cartTs));
 checkTrue(
   "舊版 localStorage 直接丟棄（不 merge）",
-  /version === STORAGE_VERSION \? \(persisted as \{ items: CartLine\[\] \}\) : \{ items: \[\] \}/.test(cartTs),
+  /version === STORAGE_VERSION \? \(persisted as \{ items: CartLine\[\] \}\) : \{ items: \[\] \}/.test(
+    cartTs,
+  ),
 );
 // ⚠️ 參加者不可以進購物車 —— persist() 會把它寫進 localStorage。
-check("CartLine 沒有 participants 欄位", /participants/.test(cartTs.split("export type CartResult")[0] ?? ""), false);
+check(
+  "CartLine 沒有 participants 欄位",
+  /participants/.test(cartTs.split("export type CartResult")[0] ?? ""),
+  false,
+);
 // 三個會改購物車的地方都必須用 key，不可以再用 productId。
-for (const [file, src] of [
-  ["src/routes/cart.tsx", readFile(join(ROOT, "src/routes/cart.tsx"))],
-]) {
-  checkTrue(`${file} 用 keyOfLine 而不是 productId`, /setQty\(keyOfLine\(line\)/.test(src) && /removeItem\(keyOfLine\(line\)\)/.test(src));
+for (const [file, src] of [["src/routes/cart.tsx", readFile(join(ROOT, "src/routes/cart.tsx"))]]) {
+  checkTrue(
+    `${file} 用 keyOfLine 而不是 productId`,
+    /setQty\(keyOfLine\(line\)/.test(src) && /removeItem\(keyOfLine\(line\)\)/.test(src),
+  );
   check(`${file} 沒有殘留 setQty(line.productId`, /setQty\(line\.productId/.test(src), false);
 }
 
@@ -463,13 +549,25 @@ checkTrue("反空殼：切得出 remainingFor", remainingForBody.length > 100);
 check("remainingFor 不再讀 p.capacity", /p\.capacity/.test(remainingForBody), false);
 check("remainingFor 不再讀 p.seatsTaken", /p\.seatsTaken/.test(remainingForBody), false);
 checkTrue("remainingFor 改讀 sessions", /p\.sessions/.test(remainingForBody));
-checkTrue("沒有場次時回 0（fail-closed，不是 null）", /if \(p\.sessions\.length === 0\) return 0;/.test(remainingForBody));
+checkTrue(
+  "沒有場次時回 0（fail-closed，不是 null）",
+  /if \(p\.sessions\.length === 0\) return 0;/.test(remainingForBody),
+);
 
 // --- orders.ts step 5 --------------------------------------------------------
 checkTrue("step 5 改呼叫 reserve_session_seat", /rpc\("reserve_session_seat"/.test(ordersTs));
-check("step 5 不再呼叫 reserve_product_seat", /reserve_product_seat/.test(stripTs(ordersTs)), false);
+check(
+  "step 5 不再呼叫 reserve_product_seat",
+  /reserve_product_seat/.test(stripTs(ordersTs)),
+  false,
+);
 checkTrue("回滾改呼叫 release_session_seat", /rpc\("release_session_seat"/.test(ordersTs));
-checkTrue("依 sessionId 排序取鎖（同一商品的兩個梯次是兩列）", /sort\(\(a, b\) => \(\(a\.sessionId \?\? ""\) < \(b\.sessionId \?\? ""\) \? -1 : 1\)\)/.test(ordersTs));
+checkTrue(
+  "依 sessionId 排序取鎖（同一商品的兩個梯次是兩列）",
+  /sort\(\(a, b\) => \(\(a\.sessionId \?\? ""\) < \(b\.sessionId \?\? ""\) \? -1 : 1\)\)/.test(
+    ordersTs,
+  ),
+);
 // ⚠️ 批次 insert 的每一列 key 必須一致（PostgREST 的 "All object keys must match"），
 //    但**整批一起有或整批一起沒有** —— 因為 0020 還沒套用時 order_items 根本沒有
 //    session_id 這一欄，無條件送就會讓每一筆賣書的訂單收到 400。實測確認過：
@@ -493,7 +591,10 @@ const deleteIdx = ordersTs.indexOf("await deleteOrder(order.id)", catchIdx);
 checkTrue("反空殼：三個呼叫都找得到", catchIdx > 0 && releaseIdx > 0 && deleteIdx > 0);
 checkTrue("releaseSeats 在 deleteOrder 之前", releaseIdx < deleteIdx);
 // 名額的前置檢查必須讀場次，不是 products.capacity。
-checkTrue("下單前的名額預檢讀場次", /session\.seats_taken \+ line\.quantity > session\.capacity/.test(ordersTs));
+checkTrue(
+  "下單前的名額預檢讀場次",
+  /session\.seats_taken \+ line\.quantity > session\.capacity/.test(ordersTs),
+);
 check("預檢不再讀 p.seats_taken", /p\.seats_taken \+ line\.quantity/.test(ordersTs), false);
 
 // --- 場次選擇器抽成共用元件 ---------------------------------------------------
@@ -649,11 +750,15 @@ checkTrue(
 // 少了這一條，「0 個違規」有可能是偵測器自己壞掉 —— 而那正是這條規則最不能出錯的
 // 失效方式（它守的是「參加者的姓名電話有沒有被寫進 Vercel 的 log」）。
 for (const [label, sample, expected] of [
-  ["console.error(msg, error)", 'console.error(`[x] 失敗`, error);', 1],
+  ["console.error(msg, error)", "console.error(`[x] 失敗`, error);", 1],
   ["console.error(error)", "console.error(error);", 1],
   ["console.error(msg, err)", 'console.error("[x] 例外", err);', 1],
   ["安全寫法：只印 message", "console.error(`[x] ${error.code} ${error.message}`);", 0],
-  ["安全寫法：String(err)", "console.error(`[x] ${err instanceof Error ? err.message : String(err)}`);", 0],
+  [
+    "安全寫法：String(err)",
+    "console.error(`[x] ${err instanceof Error ? err.message : String(err)}`);",
+    0,
+  ],
 ]) {
   const calls = stripTs(sample).match(/console\.error\([\s\S]{0,400}?\);/g) ?? [];
   const hits = calls
@@ -663,22 +768,27 @@ for (const [label, sample, expected] of [
 }
 checkTrue(
   "碰 registrations 的 log 只印 code 與 message",
-  /error\.code\} \$\{error\.message\}/.test(regRepoTs) || /\$\{error\.code\} \$\{error\.message\}/.test(regRepoTs),
+  /error\.code\} \$\{error\.message\}/.test(regRepoTs) ||
+    /\$\{error\.code\} \$\{error\.message\}/.test(regRepoTs),
 );
 
 // --- 名單只回遮罩值 ----------------------------------------------------------
 console.log("\n[13] 名單頁不開明文出口");
-checkTrue("repo 回的是 email_masked / phone_masked", /email_masked/.test(regRepoTs) && /phone_masked/.test(regRepoTs));
+checkTrue(
+  "repo 回的是 email_masked / phone_masked",
+  /email_masked/.test(regRepoTs) && /phone_masked/.test(regRepoTs),
+);
 // RegistrationRosterRow 這個對外型別裡不可以有明文 email / phone。
 // ⚠️ 切到型別自己的 `};` 為止，不是切到下一個 /** —— 0021 之後這個型別裡面就有
 //    JSDoc 註解了，用註解當終點會讓切出來的片段停在第一個欄位上，而那會讓下面
 //    兩條「沒有明文欄位」變成永遠通過的假性斷言。
 const rosterTypeStart = regRepoTs.indexOf("export type RegistrationRosterRow");
-const rosterType = regRepoTs.slice(
-  rosterTypeStart,
-  regRepoTs.indexOf("\n};", rosterTypeStart) + 3,
+const rosterType = regRepoTs.slice(rosterTypeStart, regRepoTs.indexOf("\n};", rosterTypeStart) + 3);
+checkTrue(
+  "反空殼：切得出 RegistrationRosterRow",
+  rosterType.length > 300,
+  `實際 ${rosterType.length} 字`,
 );
-checkTrue("反空殼：切得出 RegistrationRosterRow", rosterType.length > 300, `實際 ${rosterType.length} 字`);
 checkTrue("反空殼：切出來的片段有完整結尾", rosterType.trimEnd().endsWith("};"));
 checkTrue("反空殼：切出來的片段包含最後一個欄位", /on_roster/.test(rosterType));
 check("對外型別沒有明文 email 欄位", /^\s+email: string/m.test(rosterType), false);
@@ -720,7 +830,8 @@ check(
 );
 check(
   "middleware 的掛載數 = 匯出的 server fn 數（sessions）",
-  (sessionFnTs.match(/\.middleware\(\[(adminFnMiddleware|staffFnMiddleware\(\))\]\)/g) ?? []).length,
+  (sessionFnTs.match(/\.middleware\(\[(adminFnMiddleware|staffFnMiddleware\(\))\]\)/g) ?? [])
+    .length,
   (sessionFnTs.match(/export const \w+ = createServerFn/g) ?? []).length,
 );
 checkTrue(
@@ -729,7 +840,11 @@ checkTrue(
     /removeEventSession[\s\S]{0,300}?middleware\(\[adminFnMiddleware\]\)/.test(sessionFnTs),
 );
 // repo 慣例
-checkTrue("兩支 repo 第一行都是 server-only", /^import "@tanstack\/react-start\/server-only";/m.test(regRepoTs) && /^import "@tanstack\/react-start\/server-only";/m.test(sessionRepoTs));
+checkTrue(
+  "兩支 repo 第一行都是 server-only",
+  /^import "@tanstack\/react-start\/server-only";/m.test(regRepoTs) &&
+    /^import "@tanstack\/react-start\/server-only";/m.test(sessionRepoTs),
+);
 checkTrue("event-sessions repo 有頂部 COLUMNS 常數", /^const COLUMNS =/m.test(sessionRepoTs));
 // seats_taken 永遠不可以被表單寫回去。
 check(
@@ -740,16 +855,33 @@ check(
 
 // --- products 那一側不再寫 capacity ------------------------------------------
 console.log("\n[14] products 不再持有名額");
-check("products repo 的 upsert 不寫 capacity", /capacity: input\.capacity/.test(productsRepoTs), false);
-check("productSchema 沒有 capacity 欄位", /capacity: z$/m.test(readFile(join(ROOT, "src/lib/admin/schemas.ts"))), false);
+check(
+  "products repo 的 upsert 不寫 capacity",
+  /capacity: input\.capacity/.test(productsRepoTs),
+  false,
+);
+check(
+  "productSchema 沒有 capacity 欄位",
+  /capacity: z$/m.test(readFile(join(ROOT, "src/lib/admin/schemas.ts"))),
+  false,
+);
 check("商品後台表單沒有 capacity 輸入框", /name="capacity"/.test(productsRouteTs), false);
 checkTrue("商品後台改為指向場次頁", /活動報名/.test(productsRouteTs));
-checkTrue("新增了 eventSessionSchema", /export const eventSessionSchema/.test(readFile(join(ROOT, "src/lib/admin/schemas.ts"))));
+checkTrue(
+  "新增了 eventSessionSchema",
+  /export const eventSessionSchema/.test(readFile(join(ROOT, "src/lib/admin/schemas.ts"))),
+);
 
 // --- checkout 的分工註解 -----------------------------------------------------
 console.log("\n[15] checkout 的分工");
-checkTrue("checkoutItemSchema 收得到 sessionId", /sessionId: z\.string\(\)\.uuid\(\)\.nullable\(\)\.optional\(\)/.test(checkoutTs));
-checkTrue("checkoutItemSchema 收得到 participants", /participants: z[\s\S]{0,200}\.array\(/.test(checkoutTs));
+checkTrue(
+  "checkoutItemSchema 收得到 sessionId",
+  /sessionId: z\.string\(\)\.uuid\(\)\.nullable\(\)\.optional\(\)/.test(checkoutTs),
+);
+checkTrue(
+  "checkoutItemSchema 收得到 participants",
+  /participants: z[\s\S]{0,200}\.array\(/.test(checkoutTs),
+);
 checkTrue(
   "註解寫明 zod 只是體驗、保證在 reserve_session_seat",
   /reserve_session_seat\(\) (的第 ① 步|step ③)/.test(checkoutTs),
@@ -782,12 +914,17 @@ checkTrue(
 );
 checkTrue(
   "只有 booking 行才呼叫 reserve_session_seat",
-  /\.filter\(\(l\) => isBooking\(l\.productType\)\)[\s\S]{0,400}rpc\("reserve_session_seat"/.test(ordersTs),
+  /\.filter\(\(l\) => isBooking\(l\.productType\)\)[\s\S]{0,400}rpc\("reserve_session_seat"/.test(
+    ordersTs,
+  ),
 );
 // PRODUCT_COLUMNS 仍然帶著那兩欄 —— drop 掉會讓舊 bundle 收到 400。
 checkTrue("PRODUCT_COLUMNS 仍保留 capacity, seats_taken", /capacity, seats_taken/.test(ordersTs));
 checkTrue("shop.ts 的 COLUMNS 仍保留 capacity, seats_taken", /capacity, seats_taken/.test(shopTs));
-checkTrue("products repo 的 COLUMNS 仍保留 capacity, seats_taken", /capacity, seats_taken/.test(productsRepoTs));
+checkTrue(
+  "products repo 的 COLUMNS 仍保留 capacity, seats_taken",
+  /capacity, seats_taken/.test(productsRepoTs),
+);
 
 // =============================================================================
 // 併發段
@@ -828,7 +965,8 @@ async function q(sql) {
 
 async function must(sql) {
   const r = await q(sql);
-  if (!r.ok) throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
+  if (!r.ok)
+    throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
   return r.rows;
 }
 
@@ -852,7 +990,9 @@ delete from public.products where id like '${SLUG_PREFIX}%';
 if (!PG_URL) {
   skipped.push("併發測試（缺 EVENT_SELFTEST_PG_URL）");
   console.log(yellow("\n[17–23] 併發測試 —— 跳過：沒有 EVENT_SELFTEST_PG_URL"));
-  console.log(yellow("       設好之後重跑，才會驗到超賣、原子性、跨商品竄改、回滾冪等、過期回收、死鎖、"));
+  console.log(
+    yellow("       設好之後重跑，才會驗到超賣、原子性、跨商品竄改、回滾冪等、過期回收、死鎖、"),
+  );
   console.log(yellow("       以及 migration 冪等這七條。指令見本檔檔頭。"));
 } else {
   try {
@@ -1084,18 +1224,34 @@ if (!PG_URL) {
     const lost = race.filter((r) => !r.ok);
     check("恰好 1 個成功", won.length, 1);
     check("其餘 19 個失敗", lost.length, 19);
-    check("19 個失敗全部是 NO_SEATS_LEFT", lost.filter((r) => /NO_SEATS_LEFT/.test(r.error)).length, 19);
+    check(
+      "19 個失敗全部是 NO_SEATS_LEFT",
+      lost.filter((r) => /NO_SEATS_LEFT/.test(r.error)).length,
+      19,
+    );
     if (lost.some((r) => !/NO_SEATS_LEFT/.test(r.error))) {
-      console.log(red(`      非預期錯誤範例：${lost.find((r) => !/NO_SEATS_LEFT/.test(r.error)).error.slice(0, 300)}`));
+      console.log(
+        red(
+          `      非預期錯誤範例：${lost.find((r) => !/NO_SEATS_LEFT/.test(r.error)).error.slice(0, 300)}`,
+        ),
+      );
     }
     check(
       "seats_taken = 1",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.one}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.one}'`)).n,
+      ),
       1,
     );
     check(
       "registrations 恰好 1 列",
-      Number(one(await must(`select count(*)::int n from public.event_registrations where session_id='${SESS.one}'`)).n),
+      Number(
+        one(
+          await must(
+            `select count(*)::int n from public.event_registrations where session_id='${SESS.one}'`,
+          ),
+        ).n,
+      ),
       1,
     );
 
@@ -1110,15 +1266,27 @@ if (!PG_URL) {
       { product: S.a, session: SESS.atom, qty: 2, people: 1 },
     ]);
     checkTrue("被拒絕", !mismatch.ok);
-    checkTrue("錯誤是 PARTICIPANT_COUNT_MISMATCH", /PARTICIPANT_COUNT_MISMATCH/.test(mismatch.error ?? ""));
+    checkTrue(
+      "錯誤是 PARTICIPANT_COUNT_MISMATCH",
+      /PARTICIPANT_COUNT_MISMATCH/.test(mismatch.error ?? ""),
+    );
     check(
       "seats_taken 完全沒變",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.atom}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.atom}'`))
+          .n,
+      ),
       atomBefore,
     );
     check(
       "registrations 0 列",
-      Number(one(await must(`select count(*)::int n from public.event_registrations where session_id='${SESS.atom}'`)).n),
+      Number(
+        one(
+          await must(
+            `select count(*)::int n from public.event_registrations where session_id='${SESS.atom}'`,
+          ),
+        ).n,
+      ),
       0,
     );
 
@@ -1135,10 +1303,16 @@ if (!PG_URL) {
       { product: S.a, session: SESS.other, seatSession: SESS.atom, qty: 1 },
     ]);
     checkTrue("被拒絕", !tamper.ok);
-    checkTrue("錯誤是 SESSION_PRODUCT_MISMATCH", /SESSION_PRODUCT_MISMATCH/.test(tamper.error ?? ""));
+    checkTrue(
+      "錯誤是 SESSION_PRODUCT_MISMATCH",
+      /SESSION_PRODUCT_MISMATCH/.test(tamper.error ?? ""),
+    );
     check(
       "B 場次的 seats_taken 沒變",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.other}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.other}'`))
+          .n,
+      ),
       otherBefore,
     );
 
@@ -1160,7 +1334,10 @@ if (!PG_URL) {
         '${SESS.atom}', 1,
         '[{"name":"x","email":"x@example.invalid"}]'::jsonb) n`);
     checkTrue("借用別張訂單的 order_item 被拒絕", !crossOrder.ok);
-    checkTrue("錯誤是 ORDER_ITEM_ORDER_MISMATCH", /ORDER_ITEM_ORDER_MISMATCH/.test(crossOrder.error ?? ""));
+    checkTrue(
+      "錯誤是 ORDER_ITEM_ORDER_MISMATCH",
+      /ORDER_ITEM_ORDER_MISMATCH/.test(crossOrder.error ?? ""),
+    );
 
     // 場次沒開也不行。
     await must(`update public.event_sessions set status='closed' where id='${SESS.other}'`);
@@ -1198,12 +1375,21 @@ if (!PG_URL) {
     );
     check(
       "seats_taken 只降一次",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.atom}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.atom}'`))
+          .n,
+      ),
       0,
     );
     check(
       "registrations 也回收了",
-      Number(one(await must(`select count(*)::int n from public.event_registrations where order_item_id=${relItem}`)).n),
+      Number(
+        one(
+          await must(
+            `select count(*)::int n from public.event_registrations where order_item_id=${relItem}`,
+          ),
+        ).n,
+      ),
       0,
     );
     // 併發版：5 個同時 release，總和仍然只有 3。
@@ -1224,7 +1410,10 @@ if (!PG_URL) {
     check("5 個並行 release 的回傳總和 = 3", freedTotal, 3);
     check(
       "seats_taken 回到 0",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.atom}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.atom}'`))
+          .n,
+      ),
       0,
     );
 
@@ -1239,7 +1428,9 @@ if (!PG_URL) {
     ).n;
     check(
       "先佔了 2 個位子",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.exp}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.exp}'`)).n,
+      ),
       2,
     );
     const expired = await must(
@@ -1253,17 +1444,27 @@ if (!PG_URL) {
     check("restored_seats = 2", Number(mine?.restored_seats ?? -1), 2);
     check(
       "seats_taken 回到 0",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.exp}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.exp}'`)).n,
+      ),
       0,
     );
     check(
       "registrations 0 列",
-      Number(one(await must(`select count(*)::int n from public.event_registrations where session_id='${SESS.exp}'`)).n),
+      Number(
+        one(
+          await must(
+            `select count(*)::int n from public.event_registrations where session_id='${SESS.exp}'`,
+          ),
+        ).n,
+      ),
       0,
     );
     check(
       "訂單被取消",
-      one(await must(`select status s from public.orders where idempotency_key='${KEY_PREFIX}exp-1'`))?.s,
+      one(
+        await must(`select status s from public.orders where idempotency_key='${KEY_PREFIX}exp-1'`),
+      )?.s,
       "cancelled",
     );
 
@@ -1294,12 +1495,18 @@ if (!PG_URL) {
     check("沒有其他非預期錯誤", otherErrors.length, 0);
     check(
       "A 場次 seats_taken = 16",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.lockA}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.lockA}'`))
+          .n,
+      ),
       16,
     );
     check(
       "B 場次 seats_taken = 16",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.lockB}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.lockB}'`))
+          .n,
+      ),
       16,
     );
 
@@ -1344,7 +1551,10 @@ if (!PG_URL) {
     }
     check(
       "A 場次 seats_taken = 28（16 + 12）",
-      Number(one(await must(`select seats_taken n from public.event_sessions where id='${SESS.lockA}'`)).n),
+      Number(
+        one(await must(`select seats_taken n from public.event_sessions where id='${SESS.lockA}'`))
+          .n,
+      ),
       28,
     );
 
@@ -1355,7 +1565,11 @@ if (!PG_URL) {
     check(
       "沒有任何 products 還持有名額",
       Number(
-        one(await must(`select count(*)::int n from public.products where capacity is not null or seats_taken <> 0`)).n,
+        one(
+          await must(
+            `select count(*)::int n from public.products where capacity is not null or seats_taken <> 0`,
+          ),
+        ).n,
       ),
       0,
     );
@@ -1364,16 +1578,24 @@ if (!PG_URL) {
       insert into public.products (id, slug, product_type, title, summary, description, price, stock, status)
       values ('${SLUG_PREFIX}book','${SLUG_PREFIX}book','book',${LOC},${LOC},${LOC},380,5,'active');
     `);
-    await must(`select public.atomic_deduct_stock('[{"product_id":"${SLUG_PREFIX}book","quantity":2}]'::jsonb)`);
+    await must(
+      `select public.atomic_deduct_stock('[{"product_id":"${SLUG_PREFIX}book","quantity":2}]'::jsonb)`,
+    );
     check(
       "atomic_deduct_stock 照舊：5 → 3",
-      Number(one(await must(`select stock n from public.products where id='${SLUG_PREFIX}book'`)).n),
+      Number(
+        one(await must(`select stock n from public.products where id='${SLUG_PREFIX}book'`)).n,
+      ),
       3,
     );
     check(
       "可售量 view 對書回報型錄庫存",
       Number(
-        one(await must(`select available_capped n from public.product_availability where product_id='${SLUG_PREFIX}book'`)).n,
+        one(
+          await must(
+            `select available_capped n from public.product_availability where product_id='${SLUG_PREFIX}book'`,
+          ),
+        ).n,
       ),
       3,
     );
@@ -1381,7 +1603,11 @@ if (!PG_URL) {
     check(
       "可售量 view 對活動回報場次剩餘（不是 fail-open 的 10）",
       Number(
-        one(await must(`select available_capped n from public.product_availability where product_id='${S.a}'`)).n,
+        one(
+          await must(
+            `select available_capped n from public.product_availability where product_id='${S.a}'`,
+          ),
+        ).n,
       ),
       // lockA 99 - 16 = 83 → capped 10；但 one/atom/exp 都比它小，取 max 之後再 cap。
       10,
@@ -1390,7 +1616,11 @@ if (!PG_URL) {
     check(
       "全部場次關閉後，活動商品的可售量是 0（fail-closed）",
       Number(
-        one(await must(`select available_capped n from public.product_availability where product_id='${S.a}'`)).n,
+        one(
+          await must(
+            `select available_capped n from public.product_availability where product_id='${S.a}'`,
+          ),
+        ).n,
       ),
       0,
     );
@@ -1400,12 +1630,18 @@ if (!PG_URL) {
       insert into public.order_items (order_id, product_id, session_id, name, unit_price, quantity, subtotal, product_type)
       select id, '${SLUG_PREFIX}book', '${SESS.atom}', ${LOC}, 380, 1, 380, 'book'
         from public.orders where idempotency_key='${KEY_PREFIX}foreign-2'`);
-    checkTrue("書帶了 session_id 會被 CHECK 擋下", !badBook.ok && /order_items_session_shape/.test(badBook.error));
+    checkTrue(
+      "書帶了 session_id 會被 CHECK 擋下",
+      !badBook.ok && /order_items_session_shape/.test(badBook.error),
+    );
     const badEvent = await q(`
       insert into public.order_items (order_id, product_id, session_id, name, unit_price, quantity, subtotal, product_type)
       select id, '${S.a}', null, ${LOC}, 500, 1, 500, 'event'
         from public.orders where idempotency_key='${KEY_PREFIX}foreign-2'`);
-    checkTrue("活動沒帶 session_id 也會被擋下", !badEvent.ok && /order_items_session_shape/.test(badEvent.error));
+    checkTrue(
+      "活動沒帶 session_id 也會被擋下",
+      !badEvent.ok && /order_items_session_shape/.test(badEvent.error),
+    );
 
     // products 的名額 CHECK。
     const badCapacity = await q(
@@ -1435,12 +1671,22 @@ if (!PG_URL) {
     checkTrue("測試資料清乾淨", cleanup.ok && cleanupBook.ok);
     check(
       "沒有殘留的 event_sessions",
-      Number(one((await q(`select count(*)::int n from public.event_sessions where product_id like '${SLUG_PREFIX}%'`)).rows)?.n ?? -1),
+      Number(
+        one(
+          (
+            await q(
+              `select count(*)::int n from public.event_sessions where product_id like '${SLUG_PREFIX}%'`,
+            )
+          ).rows,
+        )?.n ?? -1,
+      ),
       0,
     );
     check(
       "沒有殘留的 event_registrations",
-      Number(one((await q(`select count(*)::int n from public.event_registrations`)).rows)?.n ?? -1),
+      Number(
+        one((await q(`select count(*)::int n from public.event_registrations`)).rows)?.n ?? -1,
+      ),
       0,
     );
   }

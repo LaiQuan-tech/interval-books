@@ -57,7 +57,11 @@ export async function listNews(): Promise<NewsRow[]> {
 }
 
 export async function getNewsById(id: string): Promise<NewsRow | null> {
-  const { data, error } = await supabaseAdmin().from("news").select(COLUMNS).eq("id", id).maybeSingle();
+  const { data, error } = await supabaseAdmin()
+    .from("news")
+    .select(COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
 
   if (error) throw new Error(`[repo/news] getById 失敗：${error.message}`);
   return (data as NewsRow | null) ?? null;

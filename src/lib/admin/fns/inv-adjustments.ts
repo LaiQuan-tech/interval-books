@@ -39,8 +39,14 @@ export const getAdjustmentSummary = createServerFn({ method: "POST" })
   .middleware([staffFnMiddleware()])
   .inputValidator(
     z.object({
-      dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-      dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+      dateFrom: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullable(),
+      dateTo: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullable(),
     }),
   )
   .handler(async ({ data }) => {

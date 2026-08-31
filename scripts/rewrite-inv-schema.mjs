@@ -178,13 +178,10 @@ function rewriteSchemaQualifier(text) {
 /** R2：函式的 SET search_path TO 'public' → TO 'inv', 'public' */
 function rewriteSearchPath(text) {
   let count = 0;
-  const rewritten = text.replace(
-    /SET search_path TO '(?:public|inv)'/g,
-    () => {
-      count += 1;
-      return `SET search_path TO '${TARGET_SCHEMA}', 'public'`;
-    },
-  );
+  const rewritten = text.replace(/SET search_path TO '(?:public|inv)'/g, () => {
+    count += 1;
+    return `SET search_path TO '${TARGET_SCHEMA}', 'public'`;
+  });
   if (count) bump("R2 SET search_path → 'inv', 'public'", count);
   return rewritten;
 }
@@ -494,7 +491,10 @@ alter default privileges in schema ${TARGET_SCHEMA} grant execute on functions t
 commit;
 `;
 
-const body = kept.join("\n").replace(/\n{4,}/g, "\n\n\n").trim();
+const body = kept
+  .join("\n")
+  .replace(/\n{4,}/g, "\n\n\n")
+  .trim();
 const output = `${header}${body}\n${footer}`;
 
 if (outPath) {

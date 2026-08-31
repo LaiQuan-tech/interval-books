@@ -51,10 +51,18 @@ export function useDocumentMeta(meta: MetaInput) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     lang,
-    meta.title.zh, meta.title.en, meta.title.ja,
-    meta.description.zh, meta.description.en, meta.description.ja,
-    meta.ogTitle?.zh, meta.ogTitle?.en, meta.ogTitle?.ja,
-    meta.ogDescription?.zh, meta.ogDescription?.en, meta.ogDescription?.ja,
+    meta.title.zh,
+    meta.title.en,
+    meta.title.ja,
+    meta.description.zh,
+    meta.description.en,
+    meta.description.ja,
+    meta.ogTitle?.zh,
+    meta.ogTitle?.en,
+    meta.ogTitle?.ja,
+    meta.ogDescription?.zh,
+    meta.ogDescription?.en,
+    meta.ogDescription?.ja,
     meta.ogImage,
   ]);
 }

@@ -62,7 +62,11 @@ export async function listJourneys(): Promise<JourneyRow[]> {
 }
 
 export async function getJourneyById(id: string): Promise<JourneyRow | null> {
-  const { data, error } = await supabaseAdmin().from("journeys").select(COLUMNS).eq("id", id).maybeSingle();
+  const { data, error } = await supabaseAdmin()
+    .from("journeys")
+    .select(COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
 
   if (error) throw new Error(`[repo/journeys] getById 失敗：${error.message}`);
   return (data as JourneyRow | null) ?? null;

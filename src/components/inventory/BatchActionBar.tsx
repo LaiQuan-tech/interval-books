@@ -54,7 +54,8 @@ export function BatchActionBar({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/20 bg-primary/5 p-3">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span>
-            已選 <span className="font-medium tabular-nums">{selectedCount}</span> / {totalOnPage} 筆
+            已選 <span className="font-medium tabular-nums">{selectedCount}</span> / {totalOnPage}{" "}
+            筆
           </span>
           <Button variant="link" size="sm" className="h-auto p-0" onClick={onSelectAll}>
             全選本頁
@@ -76,7 +77,11 @@ export function BatchActionBar({
             title={canApprove ? undefined : "需要「approve_products」權限"}
             onClick={() => setConfirm(true)}
           >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            )}
             批次通過{pendingCount > 0 ? `（${pendingCount}）` : ""}
           </Button>
           <Button

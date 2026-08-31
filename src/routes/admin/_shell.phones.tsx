@@ -6,7 +6,14 @@ import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -25,9 +32,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { contactPhoneSchema, type ContactPhoneFormValues } from "@/lib/admin/schemas";
-import { listContactPhones, removeContactPhone, upsertContactPhone } from "@/lib/admin/fns/contact-phones";
+import {
+  listContactPhones,
+  removeContactPhone,
+  upsertContactPhone,
+} from "@/lib/admin/fns/contact-phones";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type ContactPhoneRow = Awaited<ReturnType<typeof listContactPhones>>[number];
@@ -196,11 +214,16 @@ function AdminPhonesPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這筆電話嗎？</AlertDialogTitle>
-            <AlertDialogDescription>「{deleteTarget?.label}」刪除後無法復原。</AlertDialogDescription>
+            <AlertDialogDescription>
+              「{deleteTarget?.label}」刪除後無法復原。
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
@@ -289,7 +312,9 @@ function PhoneForm({ defaultValues, onSubmit, submitting, submitLabel }: PhoneFo
                   ref={field.ref}
                   onBlur={field.onBlur}
                   value={field.value}
-                  onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                  onChange={(e) =>
+                    field.onChange(e.target.value === "" ? 0 : Number(e.target.value))
+                  }
                 />
               </FormControl>
               <FormMessage />

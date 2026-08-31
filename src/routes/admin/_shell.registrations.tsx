@@ -7,8 +7,21 @@ import { Download, Eye, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -367,9 +380,8 @@ function AdminRegistrationsPage() {
 
       {schemaMissing && (
         <p className="rounded-md border border-destructive/40 p-4 text-sm text-destructive">
-          活動場次的資料表還沒建立。這一頁要等 migration
-          0020_event_sessions_registrations.sql 套用到資料庫之後才會有內容——程式碼會
-          先上線，資料庫是另一個步驟。
+          活動場次的資料表還沒建立。這一頁要等 migration 0020_event_sessions_registrations.sql
+          套用到資料庫之後才會有內容——程式碼會 先上線，資料庫是另一個步驟。
         </p>
       )}
 
@@ -418,7 +430,9 @@ function AdminRegistrationsPage() {
                 const unnamed = Math.max(0, s.seats_taken - count.total);
                 return (
                   <TableRow key={s.id}>
-                    <TableCell className="max-w-xs truncate">{productLabel(s.product_id)}</TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {productLabel(s.product_id)}
+                    </TableCell>
                     <TableCell className="max-w-xs truncate font-medium">{s.title.zh}</TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       {formatWhen(s.starts_at)}

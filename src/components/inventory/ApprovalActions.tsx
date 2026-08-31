@@ -51,14 +51,12 @@ export function ApprovalActions({
 
   if (status === "rejected") {
     return (
-      <Button
-        size="sm"
-        variant="outline"
-        className="gap-1.5"
-        disabled={busy}
-        onClick={onResubmit}
-      >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+      <Button size="sm" variant="outline" className="gap-1.5" disabled={busy} onClick={onResubmit}>
+        {busy ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <RefreshCw className="h-3.5 w-3.5" />
+        )}
         重新送審
       </Button>
     );
@@ -77,7 +75,11 @@ export function ApprovalActions({
           title={blockedTitle}
           onClick={onApprove}
         >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          )}
           通過
         </Button>
         <Button

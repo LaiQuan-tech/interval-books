@@ -21,10 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ExcelMappingStep } from "@/components/inventory/ExcelMappingStep";
-import {
-  ExcelPreviewStep,
-  type ImportOptions,
-} from "@/components/inventory/ExcelPreviewStep";
+import { ExcelPreviewStep, type ImportOptions } from "@/components/inventory/ExcelPreviewStep";
 import {
   autoMapColumns,
   EMPTY_MAPPING,
@@ -241,7 +238,9 @@ export function ExcelImportDialog({
                 <Upload className="h-7 w-7 text-muted-foreground" />
               )}
               <span className="text-sm font-medium">點這裡選擇檔案</span>
-              <span className="text-xs text-muted-foreground">支援 .xls 與 .xlsx，一次最多 2000 列</span>
+              <span className="text-xs text-muted-foreground">
+                支援 .xls 與 .xlsx，一次最多 2000 列
+              </span>
             </button>
           </div>
         ) : null}

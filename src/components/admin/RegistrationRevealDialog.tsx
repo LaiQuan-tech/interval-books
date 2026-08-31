@@ -98,9 +98,7 @@ export function RegistrationRevealDialog({
     <Dialog open={open} onOpenChange={(o) => !loading && onOpenChange(o)}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-base">
-            查看「{registration.name}」的完整聯絡方式
-          </DialogTitle>
+          <DialogTitle className="text-base">查看「{registration.name}」的完整聯絡方式</DialogTitle>
           <DialogDescription>
             座位 {registration.seat_no}・訂單 {registration.order_no}
             ・平常畫面上顯示的都是遮罩，完整號碼只有這裡看得到。
@@ -162,8 +160,8 @@ export function RegistrationRevealDialog({
 
         {!canReadRoster ? (
           <p className="text-xs text-muted-foreground">
-            你沒有「查看活動報名名單」（event.roster.read）權限。請找管理員授權 ——
-            這個權限與各種 approve_*
+            你沒有「查看活動報名名單」（event.roster.read）權限。請找管理員授權 —— 這個權限與各種
+            approve_*
             是不同維度的東西：一個管收貨的店員有理由簽核進貨，沒有理由看到活動參加者的電話。
           </p>
         ) : null}

@@ -61,7 +61,9 @@ export function AdjustmentFilterBar({ value, onChange, disabled }: Props) {
               placeholder="單號、商品名稱、期數、備註"
               value={value.keyword ?? ""}
               disabled={disabled}
-              onChange={(e) => set({ keyword: e.target.value.trim() === "" ? null : e.target.value })}
+              onChange={(e) =>
+                set({ keyword: e.target.value.trim() === "" ? null : e.target.value })
+              }
             />
           </div>
         </div>

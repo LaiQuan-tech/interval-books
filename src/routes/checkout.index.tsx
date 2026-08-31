@@ -99,7 +99,11 @@ const PAGE = {
   city: { zh: "縣市", en: "City", ja: "市・県" },
   district: { zh: "鄉鎮市區（選填）", en: "District (optional)", ja: "区・町（任意）" },
   street: { zh: "詳細地址", en: "Street address", ja: "番地・建物名" },
-  note: { zh: "想讓我們知道的事（選填）", en: "Anything we should know (optional)", ja: "ご要望など（任意）" },
+  note: {
+    zh: "想讓我們知道的事（選填）",
+    en: "Anything we should know (optional)",
+    ja: "ご要望など（任意）",
+  },
   methodHome: { zh: "宅配到府", en: "Home delivery", ja: "自宅へお届け" },
   methodPickup: { zh: "到店自取", en: "Pick up in store", ja: "店頭でお受け取り" },
   methodFree: { zh: "免運費", en: "Free", ja: "送料無料" },
@@ -134,7 +138,11 @@ const PAGE = {
     en: "You will be taken to PayUni's secure page to pay by card. Your cart is only emptied once payment succeeds.",
     ja: "送信後、PayUni の決済ページでお支払いいただきます。カートはお支払い完了後に空になります。",
   },
-  payOffline: { zh: "由我們與你聯繫付款", en: "Arrange payment with us", ja: "個別にお支払いをご案内" },
+  payOffline: {
+    zh: "由我們與你聯繫付款",
+    en: "Arrange payment with us",
+    ja: "個別にお支払いをご案内",
+  },
   payOfflineNote: {
     zh: "訂單會先成立並保留品項，我們會以電子信箱與你聯繫付款方式。",
     en: "Your order is created and the items are held; we will email you about payment.",
@@ -152,7 +160,11 @@ const PAGE = {
     ja: "お支払い完了後に電子インボイスを自動発行し、メールでお知らせします。統一番号・キャリアは送信後に変更できませんのでご確認ください。",
   },
   invoicePersonal: { zh: "個人（含載具）", en: "Personal", ja: "個人（キャリア対応）" },
-  invoiceCompany: { zh: "公司（統一編號）", en: "Company (business number)", ja: "法人（統一番号）" },
+  invoiceCompany: {
+    zh: "公司（統一編號）",
+    en: "Company (business number)",
+    ja: "法人（統一番号）",
+  },
   invoiceDonate: { zh: "捐贈發票", en: "Donate the invoice", ja: "インボイスを寄付" },
   invoicePersonalNote: {
     zh: "不指定載具時，發票會由我們保管並以電子信箱寄送通知。",
@@ -170,7 +182,11 @@ const PAGE = {
     ja: "寄付後のインボイスはお客様のものではなくなり、換金や返却はできません。",
   },
   carrierLabel: { zh: "載具類型", en: "Carrier", ja: "キャリアの種類" },
-  carrierNone: { zh: "不指定（寄送電子信箱）", en: "None — email it to me", ja: "指定しない（メール送付）" },
+  carrierNone: {
+    zh: "不指定（寄送電子信箱）",
+    en: "None — email it to me",
+    ja: "指定しない（メール送付）",
+  },
   carrierMobile: { zh: "手機條碼", en: "Mobile barcode", ja: "携帯バーコード" },
   carrierNpc: { zh: "自然人憑證", en: "Citizen digital certificate", ja: "自然人証明書" },
   carrierNumber: { zh: "載具號碼", en: "Carrier number", ja: "キャリア番号" },
@@ -286,10 +302,7 @@ function Checkout() {
     return buyable.some((line) => byId.get(line.productId)?.requiresShipping ?? true);
   }, [buyable, catalogue.products]);
 
-  const subtotal = useMemo(
-    () => buyable.reduce((sum, l) => sum + l.price * l.qty, 0),
-    [buyable],
-  );
+  const subtotal = useMemo(() => buyable.reduce((sum, l) => sum + l.price * l.qty, 0), [buyable]);
   const effectiveMethod = needsShipping ? method : "none";
   const shippingFee = computeShippingFee({ needsShipping, method: effectiveMethod, subtotal });
   const total = subtotal + shippingFee;
@@ -498,10 +511,7 @@ function Checkout() {
   if (hydrated && buyable.length === 0) {
     return (
       <PageShell>
-        <PageHeader
-          eyebrow={`Checkout  ／  ${t(PAGE.eyebrowSuffix)}`}
-          title={t(PAGE.title)}
-        />
+        <PageHeader eyebrow={`Checkout  ／  ${t(PAGE.eyebrowSuffix)}`} title={t(PAGE.title)} />
         <section className="container-editorial pb-32">
           <div className="border border-border p-10">
             <p className="text-sm text-muted-foreground">{t(PAGE.empty)}</p>
@@ -528,9 +538,7 @@ function Checkout() {
       <section className="container-editorial pb-32 grid gap-12 lg:grid-cols-3 lg:gap-16">
         <div className="lg:col-span-2">
           {catalogue.unavailable && (
-            <p className="mb-8 border border-clay p-5 text-sm text-clay">
-              {t(PAGE.catalogueDown)}
-            </p>
+            <p className="mb-8 border border-clay p-5 text-sm text-clay">{t(PAGE.catalogueDown)}</p>
           )}
           {hasUnavailable && (
             <p className="mb-8 border border-clay p-5 text-sm text-clay">
@@ -578,7 +586,12 @@ function Checkout() {
                     <FormItem>
                       <FormLabel>{t(PAGE.phone)}</FormLabel>
                       <FormControl>
-                        <Input inputMode="tel" autoComplete="tel" placeholder="09xxxxxxxx" {...field} />
+                        <Input
+                          inputMode="tel"
+                          autoComplete="tel"
+                          placeholder="09xxxxxxxx"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -621,7 +634,9 @@ function Checkout() {
                           <label
                             key={m}
                             className={`flex cursor-pointer items-baseline justify-between gap-4 border p-4 transition-colors ${
-                              selected ? "border-foreground" : "border-border hover:border-foreground/40"
+                              selected
+                                ? "border-foreground"
+                                : "border-border hover:border-foreground/40"
                             }`}
                           >
                             <span className="flex items-baseline gap-3">
@@ -662,7 +677,11 @@ function Checkout() {
                             <FormItem>
                               <FormLabel>{t(PAGE.recipient)}</FormLabel>
                               <FormControl>
-                                <Input autoComplete="shipping name" {...field} value={field.value ?? ""} />
+                                <Input
+                                  autoComplete="shipping name"
+                                  {...field}
+                                  value={field.value ?? ""}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -712,7 +731,11 @@ function Checkout() {
                             <FormItem>
                               <FormLabel>{t(PAGE.city)}</FormLabel>
                               <FormControl>
-                                <Input autoComplete="shipping address-level1" {...field} value={field.value ?? ""} />
+                                <Input
+                                  autoComplete="shipping address-level1"
+                                  {...field}
+                                  value={field.value ?? ""}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -725,7 +748,11 @@ function Checkout() {
                             <FormItem>
                               <FormLabel>{t(PAGE.district)}</FormLabel>
                               <FormControl>
-                                <Input autoComplete="shipping address-level2" {...field} value={field.value ?? ""} />
+                                <Input
+                                  autoComplete="shipping address-level2"
+                                  {...field}
+                                  value={field.value ?? ""}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -738,7 +765,11 @@ function Checkout() {
                             <FormItem className="sm:col-span-2">
                               <FormLabel>{t(PAGE.street)}</FormLabel>
                               <FormControl>
-                                <Input autoComplete="shipping street-address" {...field} value={field.value ?? ""} />
+                                <Input
+                                  autoComplete="shipping street-address"
+                                  {...field}
+                                  value={field.value ?? ""}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -764,7 +795,9 @@ function Checkout() {
                         <label
                           key={p}
                           className={`flex cursor-pointer items-baseline gap-3 border p-4 transition-colors ${
-                            selected ? "border-foreground" : "border-border hover:border-foreground/40"
+                            selected
+                              ? "border-foreground"
+                              : "border-border hover:border-foreground/40"
                           }`}
                         >
                           <input
@@ -811,7 +844,9 @@ function Checkout() {
                       <label
                         key={kind}
                         className={`flex cursor-pointer items-baseline gap-3 border p-4 transition-colors ${
-                          selected ? "border-foreground" : "border-border hover:border-foreground/40"
+                          selected
+                            ? "border-foreground"
+                            : "border-border hover:border-foreground/40"
                         }`}
                       >
                         <input
@@ -924,7 +959,11 @@ function Checkout() {
                         <FormItem>
                           <FormLabel>{t(PAGE.companyTitle)}</FormLabel>
                           <FormControl>
-                            <Input autoComplete="organization" {...field} value={field.value ?? ""} />
+                            <Input
+                              autoComplete="organization"
+                              {...field}
+                              value={field.value ?? ""}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

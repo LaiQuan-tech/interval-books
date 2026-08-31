@@ -32,10 +32,7 @@ const PAGE = {
 
 export const Route = createFileRoute("/curated")({
   loader: async () => {
-    const [page, curatedThemes] = await Promise.all([
-      fetchPage("curated"),
-      fetchCuratedThemes(),
-    ]);
+    const [page, curatedThemes] = await Promise.all([fetchPage("curated"), fetchCuratedThemes()]);
     return { page, curatedThemes };
   },
   head: ({ loaderData }) => {
@@ -78,7 +75,9 @@ function Curated() {
           <div key={theme.id}>
             <div className="grid md:grid-cols-12 gap-10 items-end mb-12">
               <div className="md:col-span-5">
-                <p className="eyebrow text-2xl">{t(p.block("windowLabel", PAGE.windowLabel))} {String(i + 1).padStart(2, "0")}</p>
+                <p className="eyebrow text-2xl">
+                  {t(p.block("windowLabel", PAGE.windowLabel))} {String(i + 1).padStart(2, "0")}
+                </p>
                 <h2 className="display mt-4 text-4xl md:text-5xl">{t(theme.title)}</h2>
               </div>
               <p className="md:col-span-7 text-base leading-relaxed text-muted-foreground md:pb-2">
@@ -93,7 +92,9 @@ function Curated() {
                     {String(idx + 1).padStart(2, "0")}
                   </p>
                   <h3 className="font-serif text-xl mt-3 leading-snug">{t(item.name)}</h3>
-                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{t(item.note)}</p>
+                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+                    {t(item.note)}
+                  </p>
                 </article>
               ))}
             </div>
@@ -106,10 +107,18 @@ function Curated() {
           <span className="text-muted-foreground mr-4">
             {t(p.block("askPurchase", PAGE.askPurchase))}
           </span>
-          <a className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors" href={`mailto:${contactEmail}`}>
+          <a
+            className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors"
+            href={`mailto:${contactEmail}`}
+          >
             {t(ui.buttons.emailUs)}
           </a>
-          <a className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors" href={social.line} target="_blank" rel="noreferrer">
+          <a
+            className="border border-foreground px-5 py-3 hover:bg-foreground hover:text-primary-foreground transition-colors"
+            href={social.line}
+            target="_blank"
+            rel="noreferrer"
+          >
             {t(ui.buttons.line)}
           </a>
           <span className="text-clay">{t(ui.buttons.inStore)}</span>

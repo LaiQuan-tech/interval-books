@@ -140,7 +140,8 @@ export async function listAdminProducts(
   if (filter.productType) query = query.eq("product_type", filter.productType);
   if (filter.vendorId) query = query.eq("vendor_id", filter.vendorId);
   if (filter.approvalStatus !== "all") query = query.eq("approval_status", filter.approvalStatus);
-  if (filter.activeStatus !== "all") query = query.eq("is_active", filter.activeStatus === "active");
+  if (filter.activeStatus !== "all")
+    query = query.eq("is_active", filter.activeStatus === "active");
   if (filter.priceChange === "pending") query = query.eq("price_change_status", "pending");
 
   if (filter.keyword) {
@@ -263,7 +264,12 @@ export async function saveProduct(input: SaveProductInput): Promise<{
   });
 
   if (error) throw new Error(speak(error.message, "商品儲存失敗，請再試一次"));
-  return data as { id: string; created: boolean; purchase_created: boolean; price_change_pending: boolean };
+  return data as {
+    id: string;
+    created: boolean;
+    purchase_created: boolean;
+    price_change_pending: boolean;
+  };
 }
 
 /**

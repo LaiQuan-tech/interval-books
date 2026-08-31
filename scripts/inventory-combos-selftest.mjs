@@ -93,9 +93,7 @@ function strip(sql) {
  * 而不是去修程式。
  */
 function stripTs(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 }
 
 function read(path) {
@@ -118,7 +116,11 @@ const MIG_DIR = join(ROOT, "supabase/migrations");
 const migFiles = readdirSync(MIG_DIR);
 for (let n = 1; n <= 17; n += 1) {
   const prefix = String(n).padStart(4, "0");
-  check(`migration ${prefix} 仍在`, migFiles.some((f) => f.startsWith(`${prefix}_`)), true);
+  check(
+    `migration ${prefix} 仍在`,
+    migFiles.some((f) => f.startsWith(`${prefix}_`)),
+    true,
+  );
 }
 // ⚠️ 這一條的作用是「下一期的人一定要回來看這支測試」。0019（廠商／PII 治理）
 // 加進來時它就是這樣把人叫回來的 —— 那一期改了 sales_product_id_fkey 與
@@ -127,12 +129,20 @@ for (let n = 1; n <= 17; n += 1) {
 // 0020（場次名額／逐位參加者）不碰套餐、二手書或 OCR bucket，所以這支測試的
 // 斷言全部原樣成立。它動的是 public.products 的名額欄位與 event_sessions 那兩張
 // 新表，由 event-registration-selftest 驗。
-check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
+check(
+  "0020 在（場次名額）",
+  migFiles.some((f) => f.startsWith("0020_")),
+  true,
+);
 // 0021（名單的遮罩 view、明文揭露與 CSV 匯出）同樣不碰套餐、二手書或 OCR bucket。
 // 逐條重讀過：它加了 inv.mask_email()（一支新的遮罩函式，沒有覆寫 inv.mask_tail），
 // 放寬了 pii_access_log 與 staff_permissions 的三條 CHECK，其餘全在 public 的
 // event_* 上。下面的斷言全部原樣成立。0021 自己的內容由 roster-csv-selftest 驗。
-check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
+check(
+  "0021 在（名單 PII）",
+  migFiles.some((f) => f.startsWith("0021_")),
+  true,
+);
 // 0022（交易信 outbox 與付款通知）第三次把人叫回來。逐條重讀過：它只新增
 // public.email_outbox 與 public.email_copy 兩張表、十二支 public.* 的函式，以及
 // 一段往 public.order_post_payment_log 補列的回填。**它一個 drop 都沒有，
@@ -141,16 +151,32 @@ check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), t
 // sales_product_id_fkey 與 combo_set_items_product_id_fkey 的 ON DELETE 行為全部
 // 沒有被碰到，所以下面關於套餐、二手書、OCR bucket 與清理順序的斷言原樣成立。
 // 0022 自己的內容由 notify-selftest 驗。
-check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_")), true);
+check(
+  "0022 在（交易信 outbox）",
+  migFiles.some((f) => f.startsWith("0022_")),
+  true,
+);
 // 0024 是黑貓 PAY 線上刷卡加的（見 supabase/migrations/0024_blackcat_payment.sql）。
 // 它沒有碰進銷存的任何一張表，所以這一支測試的其他斷言原樣成立。
-check("0024 在（黑貓 PAY 金流欄位）", migFiles.some((f) => f.startsWith("0024_")), true);
+check(
+  "0024 在（黑貓 PAY 金流欄位）",
+  migFiles.some((f) => f.startsWith("0024_")),
+  true,
+);
 // 0025_event_speaker.sql（活動掛講者：public.events.speaker_id -> public.artists.id）
 // 是這一期加的。它只在 public.events 上加一欄與一個索引，**inv 的任何一張表、
 // 任何一支函式都沒有被碰到**，也沒有任何 drop。下面的斷言全部原樣成立。
 // 0025 自己的內容由 artists-selftest 驗。
-check("0025 在（活動掛講者）", migFiles.some((f) => f.startsWith("0025_")), true);
-check("沒有多出 0026（0025 是最後一號）", migFiles.some((f) => f.startsWith("0026_")), false);
+check(
+  "0025 在（活動掛講者）",
+  migFiles.some((f) => f.startsWith("0025_")),
+  true,
+);
+check(
+  "沒有多出 0026（0025 是最後一號）",
+  migFiles.some((f) => f.startsWith("0026_")),
+  false,
+);
 
 const sql = read(MIG_0018);
 const exec = strip(sql);
@@ -170,10 +196,7 @@ console.log("\n[2] 二手書：收斂資料模型");
 // 0018 重寫了 update_stock_on_sale 與 rollback_fifo_cost。抓出它們在 0018 裡的
 // 函式本體（去掉註解）來驗——不能整檔搜，因為檔頭花了 20 行解釋那個死碼長什麼樣。
 function bodyOf(name) {
-  const re = new RegExp(
-    `create or replace function inv\\.${name}\\(\\)[\\s\\S]*?\\n\\$\\$;`,
-    "m",
-  );
+  const re = new RegExp(`create or replace function inv\\.${name}\\(\\)[\\s\\S]*?\\n\\$\\$;`, "m");
   const m = re.exec(exec);
   return m ? m[0] : "";
 }
@@ -348,10 +371,7 @@ checkTrue(
   /inv\.initial_approval_status\('combo_sets'\)/.test(saveFn),
 );
 checkTrue("同一件商品不可以在套餐裡出現兩次", /COMBO_DUP_ITEM/.test(saveFn));
-checkTrue(
-  "有銷售紀錄的套餐不可刪（要改成停用）",
-  /COMBO_HAS_SALES/.test(exec),
-);
+checkTrue("有銷售紀錄的套餐不可刪（要改成停用）", /COMBO_HAS_SALES/.test(exec));
 
 // -----------------------------------------------------------------------------
 // [5] 權限：inv 對 anon/authenticated 零 grant
@@ -372,7 +392,9 @@ for (const fn of NEW_FUNCS) {
   const esc = fn.replace(/\./g, "\\.");
   checkTrue(
     `${fn} 對 anon/authenticated revoke`,
-    new RegExp(`revoke execute on function ${esc}\\([^)]*\\) from anon, authenticated;`, "i").test(exec),
+    new RegExp(`revoke execute on function ${esc}\\([^)]*\\) from anon, authenticated;`, "i").test(
+      exec,
+    ),
   );
   checkTrue(
     `${fn} 只 grant 給 service_role`,
@@ -382,11 +404,25 @@ for (const fn of NEW_FUNCS) {
 
 const NEW_VIEWS = ["inv_admin_combo_sets", "inv_admin_combo_set_items", "inv_admin_combo_sales"];
 for (const v of NEW_VIEWS) {
-  checkTrue(`${v} 是 security_invoker = false`, new RegExp(`create view public\\.${v}\\s*\\n?with \\(security_invoker = false\\)`, "i").test(exec));
-  checkTrue(`${v} 對 anon/authenticated revoke all`, new RegExp(`revoke all on public\\.${v}\\s+from anon, authenticated;`, "i").test(exec));
-  checkTrue(`${v} 只 grant select 給 service_role`, new RegExp(`grant select on public\\.${v}\\s+to service_role;`, "i").test(exec));
+  checkTrue(
+    `${v} 是 security_invoker = false`,
+    new RegExp(`create view public\\.${v}\\s*\\n?with \\(security_invoker = false\\)`, "i").test(
+      exec,
+    ),
+  );
+  checkTrue(
+    `${v} 對 anon/authenticated revoke all`,
+    new RegExp(`revoke all on public\\.${v}\\s+from anon, authenticated;`, "i").test(exec),
+  );
+  checkTrue(
+    `${v} 只 grant select 給 service_role`,
+    new RegExp(`grant select on public\\.${v}\\s+to service_role;`, "i").test(exec),
+  );
   // create or replace view 不能改欄位名／順序，所以新 view 一律 drop + create
-  checkTrue(`${v} 是 drop + create（可以重跑）`, new RegExp(`drop view if exists public\\.${v} cascade;`, "i").test(exec));
+  checkTrue(
+    `${v} 是 drop + create（可以重跑）`,
+    new RegExp(`drop view if exists public\\.${v} cascade;`, "i").test(exec),
+  );
 }
 
 checkTrue(
@@ -408,17 +444,24 @@ const fnsCombo = stripTs(read(SRC_FNS_COMBO));
 const fnsOcr = stripTs(read(SRC_FNS_OCR));
 const repoCombo = stripTs(read(SRC_REPO_COMBO));
 
-checkTrue("套餐的 server fn 沒有一支漏掉 middleware", (() => {
-  const decls = fnsCombo.match(/createServerFn\(/g) ?? [];
-  const mws = fnsCombo.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? [];
-  return decls.length > 0 && decls.length === mws.length;
-})(), "每一支 createServerFn 都要 chain staffFnMiddleware()");
+checkTrue(
+  "套餐的 server fn 沒有一支漏掉 middleware",
+  (() => {
+    const decls = fnsCombo.match(/createServerFn\(/g) ?? [];
+    const mws = fnsCombo.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? [];
+    return decls.length > 0 && decls.length === mws.length;
+  })(),
+  "每一支 createServerFn 都要 chain staffFnMiddleware()",
+);
 
-checkTrue("OCR 的 server fn 也沒有一支漏掉 middleware", (() => {
-  const decls = fnsOcr.match(/createServerFn\(/g) ?? [];
-  const mws = fnsOcr.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? [];
-  return decls.length > 0 && decls.length === mws.length;
-})());
+checkTrue(
+  "OCR 的 server fn 也沒有一支漏掉 middleware",
+  (() => {
+    const decls = fnsOcr.match(/createServerFn\(/g) ?? [];
+    const mws = fnsOcr.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? [];
+    return decls.length > 0 && decls.length === mws.length;
+  })(),
+);
 
 checkTrue(
   "審核那一支另外查 approve_combo_sets（middleware 只擋到 staff）",
@@ -458,11 +501,15 @@ checkTrue("gemini.ts 是 server-only", /@tanstack\/react-start\/server-only/.tes
 checkTrue("金鑰從 src/server/env.ts 拿", /geminiApiKey\(\)/.test(gemini));
 checkTrue(
   "金鑰沒有 VITE_ 前綴（那會被 define 進瀏覽器 bundle）",
-  !/VITE_GEMINI/.test(envTs) && /process\.env\["?GEMINI_API_KEY"?\]|required\("GEMINI_API_KEY"\)/.test(envTs),
+  !/VITE_GEMINI/.test(envTs) &&
+    /process\.env\["?GEMINI_API_KEY"?\]|required\("GEMINI_API_KEY"\)/.test(envTs),
 );
 checkTrue("金鑰走 header 不走 query string（網址會進 log）", /"x-goog-api-key"/.test(gemini));
 checkTrue("沒有留著 Lovable AI Gateway 的位址", !/lovable/i.test(gemini));
-checkTrue("沒有建 edge function（這個專案一支都沒有）", !existsSync(join(ROOT, "supabase/functions")));
+checkTrue(
+  "沒有建 edge function（這個專案一支都沒有）",
+  !existsSync(join(ROOT, "supabase/functions")),
+);
 
 // 前端的每一個檔案都不可以自己打 Gemini
 const CLIENT_DIRS = ["src/components", "src/routes", "src/lib"];
@@ -479,7 +526,11 @@ function walk(dir) {
 for (const d of CLIENT_DIRS) walk(d);
 const clientStripped = stripTs(clientCode);
 
-checkTrue("前端不是空的（> 100000 字）", clientStripped.length > 100000, `實際 ${clientStripped.length} 字`);
+checkTrue(
+  "前端不是空的（> 100000 字）",
+  clientStripped.length > 100000,
+  `實際 ${clientStripped.length} 字`,
+);
 checkTrue(
   "前端沒有任何一處打 generativelanguage.googleapis.com",
   !/generativelanguage/.test(clientStripped),
@@ -501,8 +552,7 @@ checkTrue(
 );
 checkTrue(
   "OCR 圖走 signed URL，沒有 public URL（bucket 是私有的）",
-  /createSignedUrl/.test(storageTs) &&
-    !/object\/public\/\$\{OCR_SCANS_BUCKET\}/.test(storageTs),
+  /createSignedUrl/.test(storageTs) && !/object\/public\/\$\{OCR_SCANS_BUCKET\}/.test(storageTs),
 );
 checkTrue(
   "上傳一樣嗅 magic bytes，不信 file.type",
@@ -510,13 +560,22 @@ checkTrue(
 );
 
 // 降級到手動輸入：失敗要分得出種類，而且不 throw（前端才有辦法分開處理）
-checkTrue("辨識失敗有分類（quota/timeout/bad_response/no_content/service）", (() => {
-  return ["quota", "timeout", "bad_response", "no_content", "service"].every((k) =>
-    new RegExp(`"${k}"`).test(gemini),
-  );
-})());
-checkTrue("有逾時保護（AbortController）", /AbortController/.test(gemini) && /AbortError/.test(gemini));
-checkTrue("429 與 402/403 分開處理（來源把額度用完混成一句 500）", /=== 429/.test(gemini) && /=== 402/.test(gemini));
+checkTrue(
+  "辨識失敗有分類（quota/timeout/bad_response/no_content/service）",
+  (() => {
+    return ["quota", "timeout", "bad_response", "no_content", "service"].every((k) =>
+      new RegExp(`"${k}"`).test(gemini),
+    );
+  })(),
+);
+checkTrue(
+  "有逾時保護（AbortController）",
+  /AbortController/.test(gemini) && /AbortError/.test(gemini),
+);
+checkTrue(
+  "429 與 402/403 分開處理（來源把額度用完混成一句 500）",
+  /=== 429/.test(gemini) && /=== 402/.test(gemini),
+);
 checkTrue(
   "server fn 把辨識失敗收成 ok:false 而不是 throw（前端要分種類）",
   /ok:\s*false,\s*kind/.test(fnsOcr),
@@ -553,13 +612,22 @@ const comboComp = existsSync(join(ROOT, "src/components/inventory"))
       .map((f) => `src/components/inventory/${f}`)
   : [];
 const ROUTES = ["src/routes/admin/_shell.inventory-combos.tsx", "src/routes/admin/_shell.pos.tsx"];
-const ALL_NEW = [...newFrontFiles, ...comboComp, ...ROUTES].filter((f) => existsSync(join(ROOT, f)));
+const ALL_NEW = [...newFrontFiles, ...comboComp, ...ROUTES].filter((f) =>
+  existsSync(join(ROOT, f)),
+);
 
 checkTrue(`掃到 ${ALL_NEW.length} 個前端檔（> 8）`, ALL_NEW.length > 8);
 const frontCode = stripTs(ALL_NEW.map((f) => read(join(ROOT, f))).join("\n"));
-checkTrue("這批前端檔不是空的（> 20000 字）", frontCode.length > 20000, `實際 ${frontCode.length} 字`);
+checkTrue(
+  "這批前端檔不是空的（> 20000 字）",
+  frontCode.length > 20000,
+  `實際 ${frontCode.length} 字`,
+);
 
-checkTrue("沒有 react-query", !/@tanstack\/react-query|useQuery|useMutation|queryClient/.test(frontCode));
+checkTrue(
+  "沒有 react-query",
+  !/@tanstack\/react-query|useQuery|useMutation|queryClient/.test(frontCode),
+);
 checkTrue("沒有搬進 use-toast / toaster", !/use-toast|useToast|Toaster/.test(frontCode));
 checkTrue("LocalizedField 沒有出現（進銷存是單語 text）", !/LocalizedField/.test(frontCode));
 checkTrue("沒有 xlsx 的靜態 import", !/^import .*["']xlsx["']/m.test(frontCode));
@@ -567,7 +635,10 @@ checkTrue(
   "前端沒有直接碰 supabase",
   !/supabaseAdmin|createClient|@supabase\/supabase-js/.test(frontCode),
 );
-checkTrue("日期用 todayInTaipei 不是 toISOString", !/toISOString\(\)\.slice\(0,\s*10\)/.test(frontCode));
+checkTrue(
+  "日期用 todayInTaipei 不是 toISOString",
+  !/toISOString\(\)\.slice\(0,\s*10\)/.test(frontCode),
+);
 checkTrue(
   "前端沒有自己算分攤後直接送金額（amount/cost_price 不在 payload 裡）",
   !/amount:\s*[^,}\n]+,[\s\S]{0,80}(comboCheckout|secondhandCheckout)/.test(frontCode),
@@ -773,7 +844,11 @@ if (!TOKEN) {
     check("營收加總 = 組合價 160", Number(m.get("營收加總")), 160);
     check("一份套餐寫三列", Number(m.get("列數")), 3);
     check("沒有任何一列是零營收（寄賣才拆得到帳）", Number(m.get("零營收列數")), 0);
-    check("unit_price × 數量 = amount，一列都沒有例外", Number(m.get("unit_price*qty≠amount 的列數")), 0);
+    check(
+      "unit_price × 數量 = amount，一列都沒有例外",
+      Number(m.get("unit_price*qty≠amount 的列數")),
+      0,
+    );
     check("三件庫存各扣 1", m.get("庫存"), "99/99/99");
     check("三個 FIFO 批次各吃 1", m.get("FIFO 剩餘"), "99/99/99");
     check("逐列成本走 FIFO trigger（10/5/2）", m.get("逐列成本"), "10.00/5.00/2.00");
@@ -968,7 +1043,12 @@ if (!TOKEN) {
     const deadlocks = results.filter((r) => !r.ok && /deadlock/i.test(String(r.error))).length;
     const errors = results.filter((r) => !r.ok).length;
     check("8 個同時打的套餐結帳，死鎖 0 次", deadlocks, 0);
-    check("8 個同時打的套餐結帳，失敗 0 次", errors, 0, JSON.stringify(results.find((r) => !r.ok)?.error ?? "").slice(0, 200));
+    check(
+      "8 個同時打的套餐結帳，失敗 0 次",
+      errors,
+      0,
+      JSON.stringify(results.find((r) => !r.ok)?.error ?? "").slice(0, 200),
+    );
 
     // 帳要對得起來：X 賣 1+4、Y 賣 1+4，兩件商品各再扣 10
     const after = await q(`

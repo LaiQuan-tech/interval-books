@@ -344,8 +344,8 @@ function AdminProductsPage() {
               {deleteTarget && isBookableType(deleteTarget.product_type) ? (
                 <span className="mt-2 block font-medium text-destructive">
                   這是活動類商品。刪除會連帶刪掉它的所有場次——只要任何一個場次有人
-                  報名或下過單，資料庫會擋下整筆刪除（場次與訂單明細之間是
-                  on delete restrict）。請先到「活動報名」處理那些場次。
+                  報名或下過單，資料庫會擋下整筆刪除（場次與訂單明細之間是 on delete
+                  restrict）。請先到「活動報名」處理那些場次。
                 </span>
               ) : null}
             </AlertDialogDescription>

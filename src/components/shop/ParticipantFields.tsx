@@ -30,13 +30,7 @@
 import { useFormContext } from "react-hook-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import {
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useT } from "@/i18n/LanguageContext";
 import type { Localized } from "@/i18n/types";
 import type { CheckoutFormValues } from "@/lib/checkout";
@@ -104,7 +98,10 @@ export function ParticipantFields({
       {Array.from({ length: count }, (_, offset) => {
         const i = startIndex + offset;
         return (
-          <div key={i} className="space-y-4 border-t border-border pt-5 first:border-t-0 first:pt-0">
+          <div
+            key={i}
+            className="space-y-4 border-t border-border pt-5 first:border-t-0 first:pt-0"
+          >
             <p className="eyebrow text-xs text-muted-foreground">
               {t(COPY.seatLabel).replace("{n}", String(offset + 1))}
             </p>
@@ -131,12 +128,7 @@ export function ParticipantFields({
                   <FormItem>
                     <FormLabel>{t(COPY.email)}</FormLabel>
                     <FormControl>
-                      <Input
-                        type="email"
-                        {...field}
-                        value={field.value ?? ""}
-                        autoComplete="off"
-                      />
+                      <Input type="email" {...field} value={field.value ?? ""} autoComplete="off" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

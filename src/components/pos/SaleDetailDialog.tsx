@@ -34,7 +34,9 @@ export function SaleDetailDialog({ sale, onOpenChange }: Props) {
         {sale ? (
           <>
             <DialogHeader>
-              <DialogTitle className="pr-6 text-base">{sale.product_name ?? "（無品名）"}</DialogTitle>
+              <DialogTitle className="pr-6 text-base">
+                {sale.product_name ?? "（無品名）"}
+              </DialogTitle>
               <DialogDescription>
                 {sale.sale_date}
                 {sale.created_at
@@ -44,7 +46,10 @@ export function SaleDetailDialog({ sale, onOpenChange }: Props) {
             </DialogHeader>
 
             <div className="flex flex-wrap gap-1.5">
-              <Badge variant={sale.channel === "online" ? "default" : "secondary"} className="font-normal">
+              <Badge
+                variant={sale.channel === "online" ? "default" : "secondary"}
+                className="font-normal"
+              >
                 {sale.channel === "online" ? "網站訂單" : "門市"}
               </Badge>
               {sale.override_reservation ? (

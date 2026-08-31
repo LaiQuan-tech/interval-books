@@ -63,7 +63,9 @@ function isMissingSpeakerColumn(error: { code?: string; message?: string } | nul
  * 「每一個 Supabase 錯誤都要拋，絕不吞掉」，fallback 不可以變成吞錯誤的破口。
  */
 async function selectEvents<T>(
-  run: (cols: string) => PromiseLike<{ data: T; error: { code?: string; message?: string } | null }>,
+  run: (
+    cols: string,
+  ) => PromiseLike<{ data: T; error: { code?: string; message?: string } | null }>,
 ): Promise<{ data: T; error: { code?: string; message?: string } | null }> {
   const first = await run(speakerColumnPresent === false ? COLUMNS_BASE : COLUMNS);
   if (isMissingSpeakerColumn(first.error)) {

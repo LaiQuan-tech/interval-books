@@ -217,11 +217,7 @@ check("🔴 外鍵那一句本身沒有 cascade", /cascade/i.test(fkClause), fal
 
 // 這一條是這一期最重要的一條。cascade 的意思是「刪一位講者連帶刪掉他講過的
 // 每一場活動」，而那些活動底下掛著 event_registrations（0020）與 orders（0005）。
-check(
-  "0025 全檔沒有出現 on delete cascade",
-  /on\s+delete\s+cascade/i.test(sql0025),
-  false,
-);
+check("0025 全檔沒有出現 on delete cascade", /on\s+delete\s+cascade/i.test(sql0025), false);
 checkTrue(
   "外鍵有具名（events_speaker_id_fkey），才能被查詢與被這支測試驗到",
   sql0025.includes("events_speaker_id_fkey"),
@@ -250,8 +246,14 @@ check(
   /add\s+column\s+if\s+not\s+exists\s+speaker_id[^;]*references/i.test(sql0025),
   false,
 );
-checkTrue("包在 begin; / commit; 裡", /^\s*begin;/im.test(sql0025) && /^\s*commit;/im.test(sql0025));
-checkTrue("有 comment on column", /comment\s+on\s+column\s+public\.events\.speaker_id/i.test(sql0025));
+checkTrue(
+  "包在 begin; / commit; 裡",
+  /^\s*begin;/im.test(sql0025) && /^\s*commit;/im.test(sql0025),
+);
+checkTrue(
+  "有 comment on column",
+  /comment\s+on\s+column\s+public\.events\.speaker_id/i.test(sql0025),
+);
 
 // =============================================================================
 // [4] 🔴 vendor_id 不在講者後台的任何一條可編輯路徑上
@@ -278,20 +280,26 @@ checkTrue("upsertArtist 的 payload 切得出來", payloadSrc.length > 0);
 check("upsertArtist 送出的 payload 沒有 vendor_id", payloadSrc.includes("vendor_id"), false);
 // payload 少一個 key 不只是「不寫」，還順帶保住既有綁定：PostgREST 的 upsert 只
 // 對 payload 出現過的欄位產生 on conflict do update set。
-checkTrue("upsertArtist 仍然寫得到 is_active / sort_order（＝不是整包都沒送）", payloadSrc.includes("is_active") && payloadSrc.includes("sort_order"));
+checkTrue(
+  "upsertArtist 仍然寫得到 is_active / sort_order（＝不是整包都沒送）",
+  payloadSrc.includes("is_active") && payloadSrc.includes("sort_order"),
+);
 
 check(
   "講者後台沒有 vendor_id 的 <FormField>",
   formFieldBlock(routeSrc, "vendor_id").length > 0,
   false,
 );
-check("講者後台沒有 name=\"vendor_id\" 的輸入框", routeSrc.includes('name="vendor_id"'), false);
+check('講者後台沒有 name="vendor_id" 的輸入框', routeSrc.includes('name="vendor_id"'), false);
 // 反過來也要驗：它**有**唯讀顯示。少了這一條，把整段刪掉也會通過上面每一條。
 checkTrue("講者後台仍然唯讀顯示綁定狀態（讀 vendor_id 但不寫）", routeSrc.includes("vendor_id"));
 
 // server fn 那一層：inputValidator 掛的是 artistSchema，所以就算有人直接
 // POST /_serverFn/… 塞 vendor_id，zod 也會把它剝掉。
-checkTrue("upsertArtist 的 inputValidator 是 artistSchema", fnsSrc.includes("inputValidator(artistSchema)"));
+checkTrue(
+  "upsertArtist 的 inputValidator 是 artistSchema",
+  fnsSrc.includes("inputValidator(artistSchema)"),
+);
 check("artists 的 server fn 檔案裡沒有 vendor_id", fnsSrc.includes("vendor_id"), false);
 checkTrue(
   "artists 的每一支 server fn 都掛 adminFnMiddleware",
@@ -308,15 +316,17 @@ const SINGLE_LANG_FIELDS = ["bio", "long_bio", "discipline", "name", "name_en"];
 
 for (const f of SINGLE_LANG_FIELDS) {
   // schema：欄位型別必須是 z.string()，絕不可以是 localizedSchema。
-  const line = artistSchemaSrc
-    .split("\n")
-    .find((l) => new RegExp(`^\\s*${f}\\s*:`).test(l));
+  const line = artistSchemaSrc.split("\n").find((l) => new RegExp(`^\\s*${f}\\s*:`).test(l));
   checkTrue(`artistSchema 有 ${f} 這一欄`, Boolean(line));
   check(`artistSchema.${f} 不是 localizedSchema`, (line ?? "").includes("localizedSchema"), false);
   checkTrue(`artistSchema.${f} 是 z.string()`, (line ?? "").includes("z.string()"));
 }
 
-check("artistSchema 整段沒有出現 localizedSchema", artistSchemaSrc.includes("localizedSchema"), false);
+check(
+  "artistSchema 整段沒有出現 localizedSchema",
+  artistSchemaSrc.includes("localizedSchema"),
+  false,
+);
 
 // UI：整頁不可以 import 或使用 <LocalizedField>。那個元件讀寫的是 `${name}.zh`
 // 這種路徑，套在字串欄位上會把 "王小明" 寫成 {zh: …} 塞進一個 text 欄位。
@@ -332,22 +342,26 @@ for (const f of ["bio", "long_bio", "discipline"]) {
 }
 
 // repo 的型別必須說出「這是字串」。寫成 Localized 就是這一整條防線的破口。
-checkTrue("repo 的 ArtistRow 把 bio 宣告成 string | null", /bio:\s*string\s*\|\s*null/.test(repoSrc));
+checkTrue(
+  "repo 的 ArtistRow 把 bio 宣告成 string | null",
+  /bio:\s*string\s*\|\s*null/.test(repoSrc),
+);
 checkTrue(
   "repo 的 ArtistRow 把 long_bio 宣告成 string | null",
   /long_bio:\s*string\s*\|\s*null/.test(repoSrc),
 );
-check("repo 沒有 import Localized 型別", /import\s+type\s*\{\s*Localized\s*\}/.test(repoSrc), false);
+check(
+  "repo 沒有 import Localized 型別",
+  /import\s+type\s*\{\s*Localized\s*\}/.test(repoSrc),
+  false,
+);
 
 // 自動翻譯：人名與單語 bio 都不該被機器翻譯。
 check("講者後台沒有接自動翻譯", routeSrc.includes("translate"), false);
 
 // UI 要**明講**哪些欄位不分語言 —— 型別擋得住程式碼寫錯，擋不住店家以為自己
 // 填的是中文版。這一條驗的是那句話真的在畫面上。
-checkTrue(
-  "講者後台有寫出「不分語言」的欄位說明",
-  routeSrcRaw.includes("不分語言"),
-);
+checkTrue("講者後台有寫出「不分語言」的欄位說明", routeSrcRaw.includes("不分語言"));
 checkTrue(
   "那句說明有講清楚三種語系會顯示同一份內容",
   /三種語系都會顯示同一份內容/.test(routeSrcRaw),
@@ -368,17 +382,16 @@ checkTrue("speaker_id 的選項是 <SelectItem>", speakerField.includes("<Select
 check("speaker_id 沒有 <Input>（＝不是自由輸入）", speakerField.includes("<Input"), false);
 check("speaker_id 沒有 <Textarea>", speakerField.includes("<Textarea"), false);
 checkTrue("選項來自 artists 清單", speakerField.includes("artists.map("));
-checkTrue(
-  "活動後台的選項來源是 listArtistOptions",
-  eventsRouteSrc.includes("listArtistOptions"),
-);
+checkTrue("活動後台的選項來源是 listArtistOptions", eventsRouteSrc.includes("listArtistOptions"));
 checkTrue("可以留空（有「不指定」這個選項）", speakerField.includes("不指定"));
 
 // Radix 的 SelectItem 不接受 value=""，所以「不指定」要用哨兵值再換回 null。
 checkTrue("空值用哨兵值換回 null", /NO_SPEAKER\s*\?\s*null\s*:/.test(eventsRouteSrc));
 
 // 選項排序與過濾：依 sort_order、只列 is_active，但要保留這一場目前掛著的那位。
-const artistsRepoOptions = repoSrc.slice(repoSrc.indexOf("export async function listArtistOptions"));
+const artistsRepoOptions = repoSrc.slice(
+  repoSrc.indexOf("export async function listArtistOptions"),
+);
 checkTrue(
   "listArtistOptions 依 sort_order 排序",
   /order\("sort_order"/.test(artistsRepoOptions.slice(0, 800)),
@@ -390,15 +403,24 @@ checkTrue(
 
 // events repo 要真的把這一欄讀出來、寫回去。
 const eventsRepoSrc = stripTs(readFile(join(ROOT, "src/server/repos/events.ts")));
-checkTrue("events repo 的 COLUMNS 有 speaker_id", /COLUMNS\s*=\s*[\s\S]{0,400}speaker_id/.test(eventsRepoSrc));
-checkTrue("events repo 的 EventRow 有 speaker_id", /speaker_id:\s*string\s*\|\s*null/.test(eventsRepoSrc));
+checkTrue(
+  "events repo 的 COLUMNS 有 speaker_id",
+  /COLUMNS\s*=\s*[\s\S]{0,400}speaker_id/.test(eventsRepoSrc),
+);
+checkTrue(
+  "events repo 的 EventRow 有 speaker_id",
+  /speaker_id:\s*string\s*\|\s*null/.test(eventsRepoSrc),
+);
 checkTrue(
   "events repo 把空字串寫回 NULL（空字串不是合法的 artists.id）",
   /speaker_id\s*=\s*input\.speaker_id\s*&&\s*input\.speaker_id\.trim\(\)\s*\?\s*input\.speaker_id\.trim\(\)\s*:\s*null/.test(
     eventsRepoSrc,
   ),
 );
-checkTrue("eventSchema 有 speaker_id", schemaBlock(schemasSrc, "eventSchema").includes("speaker_id"));
+checkTrue(
+  "eventSchema 有 speaker_id",
+  schemaBlock(schemasSrc, "eventSchema").includes("speaker_id"),
+);
 
 // ---- 🔴 0025 還沒套上 live DB 時的降級路徑 ---------------------------------
 // 這一整組是**過渡程式碼的護欄**。0025 套上正式庫、確認 speaker_id 存在之後，
@@ -446,7 +468,8 @@ console.log("\n[7] 側欄分組");
 
 const shellSrc = stripTs(readFile(join(ROOT, "src/routes/admin/_shell.tsx")));
 const navStart = shellSrc.indexOf("const NAV_GROUPS");
-const navSrc = navStart === -1 ? "" : shellSrc.slice(navStart, shellSrc.indexOf("] as const;", navStart));
+const navSrc =
+  navStart === -1 ? "" : shellSrc.slice(navStart, shellSrc.indexOf("] as const;", navStart));
 
 checkTrue("NAV_GROUPS 切得出來", navSrc.length > 0);
 checkTrue("側欄有 /admin/artists 這一項", navSrc.includes('to: "/admin/artists"'));
@@ -679,7 +702,9 @@ if (!PG_URL) {
     );
     check(
       "活動的其他欄位沒有被動到",
-      String(one(await must(`select display_date from public.events where id='${E1}'`))?.display_date),
+      String(
+        one(await must(`select display_date from public.events where id='${E1}'`))?.display_date,
+      ),
       "2026.01.01",
     );
 
@@ -699,13 +724,15 @@ if (!PG_URL) {
       `insert into public.artists (id, slug, name, sort_order, is_active)
        values ('${A}-dup', '${A}-dup', '不撞號的講者', 902, true)`,
     );
-    checkTrue("換一個不重複的 slug 就存得進去", okSlug.ok, okSlug.ok ? "" : okSlug.error.slice(0, 200));
+    checkTrue(
+      "換一個不重複的 slug 就存得進去",
+      okSlug.ok,
+      okSlug.ok ? "" : okSlug.error.slice(0, 200),
+    );
 
     // ---- 掛一個不存在的講者 ------------------------------------------------
     console.log("\n[13] speaker_id 只能是真的存在的講者");
-    const badFk = await q(
-      `update public.events set speaker_id='這個講者不存在' where id='${E1}'`,
-    );
+    const badFk = await q(`update public.events set speaker_id='這個講者不存在' where id='${E1}'`);
     checkTrue(
       "掛不存在的講者會被擋下，而且是 23503（外鍵違反）",
       !badFk.ok && /23503|violates foreign key/.test(badFk.error),
@@ -755,12 +782,20 @@ if (!PG_URL) {
     checkTrue("測試資料清乾淨", cleanup.ok, cleanup.ok ? "" : cleanup.error.slice(0, 300));
     check(
       "沒有殘留的 artists",
-      num(await q(`select count(*)::int n from public.artists where id like 'artistselftest-%'`).then((r) => r.rows)),
+      num(
+        await q(`select count(*)::int n from public.artists where id like 'artistselftest-%'`).then(
+          (r) => r.rows,
+        ),
+      ),
       0,
     );
     check(
       "沒有殘留的 events",
-      num(await q(`select count(*)::int n from public.events where id like 'artistselftest-%'`).then((r) => r.rows)),
+      num(
+        await q(`select count(*)::int n from public.events where id like 'artistselftest-%'`).then(
+          (r) => r.rows,
+        ),
+      ),
       0,
     );
   }

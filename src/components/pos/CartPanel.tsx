@@ -132,7 +132,10 @@ export function CartPanel({ lines, onQuantityChange, onPriceChange, onRemove, di
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
-                <Badge variant={over ? "destructive" : "secondary"} className="font-normal tabular-nums">
+                <Badge
+                  variant={over ? "destructive" : "secondary"}
+                  className="font-normal tabular-nums"
+                >
                   可售 {p.available}
                 </Badge>
                 {discounted ? (

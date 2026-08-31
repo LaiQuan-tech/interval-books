@@ -119,14 +119,17 @@ export const DEFAULT_INVOICE_CHOICE: InvoiceChoice = {
   loveCode: null,
 };
 
-export type InvoiceChoiceInput = {
-  type?: string | null;
-  taxId?: string | null;
-  companyTitle?: string | null;
-  carrierType?: string | null;
-  carrierNumber?: string | null;
-  loveCode?: string | null;
-} | null | undefined;
+export type InvoiceChoiceInput =
+  | {
+      type?: string | null;
+      taxId?: string | null;
+      companyTitle?: string | null;
+      carrierType?: string | null;
+      carrierNumber?: string | null;
+      loveCode?: string | null;
+    }
+  | null
+  | undefined;
 
 /**
  * 把表單（或一個被改過的 payload）收斂成「這三種開法之一，而且只帶得動自己那組欄位」。

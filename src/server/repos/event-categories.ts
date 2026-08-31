@@ -55,7 +55,9 @@ export async function getEventCategoryById(id: string): Promise<EventCategoryRow
   return (data as EventCategoryRow | null) ?? null;
 }
 
-export async function upsertEventCategory(input: EventCategoryUpsertInput): Promise<EventCategoryRow> {
+export async function upsertEventCategory(
+  input: EventCategoryUpsertInput,
+): Promise<EventCategoryRow> {
   const { data, error } = await supabaseAdmin()
     .from("event_categories")
     .upsert(

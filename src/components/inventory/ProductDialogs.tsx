@@ -20,11 +20,7 @@ import { ExcelImportDialog } from "@/components/inventory/ExcelImportDialog";
 import { PriceChangeDialog } from "@/components/inventory/PriceChangeDialog";
 import { ProductDetailDialog } from "@/components/inventory/ProductDetailDialog";
 import { ProductFormDialog } from "@/components/inventory/ProductFormDialog";
-import type {
-  AdminCategory,
-  AdminProductRow,
-  AdminVendor,
-} from "@/server/repos/inv-products";
+import type { AdminCategory, AdminProductRow, AdminVendor } from "@/server/repos/inv-products";
 
 type Props = {
   categories: AdminCategory[];
@@ -60,12 +56,29 @@ type Props = {
 
 export function ProductDialogs(props: Props) {
   const {
-    categories, vendors, baseProducts, productApprovalOn, priceApprovalOn, refresh,
-    formOpen, setFormOpen, editing, setEditing,
-    detail, setDetail, pricing, setPricing,
-    deleting, setDeleting, onConfirmDelete,
-    importOpen, setImportOpen,
-    batchUpdateOpen, setBatchUpdateOpen, selectedIds, onBatchUpdated,
+    categories,
+    vendors,
+    baseProducts,
+    productApprovalOn,
+    priceApprovalOn,
+    refresh,
+    formOpen,
+    setFormOpen,
+    editing,
+    setEditing,
+    detail,
+    setDetail,
+    pricing,
+    setPricing,
+    deleting,
+    setDeleting,
+    onConfirmDelete,
+    importOpen,
+    setImportOpen,
+    batchUpdateOpen,
+    setBatchUpdateOpen,
+    selectedIds,
+    onBatchUpdated,
   } = props;
 
   return (

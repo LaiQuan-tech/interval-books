@@ -8,7 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -27,10 +34,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { collaborationSchema, type CollaborationFormValues } from "@/lib/admin/schemas";
-import { listCollaborations, removeCollaboration, upsertCollaboration } from "@/lib/admin/fns/collaborations";
+import {
+  listCollaborations,
+  removeCollaboration,
+  upsertCollaboration,
+} from "@/lib/admin/fns/collaborations";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type CollaborationRow = Awaited<ReturnType<typeof listCollaborations>>[number];
@@ -126,7 +144,9 @@ function AdminCollaborationsPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium">合作</h1>
-          <p className="mt-1 text-sm text-muted-foreground">共 {collaborations.length} 個合作夥伴</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            共 {collaborations.length} 個合作夥伴
+          </p>
         </div>
         <Button onClick={openCreate} className="gap-1.5">
           <Plus className="h-4 w-4" />
@@ -205,7 +225,10 @@ function AdminCollaborationsPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確定要刪除這個合作夥伴嗎？</AlertDialogTitle>
@@ -239,7 +262,12 @@ type CollaborationFormProps = {
   submitLabel: string;
 };
 
-function CollaborationForm({ defaultValues, onSubmit, submitting, submitLabel }: CollaborationFormProps) {
+function CollaborationForm({
+  defaultValues,
+  onSubmit,
+  submitting,
+  submitLabel,
+}: CollaborationFormProps) {
   const form = useForm<CollaborationFormValues>({
     resolver: zodResolver(collaborationSchema),
     defaultValues,
@@ -265,7 +293,9 @@ function CollaborationForm({ defaultValues, onSubmit, submitting, submitLabel }:
                     ref={field.ref}
                     onBlur={field.onBlur}
                     value={field.value}
-                    onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                    onChange={(e) =>
+                      field.onChange(e.target.value === "" ? 0 : Number(e.target.value))
+                    }
                   />
                 </FormControl>
                 <FormMessage />
@@ -283,7 +313,9 @@ function CollaborationForm({ defaultValues, onSubmit, submitting, submitLabel }:
                   <FormControl>
                     <Switch checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
-                  <span className="text-sm text-muted-foreground">{field.value ? "已發布" : "草稿"}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {field.value ? "已發布" : "草稿"}
+                  </span>
                 </div>
                 <FormMessage />
               </FormItem>

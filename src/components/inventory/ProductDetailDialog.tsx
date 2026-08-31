@@ -66,8 +66,9 @@ export function ProductDetailDialog({ open, onOpenChange, product, onEdit }: Pro
               </Badge>
             ) : null}
             <Badge variant="outline" className="font-normal">
-              {INV_PRODUCT_TYPE_LABELS[product.product_type as keyof typeof INV_PRODUCT_TYPE_LABELS] ??
-                product.product_type}
+              {INV_PRODUCT_TYPE_LABELS[
+                product.product_type as keyof typeof INV_PRODUCT_TYPE_LABELS
+              ] ?? product.product_type}
             </Badge>
             <ApprovalStatusBadge status={product.approval_status} />
             <PriceChangeBadge
@@ -122,7 +123,9 @@ export function ProductDetailDialog({ open, onOpenChange, product, onEdit }: Pro
             <Separator />
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">備註</p>
-              <p className="whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm">{product.notes}</p>
+              <p className="whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm">
+                {product.notes}
+              </p>
             </div>
           </>
         ) : null}
@@ -157,9 +160,7 @@ export function ProductDetailDialog({ open, onOpenChange, product, onEdit }: Pro
               </p>
             </>
           ) : (
-            <p className="text-muted-foreground">
-              沒有掛在店面型錄上。這件商品只在櫃檯賣得到。
-            </p>
+            <p className="text-muted-foreground">沒有掛在店面型錄上。這件商品只在櫃檯賣得到。</p>
           )}
         </div>
 
