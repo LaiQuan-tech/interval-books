@@ -394,9 +394,50 @@ checkTrue("events repo 的 COLUMNS 有 speaker_id", /COLUMNS\s*=\s*[\s\S]{0,400}
 checkTrue("events repo 的 EventRow 有 speaker_id", /speaker_id:\s*string\s*\|\s*null/.test(eventsRepoSrc));
 checkTrue(
   "events repo 把空字串寫回 NULL（空字串不是合法的 artists.id）",
-  /speaker_id:\s*input\.speaker_id\s*&&\s*input\.speaker_id\.trim\(\)/.test(eventsRepoSrc),
+  /speaker_id\s*=\s*input\.speaker_id\s*&&\s*input\.speaker_id\.trim\(\)\s*\?\s*input\.speaker_id\.trim\(\)\s*:\s*null/.test(
+    eventsRepoSrc,
+  ),
 );
 checkTrue("eventSchema 有 speaker_id", schemaBlock(schemasSrc, "eventSchema").includes("speaker_id"));
+
+// ---- 🔴 0025 還沒套上 live DB 時的降級路徑 ---------------------------------
+// 這一整組是**過渡程式碼的護欄**。0025 套上正式庫、確認 speaker_id 存在之後，
+// events.ts 那五樣與這一整組斷言要一起刪掉——留著半套（刪了程式碼卻留著斷言，
+// 或反過來）比兩樣都在更糟。
+//
+// ⚠️ 用**原始檔**不是 stripTs 過的：要守的東西本身就是註解，stripTs 會把它吃掉。
+const eventsRepoRaw = readFile(join(ROOT, "src/server/repos/events.ts"));
+
+checkTrue(
+  "COLUMNS_BASE 不含 speaker_id（缺欄位時要問的那一串）",
+  /COLUMNS_BASE\s*=\s*COLUMNS\.replace\(\s*["']\s*speaker_id,["']\s*,\s*["']{2}\s*\)/.test(
+    eventsRepoSrc,
+  ),
+);
+checkTrue(
+  "降級旗標預設是 null（= 先當成「有」去問，所以 migration 一落地就自動恢復，不必重新部署）",
+  /let\s+speakerColumnPresent[^=]*=\s*null/.test(eventsRepoSrc),
+);
+checkTrue(
+  "🔴 只有「code 對 **且** 訊息指名 speaker_id」才算缺欄位——fallback 不可以變成吞掉任意錯誤的破口",
+  /error\.code\s*!==\s*["']42703["']\s*&&\s*error\.code\s*!==\s*["']PGRST204["']/.test(
+    eventsRepoSrc,
+  ) && /\(error\.message\s*\?\?\s*["']{2}\)\.includes\(["']speaker_id["']\)/.test(eventsRepoSrc),
+);
+checkTrue(
+  "只在 isMissingSpeakerColumn 為真時重試一次，其餘錯誤原樣往上拋",
+  /if\s*\(isMissingSpeakerColumn\(first\.error\)\)\s*\{[\s\S]{0,160}?return\s+await\s+run\(COLUMNS_BASE\)/.test(
+    eventsRepoSrc,
+  ),
+);
+checkTrue(
+  "缺欄位時 upsert 的 payload 也要拿掉 speaker_id（不然 PostgREST 回 PGRST204）",
+  /if\s*\(cols\s*===\s*COLUMNS_BASE\)\s*\{\s*delete\s+payload\.speaker_id/.test(eventsRepoSrc),
+);
+checkTrue(
+  "檔頭標明這是過渡程式碼並列出要刪的東西（沒有這段，未來沒人知道可以刪）",
+  eventsRepoRaw.includes("過渡程式碼") && eventsRepoRaw.includes("speakerColumnPresent"),
+);
 
 // =============================================================================
 // [7] 側欄：講者放在「內容管理」，不是「進銷存」
