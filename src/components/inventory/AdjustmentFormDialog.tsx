@@ -11,7 +11,7 @@
  * ⚠️ 商品清單走 server 端搜尋（listStockCountProducts 的 keyword），不是整表載進來。
  */
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle, Loader2, Save } from "lucide-react";
+import { CheckCircle, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,31 +22,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  ADJUSTMENT_CATEGORY_OPTIONS,
-  ADJUSTMENT_REASON_OPTIONS,
-} from "@/lib/admin/inv-adjustment-labels";
+import { AdjustmentFormFields } from "@/components/inventory/AdjustmentFormFields";
 import { todayInTaipei } from "@/lib/admin/inv-product-utils";
 import {
   invAdjustmentSchema,
-  INV_PRODUCT_TYPE_LABELS,
   type InvAdjustmentCategory,
   type InvAdjustmentReason,
 } from "@/lib/admin/schemas";
 import type { StockCountProductRow } from "@/server/repos/inv-adjustments";
-
-/** Radix Select 不接受空字串當 SelectItem 的 value，所以「不指定」用這個哨兵值。 */
-const NONE = "__none__";
 
 type Props = {
   open: boolean;
@@ -105,10 +88,6 @@ export function AdjustmentFormDialog({ open, onOpenChange, approvalOn, onSaved }
     };
   }, [open, keyword]);
 
-  const selected = products.find((p) => p.inv_product_id === productId) ?? null;
-  const qty = quantity.trim() === "" ? null : Number(quantity);
-  const after = selected && qty !== null && !Number.isNaN(qty) ? selected.stock_quantity + qty : null;
-
   async function save(submit: boolean) {
     const parsed = invAdjustmentSchema.safeParse({
       product_id: productId,
@@ -158,119 +137,23 @@ export function AdjustmentFormDialog({ open, onOpenChange, approvalOn, onSaved }
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="adjf-date">異動日期</Label>
-            <Input
-              id="adjf-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>異動類別</Label>
-            <Select value={category} onValueChange={(v) => setCategory(v as InvAdjustmentCategory)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ADJUSTMENT_CATEGORY_OPTIONS.map((o) => (
-                  <SelectItem key={o.code} value={o.code}>
-                    {o.label}
-                    <span className="ml-2 text-xs text-muted-foreground">— {o.description}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="adjf-search">商品</Label>
-          <Input
-            id="adjf-search"
-            placeholder="先搜尋：商品名稱、期數、系列、條碼"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-          />
-          <Select value={productId} onValueChange={setProductId}>
-            <SelectTrigger>
-              <SelectValue placeholder="從搜尋結果裡選一件商品" />
-            </SelectTrigger>
-            <SelectContent>
-              {products.map((p) => (
-                <SelectItem key={p.inv_product_id} value={p.inv_product_id}>
-                  {p.name}
-                  {p.issue_number ? ` #${p.issue_number}` : ""}（庫存 {p.stock_quantity}）
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selected ? (
-            <p className="text-xs text-muted-foreground">
-              現有庫存 {selected.stock_quantity} 件・
-              {INV_PRODUCT_TYPE_LABELS[selected.product_type as keyof typeof INV_PRODUCT_TYPE_LABELS] ??
-                selected.product_type}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="adjf-qty">異動數量</Label>
-            <Input
-              id="adjf-qty"
-              type="number"
-              step={1}
-              placeholder="負值＝扣帳，正值＝回補"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>原因（選填）</Label>
-            <Select
-              value={reason ?? NONE}
-              onValueChange={(v) => setReason(v === NONE ? null : (v as InvAdjustmentReason))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>不指定</SelectItem>
-                {ADJUSTMENT_REASON_OPTIONS.map((o) => (
-                  <SelectItem key={o.code} value={o.code}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {after !== null && after < 0 ? (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
-            <span>
-              注意：異動後庫存將為負值（{after}）。這張單還是可以送出 —— 帳做平比擋住重要，
-              但請確認數量沒有打錯。
-            </span>
-          </div>
-        ) : null}
-
-        <div className="space-y-1.5">
-          <Label htmlFor="adjf-notes">備註</Label>
-          <Textarea
-            id="adjf-notes"
-            rows={2}
-            placeholder="補充說明（選填）"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
+        <AdjustmentFormFields
+          date={date}
+          setDate={setDate}
+          category={category}
+          setCategory={setCategory}
+          keyword={keyword}
+          setKeyword={setKeyword}
+          products={products}
+          productId={productId}
+          setProductId={setProductId}
+          quantity={quantity}
+          setQuantity={setQuantity}
+          reason={reason}
+          setReason={setReason}
+          notes={notes}
+          setNotes={setNotes}
+        />
 
         <DialogFooter>
           <Button
@@ -279,7 +162,11 @@ export function AdjustmentFormDialog({ open, onOpenChange, approvalOn, onSaved }
             disabled={saving !== null}
             onClick={() => void save(false)}
           >
-            {saving === "draft" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving === "draft" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
             存為草稿
           </Button>
           <Button className="gap-1.5" disabled={saving !== null} onClick={() => void save(true)}>

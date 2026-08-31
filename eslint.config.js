@@ -77,27 +77,4 @@ export default tseslint.config(
     },
   },
   eslintPluginPrettier,
-  {
-    // ── 這三個檔案暫時不套 prettier 排版 ──────────────────────────────────
-    // 它們原本是 300 / 297 / 298 行，而 inventory-adjustments-selftest 有一條
-    // 硬規則：這批檔案每個都必須 ≤ 300 行（理由寫在那支測試裡 —— 來源 5,500 行
-    // 拆成小檔之後，沒有這條線它會慢慢長回 1,597 行）。
-    //
-    // 這三個檔案各有 12～20 行超過 printWidth 100，prettier 折行之後會變成
-    // 307 / 303 / 311 行，剛好越過那條線。也就是說「排版正確」與「檔案夠小」
-    // 目前無法同時成立 —— 真正的原因是這三個檔案本來就太大，只是先前靠著
-    // 一堆過長的行把行數壓在 300 以內。
-    //
-    // 兩個看似可行的解法都不對：把上限調高等於把那條防線拆掉；為了排版去拆檔
-    // 則是重構，不屬於這一期。所以先只關掉 prettier 這一條規則（其餘規則照常
-    // 檢查，檔案仍在 lint 覆蓋範圍內），並把債留在這裡。
-    //
-    // 後續：把這三個檔案各自拆小，然後刪掉這個區塊 —— 不要改上面那條 300 行。
-    files: [
-      "src/routes/admin/_shell.inventory-count.tsx",
-      "src/components/inventory/AdjustmentFormDialog.tsx",
-      "src/components/inventory/BatchStockCountDialog.tsx",
-    ],
-    rules: { "prettier/prettier": "off" },
-  },
 );

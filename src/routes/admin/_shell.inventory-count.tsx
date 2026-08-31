@@ -17,39 +17,18 @@
  */
 import { useCallback, useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { ClipboardCheck, ClipboardList, History, Loader2, Package, Search } from "lucide-react";
+import { ClipboardCheck, ClipboardList, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { BatchStockCountDialog } from "@/components/inventory/BatchStockCountDialog";
 import { ProductPagination } from "@/components/inventory/ProductPagination";
 import { StockCountDialog } from "@/components/inventory/StockCountDialog";
+import { StockCountFilterBar, type CountFilter } from "@/components/inventory/StockCountFilterBar";
+import { StockCountSummaryCards } from "@/components/inventory/StockCountSummaryCards";
 import { RecentStockCounts, StockCountTable } from "@/components/inventory/StockCountTable";
 import { isApprovalRequired } from "@/lib/admin/inv-product-utils";
-import { INV_PRODUCT_TYPES, INV_PRODUCT_TYPE_LABELS } from "@/lib/admin/schemas";
 import type { StockCountProductRow } from "@/server/repos/inv-adjustments";
-
-/** Radix Select 不接受空字串當 value，所以「全部」用這個哨兵值。 */
-const ALL = "__all__";
-
-type CountFilter = {
-  keyword: string | null;
-  categoryId: string | null;
-  productType: (typeof INV_PRODUCT_TYPES)[number] | null;
-  lowStockOnly: boolean;
-  page: number;
-  pageSize: number;
-};
 
 const DEFAULT_FILTER: CountFilter = {
   keyword: null,
@@ -94,21 +73,6 @@ export const Route = createFileRoute("/admin/_shell/inventory-count")({
   component: InventoryCountPage,
 });
 
-type StatProps = { label: string; value: string; hint?: string; icon: typeof Package };
-
-function StatCard({ label, value, hint, icon: Icon }: StatProps) {
-  return (
-    <div className="flex items-center gap-3 rounded-md border border-border p-4">
-      <Icon className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div className="min-w-0">
-        <p className="truncate text-xs text-muted-foreground">{label}</p>
-        <p className="text-lg font-medium tabular-nums">{value}</p>
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      </div>
-    </div>
-  );
-}
-
 function InventoryCountPage() {
   const { page: initialPage, options, summary, recent } = Route.useLoaderData();
   const router = useRouter();
@@ -121,8 +85,6 @@ function InventoryCountPage() {
 
   // 只拿來寫提示文字。真正的 status 是資料庫算的。
   const countApprovalOn = isApprovalRequired(options.approvalSettings, "stock_adjustments");
-  const adj = summary.ADJ ?? { count: 0, quantity: 0, cost: 0 };
-  const adjCost = `NT$ ${Math.round(adj.cost).toLocaleString("zh-TW")}`;
 
   const reload = useCallback(async (next: CountFilter) => {
     setLoading(true);
@@ -177,84 +139,14 @@ function InventoryCountPage() {
         系統用送出當下的庫存算 —— 對話框開著的期間櫃檯照樣可以賣，算差異的時機因此不能在瀏覽器。
       </p>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="商品總數" value={data.total.toLocaleString("zh-TW")} icon={Package} />
-        <StatCard label="盤點紀錄" value={`${adj.count} 筆`} hint="已確認的才算" icon={History} />
-        <StatCard label="調整件數" value={`${adj.quantity} 件`} hint="盤虧＋盤盈" icon={ClipboardCheck} />
-        <StatCard label="調整成本" value={adjCost} icon={ClipboardList} />
-      </div>
+      <StockCountSummaryCards total={data.total} summary={summary} />
 
-      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border p-4">
-        <div className="min-w-56 flex-1 space-y-1.5">
-          <Label htmlFor="count-search" className="text-xs">
-            搜尋
-          </Label>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="count-search"
-              className="pl-8"
-              placeholder="商品名稱、期數、系列、條碼"
-              value={filter.keyword ?? ""}
-              disabled={loading}
-              onChange={(e) => changeFilter({ keyword: e.target.value.trim() === "" ? null : e.target.value })}
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">分類</Label>
-          <Select
-            value={filter.categoryId ?? ALL}
-            disabled={loading}
-            onValueChange={(v) => changeFilter({ categoryId: v === ALL ? null : v })}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>全部分類</SelectItem>
-              {options.categories.map((c) => (
-                <SelectItem key={c.category_id} value={c.category_id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">類型</Label>
-          <Select
-            value={filter.productType ?? ALL}
-            disabled={loading}
-            onValueChange={(v) =>
-              changeFilter({ productType: v === ALL ? null : (v as CountFilter["productType"]) })
-            }
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>全部類型</SelectItem>
-              {INV_PRODUCT_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {INV_PRODUCT_TYPE_LABELS[t]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <label className="flex h-9 items-center gap-2 text-sm">
-          <Checkbox
-            checked={filter.lowStockOnly}
-            disabled={loading}
-            onCheckedChange={(v) => changeFilter({ lowStockOnly: v === true })}
-          />
-          只看低庫存
-        </label>
-      </div>
+      <StockCountFilterBar
+        value={filter}
+        disabled={loading}
+        categories={options.categories}
+        onFilterChange={changeFilter}
+      />
 
       {loading ? (
         <div className="flex h-40 items-center justify-center rounded-md border border-border">

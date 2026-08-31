@@ -11,7 +11,6 @@ import { useEffect, useState } from "react";
 import { ClipboardList, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -22,15 +21,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  BatchStockCountTable,
+  type BatchCountPicked,
+} from "@/components/inventory/BatchStockCountTable";
 import { ReasonSelect } from "@/components/inventory/StockCountDialog";
 import { todayInTaipei } from "@/lib/admin/inv-product-utils";
 import { stockCountSchema, type InvAdjustmentReason } from "@/lib/admin/schemas";
@@ -51,7 +46,7 @@ export function BatchStockCountDialog({ open, onOpenChange, approvalOn, onDone }
    * key 存在 = 已勾選。連 row 一起存**不是**多此一舉：清單會隨著搜尋字串換掉，
    * 只存 id 的話「勾了 A、再搜尋 B」會讓 A 靜默地不被送出。
    */
-  const [picked, setPicked] = useState<Record<string, { row: StockCountProductRow; value: string }>>({});
+  const [picked, setPicked] = useState<BatchCountPicked>({});
   const [reason, setReason] = useState<InvAdjustmentReason>("count_error");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -122,7 +117,11 @@ export function BatchStockCountDialog({ open, onOpenChange, approvalOn, onDone }
   async function submit() {
     const parsed = stockCountSchema.safeParse({
       rows: filled.map((e) => ({ product_id: e.row.inv_product_id, actual_quantity: e.actual })),
-      options: { reason, notes: notes.trim() === "" ? null : notes, adjustment_date: todayInTaipei() },
+      options: {
+        reason,
+        notes: notes.trim() === "" ? null : notes,
+        adjustment_date: todayInTaipei(),
+      },
     });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "請檢查輸入的盤點數量");
@@ -177,85 +176,18 @@ export function BatchStockCountDialog({ open, onOpenChange, approvalOn, onDone }
           />
         </div>
 
-        <div className="max-h-72 overflow-y-auto rounded-md border border-border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10" />
-                <TableHead className="min-w-48">商品</TableHead>
-                <TableHead className="w-24 text-right">帳面庫存</TableHead>
-                <TableHead className="w-32 text-right">實際數量</TableHead>
-                <TableHead className="w-28 text-right">預估差異</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading || rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                    {loading ? "載入中…" : "沒有找到符合的商品"}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                rows.map((row) => {
-                  const raw = picked[row.inv_product_id]?.value;
-                  const checked = row.inv_product_id in picked;
-                  const actual = raw !== undefined && raw.trim() !== "" ? Number(raw) : null;
-                  const diff =
-                    actual === null || Number.isNaN(actual) ? null : actual - row.stock_quantity;
-                  return (
-                    <TableRow key={row.inv_product_id} className={checked ? "bg-muted/30" : undefined}>
-                      <TableCell>
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={() => toggle(row)}
-                          aria-label={`選取 ${row.name}`}
-                        />
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {row.name}
-                        {row.issue_number ? (
-                          <span className="text-muted-foreground"> #{row.issue_number}</span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{row.stock_quantity}</TableCell>
-                      <TableCell className="text-right">
-                        <Input
-                          type="number"
-                          min={0}
-                          step={1}
-                          className="ml-auto h-8 w-24 text-right"
-                          placeholder="輸入數量"
-                          disabled={!checked}
-                          value={raw ?? ""}
-                          onChange={(e) => setValue(row.inv_product_id, e.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {diff === null || diff === 0 ? (
-                          <span className="text-muted-foreground">—</span>
-                        ) : (
-                          <span
-                            className={
-                              diff < 0 ? "font-medium text-destructive" : "font-medium text-emerald-700"
-                            }
-                          >
-                            {diff > 0 ? "+" : ""}
-                            {diff}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
+        <BatchStockCountTable
+          rows={rows}
+          loading={loading}
+          picked={picked}
+          onToggle={toggle}
+          onValueChange={setValue}
+        />
 
         <div className="flex flex-wrap gap-4 rounded-md bg-muted/30 p-3 text-sm text-muted-foreground">
           <span>
-            已勾選 <strong className="text-foreground">{Object.keys(picked).length}</strong> 件・待送出{" "}
-            <strong className="text-foreground">{filled.length}</strong> 件
+            已勾選 <strong className="text-foreground">{Object.keys(picked).length}</strong>{" "}
+            件・待送出 <strong className="text-foreground">{filled.length}</strong> 件
           </span>
           {shrinkage.length > 0 ? (
             <span className="text-destructive">
