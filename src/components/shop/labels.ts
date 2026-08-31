@@ -14,6 +14,19 @@
 import type { Localized } from "@/i18n/types";
 import type { ShopProductType } from "@/lib/shop";
 
+/**
+ * 「尚餘名額」，後面接一個數字。
+ *
+ * 住在這裡而不是任何一邊的檔案裡，是因為 /shop/$slug 有兩個地方用到同一句：商品
+ * 層級的名額徽章（路由自己畫）與每一張場次卡片上的剩餘（SessionPicker 畫）。同一
+ * 句話兩份字面值，遲早會有人只改到其中一份。
+ *
+ * ⚠️ /shop 列表頁的同名文案是**另一份**，走 cms.ts 的 p.block("seatsLeft", …)，
+ *    後台可以覆寫。那一份不要併進來 —— 併了就等於把列表頁的可覆寫文案偷偷變成
+ *    寫死的。
+ */
+export const SEATS_LEFT_LABEL: Localized = { zh: "尚餘名額", en: "Places left", ja: "残り枠" };
+
 /** Display labels for products.product_type. */
 export const PRODUCT_TYPE_LABELS: Record<ShopProductType, Localized> = {
   goods: { zh: "選物", en: "Goods", ja: "セレクト品" },

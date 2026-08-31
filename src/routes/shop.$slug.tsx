@@ -3,7 +3,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
-import { PRODUCT_TYPE_LABELS } from "@/components/shop/labels";
+import { PRODUCT_TYPE_LABELS, SEATS_LEFT_LABEL } from "@/components/shop/labels";
+import { SessionPicker } from "@/components/shop/SessionPicker";
 import { PriceTag, QuantityStepper, StockBadge } from "@/components/shop/ShopBits";
 import { useT } from "@/i18n/LanguageContext";
 import type { Localized } from "@/i18n/types";
@@ -42,14 +43,8 @@ const PAGE = {
   remaining: { zh: "尚有庫存", en: "In stock", ja: "在庫あり" },
   remainingCount: { zh: "僅剩", en: "Only", ja: "残り" },
   remainingUnit: { zh: "件", en: "left", ja: "点" },
-  seatsLeft: { zh: "尚餘名額", en: "Places left", ja: "残り枠" },
-  chooseSession: { zh: "選擇場次", en: "Choose a sitting", ja: "回を選ぶ" },
-  sessionFull: { zh: "已額滿", en: "Full", ja: "満席" },
-  noSessions: {
-    zh: "目前沒有開放報名的場次。歡迎來信詢問下一次的時間。",
-    en: "No sittings are open for booking right now. Write to us and we will let you know the next one.",
-    ja: "現在お申し込みいただける回はありません。次回の日程についてはお問い合わせください。",
-  },
+  // 「尚餘名額」在 @/components/shop/labels，因為 SessionPicker 也用同一句；
+  // 場次選擇器自己的三句文案（選擇場次／已額滿／目前沒有開放報名的場次）跟著元件走。
   pickSessionFirst: {
     zh: "請先選擇場次",
     en: "Please choose a sitting first",
@@ -217,12 +212,12 @@ function ProductDetail() {
             ) : remaining <= 5 ? (
               <StockBadge tone="alert">
                 {isBooking
-                  ? `${t(PAGE.seatsLeft)} ${remaining}`
+                  ? `${t(SEATS_LEFT_LABEL)} ${remaining}`
                   : `${t(PAGE.remainingCount)} ${remaining} ${t(PAGE.remainingUnit)}`}
               </StockBadge>
             ) : (
               <StockBadge>
-                {isBooking ? `${t(PAGE.seatsLeft)} ${remaining}` : t(PAGE.remaining)}
+                {isBooking ? `${t(SEATS_LEFT_LABEL)} ${remaining}` : t(PAGE.remaining)}
               </StockBadge>
             )}
           </div>
@@ -232,47 +227,16 @@ function ProductDetail() {
           {/* 場次選擇。只有活動／策旅會渲染，而且**先於**數量選擇 —— 上限是選中
               那一場的剩餘，所以順序反過來會讓數量先被一個還沒決定的上限夾住。 */}
           {isBooking ? (
-            product.sessions.length === 0 ? (
-              <p className="mb-8 text-sm leading-relaxed text-muted-foreground">
-                {t(PAGE.noSessions)}
-              </p>
-            ) : (
-              <fieldset className="mb-8 space-y-3">
-                <legend className="eyebrow text-xl">{t(PAGE.chooseSession)}</legend>
-                {product.sessions.map((session) => {
-                  const left = remainingForSession(session);
-                  const full = left <= 0;
-                  const selected = session.id === sessionId;
-                  return (
-                    <button
-                      key={session.id}
-                      type="button"
-                      disabled={full}
-                      aria-pressed={selected}
-                      onClick={() => {
-                        setSessionId(session.id);
-                        // 換場次就把數量收回 1：舊的數量可能超過新場次的剩餘，
-                        // 而 clampToLimit 只在加入購物車那一刻才作用。
-                        setQty(1);
-                      }}
-                      className={`block w-full border p-4 text-left transition-colors ${
-                        selected ? "border-foreground" : "border-border hover:border-foreground/50"
-                      } ${full ? "cursor-not-allowed opacity-50" : ""}`}
-                    >
-                      <span className="block text-sm">{t(session.title)}</span>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        {formatSessionWhen(session.startsAt)}
-                        {" ・ "}
-                        {t(session.location)}
-                      </span>
-                      <span className="mt-2 block text-xs text-muted-foreground">
-                        {full ? t(PAGE.sessionFull) : `${t(PAGE.seatsLeft)} ${left}`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </fieldset>
-            )
+            <SessionPicker
+              sessions={product.sessions}
+              selectedId={sessionId}
+              onSelect={(id) => {
+                setSessionId(id);
+                // 換場次就把數量收回 1：舊的數量可能超過新場次的剩餘，
+                // 而 clampToLimit 只在加入購物車那一刻才作用。
+                setQty(1);
+              }}
+            />
           ) : null}
 
           {soldOut ? (
@@ -320,17 +284,6 @@ function ProductDetail() {
       </section>
     </PageShell>
   );
-}
-
-/**
- * 場次時間。用瀏覽器的時區與語系無關的固定格式：這個頁面是三語的，而
- * `toLocaleString` 會在三種語系之間給出三種長度差很多的字串，把卡片撐歪。
- */
-function formatSessionWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function BackLink({ label }: { label: string }) {

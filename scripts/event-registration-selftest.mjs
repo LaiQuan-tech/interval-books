@@ -496,6 +496,114 @@ checkTrue("releaseSeats 在 deleteOrder 之前", releaseIdx < deleteIdx);
 checkTrue("下單前的名額預檢讀場次", /session\.seats_taken \+ line\.quantity > session\.capacity/.test(ordersTs));
 check("預檢不再讀 p.seats_taken", /p\.seats_taken \+ line\.quantity/.test(ordersTs), false);
 
+// --- 場次選擇器抽成共用元件 ---------------------------------------------------
+//
+// /shop/$slug 的場次選擇器搬到了 src/components/shop/SessionPicker.tsx，因為之後的
+// 活動詳情頁要用同一個。抽元件最典型的失敗不是「抽壞了」，是**抽完忘了刪**：兩份
+// 一模一樣的 JSX 各自被改一次，然後商品頁與活動頁對同一場活動顯示不同的剩餘名額。
+// 所以這裡守的是「只有一份」，不只是「新的那一份存在」。
+//
+// ⚠️ 全部走 stripTs()。這個 repo 的檔頭與行內註解都很長，而路由檔裡就有一行註解
+//    寫著「場次選擇器自己的三句文案（選擇場次／已額滿／…）」—— 不 strip 的話，
+//    下面每一條「不可以出現 X」都會被那行註解餵飽。
+const slugRouteTsx = readFile(join(ROOT, "src/routes/shop.$slug.tsx"));
+const pickerTsx = readFile(join(ROOT, "src/components/shop/SessionPicker.tsx"));
+const shopLabelsTs = readFile(join(ROOT, "src/components/shop/labels.ts"));
+const slugRouteCode = stripTs(slugRouteTsx);
+const pickerCode = stripTs(pickerTsx);
+
+checkTrue("反空殼：shop.$slug.tsx 讀得到", slugRouteCode.length > 3000);
+checkTrue("反空殼：SessionPicker.tsx 讀得到", pickerCode.length > 800);
+
+// 路由確實換上了元件。
+checkTrue(
+  "shop.$slug.tsx import 了 SessionPicker",
+  /import \{ SessionPicker \} from "@\/components\/shop\/SessionPicker";/.test(slugRouteCode),
+);
+checkTrue(
+  "shop.$slug.tsx 真的把它渲染出來（不是只 import）",
+  /<SessionPicker\b/.test(slugRouteCode),
+);
+checkTrue(
+  "只有 isBooking 才渲染場次選擇器",
+  /\{isBooking \? \(\s*<SessionPicker\b/.test(slugRouteCode),
+);
+
+// 抽完要刪乾淨 —— 原本那段 inline JSX 一個標籤都不可以留在路由裡。
+check("路由沒有殘留 <fieldset>", /<fieldset/.test(slugRouteCode), false);
+check("路由沒有殘留 <legend>", /<legend/.test(slugRouteCode), false);
+check("路由沒有殘留 aria-pressed 的場次按鈕", /aria-pressed/.test(slugRouteCode), false);
+check("路由沒有殘留 sessions.map", /sessions\.map\(/.test(slugRouteCode), false);
+// formatSessionWhen 也是搬走、不是複製 —— 兩份日期格式就是兩種顯示。
+check(
+  "路由不再自己定義 formatSessionWhen",
+  /function formatSessionWhen/.test(slugRouteCode),
+  false,
+);
+checkTrue(
+  "SessionPicker 持有唯一那一份 formatSessionWhen",
+  /function formatSessionWhen/.test(pickerCode),
+);
+
+// 元件不可以自己重算剩餘名額。remainingForSession() 同時是購物車行的上限與
+// orders.ts 預檢的依據，第二份實作遲早會跟它們長歪。
+checkTrue(
+  "SessionPicker 從 @/lib/shop import remainingForSession",
+  /import \{ remainingForSession, type ShopSession \} from "@\/lib\/shop";/.test(pickerCode),
+);
+checkTrue(
+  "SessionPicker 真的呼叫 remainingForSession",
+  /remainingForSession\(session\)/.test(pickerCode),
+);
+check(
+  "SessionPicker 沒有自己碰 capacity／seatsTaken",
+  /capacity|seatsTaken/.test(pickerCode),
+  false,
+);
+check(
+  "SessionPicker 沒有自己複製 ShopSession 型別",
+  /type ShopSession = \{/.test(pickerCode),
+  false,
+);
+
+// 選中的是哪一場由呼叫端持有 —— 那個 id 同時決定數量上限（remaining）與加入購物車
+// 時帶的 selectedSession，藏進元件裡的話外面就得再想辦法問回來。
+check("SessionPicker 不自己持有選中狀態（沒有 useState）", /useState/.test(pickerCode), false);
+checkTrue("selectedId 由 props 傳入", /selectedId: string \| null;/.test(pickerCode));
+
+// 行為不可以變的三件事。
+checkTrue("額滿的場次仍然不能點", /disabled=\{full\}/.test(pickerCode));
+checkTrue(
+  "沒有場次時仍然顯示 noSessions 而不是空白",
+  /sessions\.length === 0/.test(pickerCode) && /COPY\.noSessions/.test(pickerCode),
+);
+checkTrue(
+  "換場次仍然把數量收回 1",
+  /onSelect=\{\(id\) => \{\s*setSessionId\(id\);\s*setQty\(1\);\s*\}\}/.test(slugRouteCode),
+);
+
+// 「必須先選場次才能加入購物車」的守衛 —— 這條沒了就會送出 sessionId 為 null 的
+// 活動訂單。
+checkTrue(
+  "加入購物車前仍擋沒選場次",
+  /if \(isBooking && !selectedSession\) \{\s*toast\.error\(t\(PAGE\.pickSessionFirst\)\);\s*return;\s*\}/.test(
+    slugRouteCode,
+  ),
+);
+
+// 「尚餘名額」商品頁徽章與場次卡片共用同一份，不是各寫各的。
+checkTrue(
+  "labels.ts 匯出 SEATS_LEFT_LABEL",
+  /export const SEATS_LEFT_LABEL: Localized = \{ zh: "尚餘名額"/.test(stripTs(shopLabelsTs)),
+);
+checkTrue("路由的名額徽章改用共用那一份", /t\(SEATS_LEFT_LABEL\)/.test(slugRouteCode));
+checkTrue("SessionPicker 也用共用那一份", /t\(SEATS_LEFT_LABEL\)/.test(pickerCode));
+check(
+  "沒有第二份寫死的「尚餘名額」字面值",
+  /"尚餘名額"/.test(slugRouteCode) || /"尚餘名額"/.test(pickerCode),
+  false,
+);
+
 // --- log 紀律：不可以印整包 error ---------------------------------------------
 // PostgREST 會把 Postgres 的 `DETAIL: Failing row contains (…)` 一路傳回來，
 // 對 event_registrations 來說那一行就是某個人的姓名與電話。
