@@ -1032,6 +1032,43 @@ export const OCR_FAILURE_KINDS = [
 export type OcrFailureKindValue = (typeof OCR_FAILURE_KINDS)[number];
 
 // ---------------------------------------------------------------------------
+// 三語欄位的自動翻譯
+// ---------------------------------------------------------------------------
+// ⚠️ 只收一段中文，不收欄位名、不收語言選項、不收 model 名稱。要翻成哪兩種語言是
+//    這個網站的事實（jsonb 的 zh/en/ja 三個 key），不是瀏覽器可以指定的參數；模型
+//    更是只能從 GEMINI_TRANSLATE_MODEL 來，讓 client 送等於讓人挑一個貴的來燒額度。
+
+export const translateSchema = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(1, "請先填中文，再按自動翻譯")
+    // 與 src/server/translate.ts 的 MAX_INPUT_CHARS 同一個數字。這裡擋在進門，
+    // 那裡再切一次 —— 兩層都留著，因為 server fn 不是唯一可能的呼叫端。
+    .max(2000, "文字太長，請分段翻譯"),
+});
+
+export type TranslateValues = z.infer<typeof translateSchema>;
+
+/**
+ * 翻譯失敗的分類。與 src/server/translate.ts 的 TranslateFailureKind 逐字對齊。
+ *
+ * ⚠️ **刻意不共用 OCR_FAILURE_KINDS**，雖然現在兩邊剛好是同五個字。它們對到的是
+ *    兩組完全不同的畫面文案（辨識失敗說「重拍」，翻譯失敗說「自己填英日文」），
+ *    共用一個陣列的意思是「哪天其中一邊要多一種 kind，另一邊的 UI 會跟著多出一個
+ *    沒有人寫過文案的分支」。
+ */
+export const TRANSLATE_FAILURE_KINDS = [
+  "quota",
+  "timeout",
+  "bad_response",
+  "no_content",
+  "service",
+] as const;
+
+export type TranslateFailureKindValue = (typeof TRANSLATE_FAILURE_KINDS)[number];
+
+// ---------------------------------------------------------------------------
 // 廠商（0019）
 // ---------------------------------------------------------------------------
 // ⚠️ 這裡沒有 approval_status、approved_by、created_by、vendor_code，而且不會有。

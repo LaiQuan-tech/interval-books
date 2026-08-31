@@ -68,3 +68,23 @@ export function geminiApiKey(): string {
 export function geminiOcrModel(): string {
   return process.env.GEMINI_OCR_MODEL || "gemini-3.5-flash";
 }
+
+/**
+ * 後台三語欄位「自動翻譯」用的模型（src/server/translate.ts）。
+ *
+ * ⚠️ **刻意不共用 `GEMINI_OCR_MODEL`。** 兩件事的失敗長得完全不一樣 —— 辨識爛掉是
+ *    店員重拍一張，翻譯爛掉是十支後台表單同時填不出英日文。共用一個變數的意思是
+ *    「為了調辨識品質而動的那一下，會順手改掉翻譯」，而那個副作用不會有人預期到。
+ *    一個旋鈕管一件事。
+ *
+ * ⚠️ 預設值同樣是 `gemini-3.5-flash`，理由與 geminiOcrModel() 一樣：`gemini-2.5-flash`
+ *    對新申請的金鑰已經 404（"no longer available to new users"），而且**它仍然留在
+ *    models.list 的回傳裡** —— 不能靠列表判斷可不可用，只有真的打一次才知道。
+ *
+ * ⚠️ 3.5-flash 預設會「思考」，而思考的 token 算在 maxOutputTokens 裡面。翻譯不需要
+ *    推理，所以 translate.ts 一律送 thinkingConfig.thinkingBudget = 0。那一條規則在
+ *    程式碼那一側，這裡只決定打哪一個模型。
+ */
+export function geminiTranslateModel(): string {
+  return process.env.GEMINI_TRANSLATE_MODEL || "gemini-3.5-flash";
+}
