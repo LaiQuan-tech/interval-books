@@ -16,11 +16,23 @@
  *
  *   1. 名單頁需要場次列表才畫得出來。一個被授權看簽到表的人，如果連「有哪幾場」
  *      都讀不到，那個權限等於沒發。
- *   2. 場次本身**已經是公開資訊**：0020 §1 給了 anon `select`（policy 是
- *      status='open' 且商品已上架），因為「這個梯次還剩幾個位子」本來就印在前台
- *      商品頁上。放寬讀取沒有多送出任何一個原本看不到的欄位。
- *   3. 名額的**寫入**仍然只有 admin 與那三支 SQL 函式碰得到，所以「誰能改名額」
+ *   2. 名額的**寫入**仍然只有 admin 與那三支 SQL 函式碰得到，所以「誰能改名額」
  *      一個字都沒變。
+ *
+ * ⚠️ **這個放寬確實多送出了一點東西，不要說它沒有。**
+ *
+ *    這兩支的過濾條件比 anon 寬：`listEventSessions()` 回**全部**場次（含
+ *    `status='closed'`），而 anon 的 policy 是 `status='open'` 且商品已上架；
+ *    `listBookableProducts()` 回**全部** status 的 event／journey 商品（那支 repo
+ *    自己的註解就寫著 "Every status, not just active"，因為場次通常要在商品上架
+ *    之前就先建好），而 anon 只看得到 `status='active'`。
+ *
+ *    所以拿到 event.roster.read 的人會看到「還沒公開的活動叫什麼名字、預計開幾
+ *    梯」。判斷是：這些人是店主明確授權去現場點名的內部同事，而洩漏面是**未上架
+ *    活動的標題**，不是任何人的個資 —— 可以接受。但如果哪天這個權限要發給更外圍
+ *    的人（工讀生、場地方、講師），這一段就是要重讀的地方：那時候正確的做法是把
+ *    `listBookableProducts` 收回 adminFnMiddleware（建場次的下拉選單本來就只有
+ *    admin 會用），畫面上的商品名稱改由場次自己帶。
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";

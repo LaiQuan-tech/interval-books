@@ -492,25 +492,52 @@ if (csvMod) {
   check("含換行要包引號", csvCell("第一行\n第二行"), '"第一行\n第二行"');
 
   // ── 紀律 2：forceText，而且**不可以**同時加單引號 ──────────────────────
-  check("forceText 包成 =\"…\"", csvCell("0912345678", { forceText: true }), '="0912345678"');
+  //
+  // ⚠️ forceText 的輸出一定含有引號，所以它一定會再走一次 CSV 引號包裝：
+  //    `="0912345678"` → `"=""0912345678"""`。第一版**跳過了那一步**（直接
+  //    return），那個 bug 見下面「欄位切不開」那一段。
+  check(
+    'forceText 包成 ="…" 並且整格再被 CSV 引號包住',
+    csvCell("0912345678", { forceText: true }),
+    '"=""0912345678"""',
+  );
   check("forceText 保留開頭的 0", csvCell("0912345678", { forceText: true }).includes("0912"), true);
   check(
     "訂單編號 forceText",
     csvCell("IB-202600000001", { forceText: true }),
-    '="IB-202600000001"',
+    '"=""IB-202600000001"""',
   );
   // ⚠️ 快樂手 csv.ts:30-33 特別註解過的那個坑：兩個一起用，單引號會在儲存格裡
   //    看得見。這一條就是守著它。
   check(
     "forceText 不會再加公式前綴的單引號",
     csvCell("=1+1", { forceText: true }),
-    '="=1+1"',
+    '"=""=1+1"""',
     "兩個一起用會變成 =\"'=1+1\"，那個單引號在儲存格裡看得見",
   );
   check(
     "forceText 的內容有引號時 escape 成兩個",
     csvCell('a"b', { forceText: true }),
-    '="a""b"',
+    '"=""a""""b"""',
+  );
+
+  // ── 紀律 2b：forceText 的欄位切不開 ────────────────────────────────────
+  //
+  // ⚠️ **這一段是補洞的。** 第一版的 forceText 分支直接 `return`，沒有走引號包裝，
+  //    於是值裡的 `,` 或 CRLF 會把欄位／整列切開 —— 而切開後的下一格以 `=` 開頭，
+  //    公式照樣執行。也就是「擋公式」這條紀律在**唯一一個使用者真的控制得了的
+  //    forceText 欄位（電話）**上完全失效。
+  //
+  //    當初沒抓到，是因為 CSV 段一個「值含 , 或 CRLF」的 case 都沒有。所以這裡
+  //    補的不只是斷言，是那一類輸入。
+  checkTrue(
+    "forceText 含逗號時整格被引號包住",
+    csvCell("0900000000,=1+1", { forceText: true }).startsWith('"') &&
+      csvCell("0900000000,=1+1", { forceText: true }).endsWith('"'),
+  );
+  checkTrue(
+    "forceText 含 CRLF 時整格被引號包住",
+    csvCell("0900000000\r\n=1+1", { forceText: true }).startsWith('"'),
   );
 
   // ── 紀律 3：BOM 與 CRLF ────────────────────────────────────────────────
@@ -566,9 +593,140 @@ if (rosterCsvMod) {
       ROSTER_CSV_COLUMNS,
     );
     checkTrue("端到端：惡意姓名在輸出裡被前置單引號", line.includes(`"'=HYPERLINK(`));
-    checkTrue("端到端：電話保留開頭的 0", line.includes('="0912345678"'));
-    checkTrue("端到端：訂單編號強制文字", line.includes('="IB-202600000001"'));
+    checkTrue("端到端：電話保留開頭的 0", line.includes('0912345678'));
+    checkTrue("端到端：訂單編號強制文字", line.includes('IB-202600000001'));
     check("端到端：沒有裸的 =HYPERLINK", /,=HYPERLINK/.test(line), false);
+
+    // ── 端到端：用嚴格的 RFC 4180 解析器回頭讀自己的輸出 ────────────────
+    //
+    // ⚠️ **這一段才是真正守住 CSV injection 的東西**，前面那些 includes() 只看得到
+    //    「字串裡有沒有出現某個片段」。injection 的本質是**欄位邊界被切開**，而
+    //    那件事只有真的解析一次才看得見 —— 第一版的 bug 就是這樣溜過去的：
+    //    `="0900000000,=1+1"` 這個字串裡確實含有 `0900000000`，includes() 全綠，
+    //    但解析出來是 8 欄而不是 7 欄，第 4 格是 `=1+1"`。
+    //
+    // 解析器刻意寫成嚴格版：引號只有在**欄位的第一個字元**才是包裝符。Excel 就是
+    //    這樣做的，而寬鬆的解析器會把上面那個 bug 讀成「一切正常」。
+    const parseCsv = (text) => {
+      const rows = [];
+      let row = [];
+      let cur = "";
+      let i = 0;
+      let quoted = false;
+      let atFieldStart = true;
+      while (i < text.length) {
+        const ch = text[i];
+        if (atFieldStart && ch === '"') {
+          quoted = true;
+          atFieldStart = false;
+          i += 1;
+          continue;
+        }
+        atFieldStart = false;
+        if (quoted) {
+          if (ch === '"') {
+            if (text[i + 1] === '"') {
+              cur += '"';
+              i += 2;
+              continue;
+            }
+            quoted = false;
+            i += 1;
+            continue;
+          }
+          cur += ch;
+          i += 1;
+          continue;
+        }
+        if (ch === ",") {
+          row.push(cur);
+          cur = "";
+          atFieldStart = true;
+          i += 1;
+          continue;
+        }
+        if (ch === "\r" && text[i + 1] === "\n") {
+          row.push(cur);
+          rows.push(row);
+          row = [];
+          cur = "";
+          atFieldStart = true;
+          i += 2;
+          continue;
+        }
+        cur += ch;
+        i += 1;
+      }
+      if (cur !== "" || row.length > 0) {
+        row.push(cur);
+        rows.push(row);
+      }
+      return rows;
+    };
+
+    // 四種輸入，每一種都要解析成「2 列、每列欄位數 = 欄位定義數」。
+    // 電話那三種是使用者真的送得進來的東西：server 端目前對
+    // participants[].phone 只有 .max(30)，沒有格式驗證。
+    const mkRow = (phone, name) => ({
+      registration_id: "x",
+      seat_no: 1,
+      name,
+      email: "a@example.invalid",
+      phone,
+      notice_ack_at: null,
+      order_no: "IB-202600000001",
+      paid_at: "2026-09-12T01:00:00Z",
+      created_at: "2026-09-12T01:00:00Z",
+    });
+    const cases = [
+      ["乾淨的一列", "0900000000", "王小明"],
+      ["電話含逗號", "0900000000,=1+1", "王小明"],
+      ["電話含 CRLF", "0900000000\r\n=1+1", "王小明"],
+      ["電話含引號", '0900000000"=1+1', "王小明"],
+      ["姓名是公式", "0900000000", '=HYPERLINK("http://evil.example","點我")'],
+      ["姓名含逗號與引號", "0900000000", '王,小"明'],
+    ];
+    const width = ROSTER_CSV_COLUMNS.length;
+    for (const [label, phone, name] of cases) {
+      const rows = parseCsv(csvMod.toCsv([mkRow(phone, name)], ROSTER_CSV_COLUMNS));
+      check(`欄位切不開（${label}）：解析出 2 列`, rows.length, 2);
+      check(
+        `欄位切不開（${label}）：每列都是 ${width} 欄`,
+        rows.map((r) => r.length),
+        [width, width],
+      );
+      // 解析出來的每一格，開頭都不可以是會被 Excel 當公式的字元 —— forceText 那
+      // 兩格例外，它們的 `="…"` 是**刻意**的公式，而且整串都在同一格裡。
+      const dangerous = rows
+        .flat()
+        .filter((f) => /^[=+@\t\r-]/.test(f))
+        .filter((f) => !/^="[^]*"$/.test(f));
+      check(`欄位切不開（${label}）：沒有意外的公式格`, dangerous, []);
+    }
+    // 反面對照：把「舊的、有 bug 的」forceText 寫法餵給同一組斷言，它必須抓得到。
+    // 少了這一條，上面六組全過有可能是因為解析器或斷言自己壞掉。
+    {
+      const brokenCell = (v, o = {}) =>
+        o.forceText ? `="${String(v).replace(/"/g, '""')}"` : csvMod.csvCell(v, o);
+      const brokenCsv =
+        "﻿" +
+        [
+          ROSTER_CSV_COLUMNS.map((c) => brokenCell(c.header)).join(","),
+          ROSTER_CSV_COLUMNS.map((c) =>
+            brokenCell(c.value(mkRow("0900000000,=1+1", "王小明")), { forceText: c.forceText }),
+          ).join(","),
+        ].join("\r\n") + "\r\n";
+      const brokenRows = parseCsv(brokenCsv);
+      check(
+        "反面對照：舊的 forceText 寫法會被抓到欄位數不符",
+        brokenRows.map((r) => r.length),
+        [width, width + 1],
+      );
+      checkTrue(
+        "反面對照：而且切出一格以 = 開頭的公式",
+        brokenRows.flat().some((f) => f === '=1+1"'),
+      );
+    }
   }
 
   // 檔名。

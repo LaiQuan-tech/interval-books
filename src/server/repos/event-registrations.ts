@@ -50,6 +50,15 @@
  * 註解要求「簽到表與提醒信必須用同一個條件」，靠的是下一個人會讀到那段註解；
  * 這裡讓那個條件只存在一份，所以沒有第二個地方可以寫錯。
  *
+ * 三個消費端，各自走哪裡（**不要寫成「三邊都走 loadPaidRoster」，那不是實話**）：
+ *
+ *   名單頁     → listSessionRoster()：回**全部**報名，畫面自己用 on_roster 分。
+ *   CSV 匯出   → SQL 的 export_event_roster()：它自己 `where v.on_roster`。
+ *   Phase 3    → loadPaidRoster()：目前**零呼叫端**，是為提醒信預留的。
+ *
+ * 三邊共用的是那個 `on_roster` 欄位，不是同一支 TypeScript 函式 —— 而共用欄位
+ * 比共用函式更硬，因為 SQL 那一側也繞不過去。
+ *
  * ⚠️ **Phase 3 的提醒信要用 loadPaidRoster()，不要自己另外寫一次條件。** 否則
  *    會出現「有人收到提醒卻不在簽到表上」—— 那正是快樂手那段註解在防的事。
  *
@@ -160,8 +169,10 @@ export async function listSessionRoster(sessionId: string): Promise<Registration
 /**
  * 簽到表：這一場**會來的人**。
  *
- * ⚠️ **這是「誰在名單上」的唯一一支查詢。** 畫面、CSV 與 Phase 3 的提醒信都走
- *    這裡（CSV 走的是 SQL 那一側的同一個 on_roster，見 exportEventRoster）。
+ * ⚠️ **目前零呼叫端 —— 這一支是為 Phase 3 的提醒信預留的。** 畫面走
+ *    listSessionRoster()（它要看得到未付款的列），CSV 走 SQL 的
+ *    export_event_roster()（它自己 `where v.on_roster`）。三邊共用的是 view 上
+ *    那個 on_roster 欄位，不是這支函式。
  *
  *    快樂手 apps/web/app/admin/sessions/queries.ts:117-125 的原話：
  *    「apps/worker/src/jobs/workshop-reminders.ts 寄開課提醒用的是同一個條件，

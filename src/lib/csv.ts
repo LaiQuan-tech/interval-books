@@ -49,17 +49,38 @@ export function csvCell(value: unknown, opts: { forceText?: boolean } = {}): str
   if (value === null || value === undefined) return "";
   const s = String(value);
 
-  if (opts.forceText) {
-    // ="…" 本身就已經讓 Excel 當成文字了，不需要也**不可以**再加公式前綴的
-    // 單引號 —— 見檔頭第 2 點。
-    return `="${s.replace(/"/g, '""')}"`;
-  }
+  // ── 兩步，而且第二步兩條路共用 ────────────────────────────────────────────
+  //
+  // 步驟一決定「這一格的內容是什麼」，步驟二決定「要不要包 CSV 引號」。
+  //
+  // ⚠️ 這兩件事一定要分開，而且包引號那一步**不可以只做在其中一條路上**。
+  //    快樂手的版本（與這個檔案的第一版）是 forceText 直接 `return`，跳過了包引號
+  //    那一步 —— 於是 `="0900000000,=1+1"` 這個欄位在 CSV 裡沒有被引號包住，
+  //    RFC 4180 的解析器（Excel 就是）看到的第一個字元是 `=` 不是 `"`，所以那個
+  //    引號只是普通字元，**中間的逗號仍然是欄位分隔符**。實測結果：
+  //
+  //      一列 7 欄變成 8 欄，而第 4 格是 `=1+1"` —— 以 = 開頭，公式照樣執行。
+  //      值裡放 CRLF 更直接：一列被切成兩列，第二列開頭就是 `=1+1"`。
+  //
+  //    也就是說「擋公式」這條紀律在**唯一一個使用者真的控制得了的 forceText 欄位
+  //    （電話）**上完全失效。參加者的電話目前在 server 端沒有格式驗證
+  //    （src/lib/checkout.ts 的 checkoutItemSchema 只有 .max(30)），所以這不是理論
+  //    問題：買一個名額並付款，就能讓店員打開簽到表時執行公式。
+  const cell = opts.forceText
+    ? // ="…" 本身就已經讓 Excel 當成文字了，不需要也**不可以**再加公式前綴的
+      // 單引號 —— 兩個一起用會變成 ="'0912…"，那個單引號在儲存格裡看得見
+      //（見檔頭第 2 點）。這裡換掉的是內層引號的逸出，不是公式防護。
+      `="${s.replace(/"/g, '""')}"`
+    : // 擋公式。順序在引號包裝之前 —— 反過來的話單引號會被包進引號裡失去效果。
+      FORMULA_PREFIXES.some((p) => s.startsWith(p))
+      ? `'${s}`
+      : s;
 
-  // 擋公式。順序在引號包裝之前 —— 反過來的話單引號會被包進引號裡失去效果。
-  const guarded = FORMULA_PREFIXES.some((p) => s.startsWith(p)) ? `'${s}` : s;
-
-  if (/[",\r\n]/.test(guarded)) return `"${guarded.replace(/"/g, '""')}"`;
-  return guarded;
+  // 步驟二。forceText 的輸出一定含有引號，所以它一定會走到這裡被包起來 ——
+  // `="0912345678"` 變成 `"=""0912345678"""`。Excel 先解 CSV 引號、再判斷公式，
+  // 所以「強制文字」的效果一個字都沒變，而欄位再也切不開。
+  if (/[",\r\n]/.test(cell)) return `"${cell.replace(/"/g, '""')}"`;
+  return cell;
 }
 
 export type CsvColumn<T> = {

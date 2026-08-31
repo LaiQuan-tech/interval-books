@@ -144,10 +144,15 @@ export const Route = createFileRoute("/admin/_shell/registrations")({
  *
  * PostgREST 對「表不存在」回的是 PGRST205（schema cache 找不到），直連 Postgres
  * 則是 42P01。兩個字串都認，因為這一段的重點是訊息本身。
+ *
+ * ⚠️ 刻意**沒有**收 `/does not exist/i`。那個字串太寬：`function … does not exist`
+ *    （RPC 簽名打錯）與 `column … does not exist`（COLUMNS 漏改）也會命中，而那
+ *    兩件事都是真的 bug，被說成「還沒套 migration」就會被藏起來，直到有人納悶
+ *    為什麼套完了畫面還是那句話。
  */
 function isSchemaMissing(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  return /PGRST205|42P01|does not exist|schema cache/i.test(message);
+  return /PGRST205|42P01|schema cache/i.test(message);
 }
 
 /**
