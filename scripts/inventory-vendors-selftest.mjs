@@ -146,7 +146,69 @@ for (let n = 1; n <= 18; n += 1) {
 // 所以這支測試的斷言全部原樣成立。名單的明文揭露與 CSV 匯出（會用到 pii_access_log
 // 的新 reason）留到 0021，那一期要回來重讀 §1 那幾條。
 check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
-check("沒有多出 0021（0020 是最後一號）", migFiles.some((f) => f.startsWith("0021_")), false);
+check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
+check("沒有多出 0022（0021 是最後一號）", migFiles.some((f) => f.startsWith("0022_")), false);
+
+// ── 0021 真的回來重讀 §1 了，而且它動了那兩條 CHECK ──────────────────────
+//
+// 上面那段註解要求 0021 回來重讀 §1。它照做了，而且**確實動了 §1**：
+// subject_table 與 reason 兩條 CHECK 各多收兩個值（名單的揭露與匯出）。所以這裡
+// 不能只寫一句「原樣成立」，要驗它動的方式是安全的。三條，各對應一個具體的破法：
+//
+//   1. 放寬 CHECK 不可以把 0019 的舊值弄丟 —— 掉一個 'tax_filing'，正式庫上所有
+//      既有的報稅查閱紀錄都會讓那條 add constraint 失敗，migration 直接卡住。
+//   2. **不可以 drop function pii_log_access** —— 0019 §1.4 那三行 revoke/grant 是
+//      照著 (uuid, text, text, uuid, text, text[], text, text) 這串簽名寫的。改簽名
+//      就得先 drop，而 drop 之後 0019 重跑會指向一個不存在的東西。
+//   3. **不可以碰不可竄改的那道門** —— pii_access_log_immutable 的 trigger 與
+//      「連 service_role 都 revoke」是 §1.3 的兩道門，少一道稽核軌跡就刪得掉。
+const sql0021 = read(join(MIG_DIR, "0021_roster_pii.sql"));
+const exec0021 = strip(sql0021);
+checkTrue("反空殼：0021 不是空檔（> 8000 字）", exec0021.length > 8000, `實際 ${exec0021.length} 字`);
+checkTrue(
+  "0021 放寬 subject_table 時沒有弄丟 0019 的兩個值",
+  ["inv.vendors", "inv.vendor_bank_accounts"].every((t) => exec0021.includes(`'${t}'`)),
+);
+checkTrue(
+  "0021 放寬 reason 時沒有弄丟 0019 的五種事由",
+  ["reconciliation", "payment", "tax_filing", "vendor_enquiry", "self_service"].every((r) =>
+    exec0021.includes(`'${r}'`),
+  ),
+);
+checkTrue(
+  "0021 沒有 drop function pii_log_access（簽名一動，0019 的 revoke/grant 就指空）",
+  !/drop\s+function[^;]*pii_log_access/i.test(exec0021),
+);
+checkTrue(
+  "0021 沒有重新定義 pii_log_access",
+  !/create\s+or\s+replace\s+function\s+public\.pii_log_access/i.test(exec0021),
+);
+checkTrue(
+  "0021 沒有碰 pii_access_log 的不可竄改 trigger",
+  !/drop\s+trigger[^;]*pii_access_log_immutable/i.test(exec0021) &&
+    !/pii_access_log_immutable\(\)/i.test(exec0021),
+);
+checkTrue(
+  "0021 沒有把 pii_access_log 的直接 DML 權限發回去",
+  !/grant[^;]*on\s+table\s+public\.pii_access_log/i.test(exec0021),
+);
+// 第九種權限：0021 放寬 staff_permissions 的 CHECK 時，八種舊值一個都不能掉。
+checkTrue(
+  "0021 放寬 staff_permissions 時沒有弄丟 inv.vendor.pii.read",
+  /'inv\.vendor\.pii\.read'/.test(exec0021),
+);
+checkTrue(
+  "0021 放寬 staff_permissions 時沒有弄丟七種 approve_*",
+  [
+    "approve_products",
+    "approve_purchases",
+    "approve_price_changes",
+    "approve_vendors",
+    "approve_combo_sets",
+    "approve_stock_adjustments",
+    "approve_inventory_adjustments",
+  ].every((p) => exec0021.includes(`'${p}'`)),
+);
 
 const sql = read(MIG_0019);
 const exec = strip(sql);

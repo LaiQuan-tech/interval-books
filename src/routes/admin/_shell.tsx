@@ -99,6 +99,11 @@ export const Route = createFileRoute("/admin/_shell")({
  *
  * `staff: true` 的項目是店員看得到的。**這只是畫面** —— 每一支 server fn 自己
  * 會再擋一次，見檔頭。
+ *
+ * `permission` 是 staff 那一半的第二個條件：`staff: true, permission: "…"` 的意思
+ * 是「店員只有拿到這個細權限才看得到這個連結」。admin 不受影響（他一律全有）。
+ * 這一樣**只是畫面** —— 不加這個欄位的話，沒有權限的店員會看到一個一按就跳錯誤
+ * 頁的連結，那不是漏洞，只是很難用。
  */
 const NAV_GROUPS = [
   {
@@ -129,10 +134,19 @@ const NAV_GROUPS = [
     label: "電商",
     items: [
       { to: "/admin/products", label: "商品", icon: Package, staff: false },
-      // 活動場次與報名名單（0020）。名額搬離 products 之後，「這場還剩幾個位子」
-      // 只有這裡答得出來。名單是第三人的個資，所以 staff: false —— 比 CMS 更嚴，
-      // 不是更鬆。Phase 2 會給它自己的 event.roster.read 權限。
-      { to: "/admin/registrations", label: "活動報名", icon: ClipboardCheck, staff: false },
+      // 活動場次與報名名單（0020／0021）。名額搬離 products 之後，「這場還剩幾個
+      // 位子」只有這裡答得出來。
+      //
+      // 名單是第三人的個資，所以它不跟著 staff 一起放行，而是掛在 0021 §4 的
+      // event.roster.read 上：一個負責活動現場的工讀生可以被授權看簽到表，而不必
+      // 連帶拿到整個 CMS。admin 一律看得到（他全有）。
+      {
+        to: "/admin/registrations",
+        label: "活動報名",
+        icon: ClipboardCheck,
+        staff: true,
+        permission: "event.roster.read" as const,
+      },
     ],
   },
   {
@@ -184,7 +198,12 @@ function AdminShell() {
   const isAdmin = user.role === "admin";
   const groups = NAV_GROUPS.map((group) => ({
     label: group.label,
-    items: group.items.filter((item) => isAdmin || item.staff),
+    items: group.items.filter((item) => {
+      if (isAdmin) return true;
+      if (!item.staff) return false;
+      const needed = "permission" in item ? item.permission : null;
+      return !needed || user.permissions.includes(needed);
+    }),
   })).filter((group) => group.items.length > 0);
 
   async function handleSignOut() {

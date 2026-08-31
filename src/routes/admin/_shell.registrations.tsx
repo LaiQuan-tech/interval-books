@@ -3,7 +3,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Download, Eye, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -46,8 +46,10 @@ import {
 } from "@/lib/admin/fns/event-sessions";
 import {
   countRegistrationsBySession,
+  exportSessionRoster,
   listSessionRoster,
 } from "@/lib/admin/fns/event-registrations";
+import { RegistrationRevealDialog } from "@/components/admin/RegistrationRevealDialog";
 
 type SessionRow = Awaited<ReturnType<typeof listEventSessions>>[number];
 type ProductRow = Awaited<ReturnType<typeof listBookableProducts>>[number];
@@ -67,54 +69,68 @@ const STATUS_LABEL: Record<EventSessionFormValues["status"], string> = {
  * migration 0020 §1）與**看名單**（誰報名了）。分成兩頁的話，「這個梯次為什麼還有
  * 位子卻報不了名」就得在兩頁之間來回比對。
  *
- * ⚠️ 名單是**唯讀而且遮罩過的**。
+ * ⚠️ 名單頁的列表是**遮罩過的**，而明文有兩條路，兩條都會留下紀錄（0021 §0.1）：
  *    - 姓名是全名 —— 遮了現場點不了名，與 0019 讓廠商名稱明文、只遮識別碼是
  *      同一條線。
- *    - 電話與信箱只有遮罩值，而且遮罩是在 server 端做的
- *      （src/server/repos/event-registrations.ts）。這一頁拿不到明文，所以它也
- *      **不可能**不小心把明文印出來。
- *    - 沒有「顯示完整聯絡方式」與「匯出 CSV」。那兩條路都會產生明文，而明文出口
- *      必須先有 public.pii_access_log 的紀錄（0019 §1 的線）—— 那是 Phase 2 的
- *      0021 要做的事。**在那之前這裡不開任何明文出口。**
+ *    - 電話與信箱只有遮罩值，而且遮罩是在 **SQL** 做的（0021 §3 的
+ *      public.admin_event_roster）。這一頁與它底下的 Node 行程都拿不到明文，
+ *      所以它**不可能**不小心把明文印出來。
+ *    - 單列「顯示完整聯絡方式」→ reveal_registration_contact()，寫一筆
+ *      reason='attendee_contact' 的 pii_access_log。
+ *    - 「匯出簽到表」→ export_event_roster()，寫**一筆** reason='roster_export'，
+ *      subject 是場次而不是每一位參加者。
+ *
+ * ⚠️ 列表本身**不寫 log**。名單頁一次顯示 30 個人，每次開頁寫 30 列會讓
+ *    pii_access_log 失去唯一的用途（0019 §1.1：它要回答的是「有沒有人在亂查」）。
  *
  * 名額不在 /admin/products 上了：0020 把 products.capacity 綁成 null，所以那個
  * 欄位已經從商品表單移除，改由這裡按場次維護。
  */
 export const Route = createFileRoute("/admin/_shell/registrations")({
   /**
-   * ⚠️ 這一頁是整個 Phase 1 唯一**需要 0020 已經套用**才看得到東西的地方。
+   * ⚠️ 這一頁是唯一**需要 migration 已經套用**才看得到東西的地方，而且它現在有
+   *    **兩個**階段要接：0020（場次與報名兩張表）與 0021（名單的 view 與兩支
+   *    明文函式）。程式碼先上線、migration 後套用，所以「0020 套了但 0021 還沒」
+   *    是真的會發生的中間狀態。
    *
-   * 程式碼先上線、migration 後套用，中間那段時間 event_sessions 這張表還不存在，
-   * 三支 loader 全部會炸掉 —— 而 repo 層的規矩是「錯誤一律 throw 不吞」，所以
-   * 預設行為是整頁換成錯誤畫面，沒有任何一句話說明原因。
+   * 兩個旗標分開，是為了讓那個中間狀態仍然有用：
    *
-   * 這裡把那個情況接起來，換成一句看得懂的說明。**只接這一種**：其餘的錯誤照樣
-   * 往上丟（連線壞了、權限不對，那些不該被說成「還沒套 migration」）。
+   *   schemaMissing —— 0020 還沒套。場次表不存在，整頁沒有東西可以顯示。
+   *   rosterReady   —— 0021 已經套。false 的時候場次列表照常顯示（名額、狀態、
+   *                    新增與編輯全部可用），只有「報名人數」與名單那幾顆按鈕
+   *                    收起來。
+   *
+   * 如果把兩件事併成一個旗標，0020 套完當天整頁會變成一張「請先套 migration」的
+   * 說明 —— 而那時候場次明明已經維護得動了。
+   *
+   * **只接「表／view 不存在」這一種**：其餘的錯誤照樣往上丟（連線壞了、權限不對，
+   * 那些不該被說成「還沒套 migration」）。
    *
    * 前台不需要這種處理：purchase 路徑的每一支查詢都有「購物車裡真的有活動才查」
    * 的前置判斷，全是書的購物車一次都不會碰到 event_sessions。
    */
   loader: async () => {
+    const empty = {
+      sessions: [] as Awaited<ReturnType<typeof listEventSessions>>,
+      products: [] as Awaited<ReturnType<typeof listBookableProducts>>,
+      counts: {} as Awaited<ReturnType<typeof countRegistrationsBySession>>,
+    };
+
+    let sessions = empty.sessions;
+    let products = empty.products;
     try {
-      const [sessions, products, counts] = await Promise.all([
-        listEventSessions(),
-        listBookableProducts(),
-        countRegistrationsBySession(),
-      ]);
-      return { sessions, products, counts, schemaMissing: false };
+      [sessions, products] = await Promise.all([listEventSessions(), listBookableProducts()]);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      // PostgREST 對「表不存在」回的是 PGRST205（schema cache 找不到），
-      // 直連 Postgres 則是 42P01。兩個字串都認，因為這一段的重點是訊息本身。
-      if (/PGRST205|42P01|does not exist|schema cache/i.test(message)) {
-        return {
-          sessions: [] as Awaited<ReturnType<typeof listEventSessions>>,
-          products: [] as Awaited<ReturnType<typeof listBookableProducts>>,
-          counts: {} as Awaited<ReturnType<typeof countRegistrationsBySession>>,
-          schemaMissing: true,
-        };
-      }
-      throw err;
+      if (!isSchemaMissing(err)) throw err;
+      return { ...empty, schemaMissing: true, rosterReady: false };
+    }
+
+    try {
+      const counts = await countRegistrationsBySession();
+      return { sessions, products, counts, schemaMissing: false, rosterReady: true };
+    } catch (err) {
+      if (!isSchemaMissing(err)) throw err;
+      return { ...empty, sessions, products, schemaMissing: false, rosterReady: false };
     }
   },
   head: () => ({
@@ -122,6 +138,17 @@ export const Route = createFileRoute("/admin/_shell/registrations")({
   }),
   component: AdminRegistrationsPage,
 });
+
+/**
+ * 「這個錯誤是不是『表／view 還不存在』」。
+ *
+ * PostgREST 對「表不存在」回的是 PGRST205（schema cache 找不到），直連 Postgres
+ * 則是 42P01。兩個字串都認，因為這一段的重點是訊息本身。
+ */
+function isSchemaMissing(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /PGRST205|42P01|does not exist|schema cache/i.test(message);
+}
 
 /**
  * timestamptz → `<input type="datetime-local">` 吃得下的字串。
@@ -169,8 +196,13 @@ function toFormValues(row: SessionRow): EventSessionFormValues {
 }
 
 function AdminRegistrationsPage() {
-  const { sessions, products, counts, schemaMissing } = Route.useLoaderData();
+  const { sessions, products, counts, schemaMissing, rosterReady } = Route.useLoaderData();
+  const { user } = Route.useRouteContext();
   const router = useRouter();
+
+  // ⚠️ 只控制畫面。真正擋住直接 POST /_serverFn/… 的是 fns 那一層的
+  //    requireRosterRead()，而它是從 staff_permissions 重讀出來的。
+  const canReadRoster = user.permissions.includes("event.roster.read");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<SessionRow | null>(null);
@@ -182,6 +214,8 @@ function AdminRegistrationsPage() {
   const [rosterOf, setRosterOf] = useState<SessionRow | null>(null);
   const [roster, setRoster] = useState<RosterRow[] | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
+  const [revealOf, setRevealOf] = useState<RosterRow | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const productById = useMemo(
     () => new Map(products.map((p: ProductRow) => [p.id, p])),
@@ -215,6 +249,44 @@ function AdminRegistrationsPage() {
       setRosterOf(null);
     } finally {
       setRosterLoading(false);
+    }
+  }
+
+  /**
+   * 匯出簽到表。
+   *
+   * ⚠️ **CSV 是 server fn 回來的字串，不是一條 HTTP 路由。** 快樂手的 CSV 是
+   *    route handler，踩過「權限不足時 redirect 到登入頁，瀏覽器照樣把登入頁的
+   *    HTML 存成 roster.csv」。這裡的回傳型別是 { filename, csv }，沒有任何路徑
+   *    可以讓它變成一份 HTML；授權失敗就是下面這個 catch，使用者看到 toast。
+   *
+   * ⚠️ 呼叫成功就一定留下一筆 pii_access_log（subject 是場次）。toast 把紀錄編號
+   *    印出來，理由與 RegistrationRevealDialog 相同：講明白會被記錄，比偷偷記錄
+   *    有用。
+   */
+  async function handleExport(row: SessionRow) {
+    setExporting(true);
+    try {
+      const { filename, csv, count, log_id } = await exportSessionRoster({
+        data: { sessionId: row.id },
+      });
+      // BOM 已經在 csv 字串開頭（src/lib/csv.ts），這裡不要再加一次。
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      // ⚠️ 掛進 DOM 再點，而且 revoke 排到下一個 tick：直接 revoke 會在部分瀏覽器
+      //    上讓下載在真正開始之前就失去來源，結果是一個 0 byte 的檔案。
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast.success(`已匯出 ${count} 位・紀錄編號 ${log_id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "名單匯出失敗");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -296,6 +368,14 @@ function AdminRegistrationsPage() {
         </p>
       )}
 
+      {!schemaMissing && !rosterReady && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+          名單功能還沒開通：migration 0021_roster_pii.sql 尚未套用到資料庫。場次可以
+          照常維護（名額、時間、開關），但「報名人數」、名單與匯出要等那一支套用之後
+          才會出現——遮罩與稽核紀錄都做在資料庫裡，沒有它就沒有安全的明文出口。
+        </p>
+      )}
+
       {!schemaMissing && products.length === 0 && (
         <p className="rounded-md border border-border p-4 text-sm text-muted-foreground">
           目前沒有活動或策旅類型的商品。請先到「商品」新增一件 event／journey
@@ -326,6 +406,11 @@ function AdminRegistrationsPage() {
             ) : (
               sessions.map((s) => {
                 const count = counts[s.id] ?? { total: 0, paid: 0 };
+                // ⚠️ 三個數字，不是兩個。seats_taken 是「押住了幾個位子」，
+                //    count.total 是「有幾位登錄了姓名」。0020 §4.4 回填的舊場次
+                //    只補一位參加者（捏造另外兩位是說謊），所以那些場次上這兩個
+                //    數字本來就不一樣，而現場點名的人必須看得出來。
+                const unnamed = Math.max(0, s.seats_taken - count.total);
                 return (
                   <TableRow key={s.id}>
                     <TableCell className="max-w-xs truncate">{productLabel(s.product_id)}</TableCell>
@@ -337,8 +422,19 @@ function AdminRegistrationsPage() {
                       {s.seats_taken} / {s.capacity}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {count.paid} 已付款
-                      {count.total !== count.paid ? `／${count.total} 筆` : ""}
+                      {!rosterReady ? (
+                        "—"
+                      ) : (
+                        <>
+                          {count.paid} 已付款
+                          {count.total !== count.paid ? `／${count.total} 筆` : ""}
+                          {unnamed > 0 ? (
+                            <span className="block text-xs text-amber-600">
+                              另有 {unnamed} 位未登錄姓名
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={s.status === "open" ? "default" : "secondary"}>
@@ -347,7 +443,12 @@ function AdminRegistrationsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => void openRoster(s)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!rosterReady}
+                          onClick={() => void openRoster(s)}
+                        >
                           名單
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
@@ -393,14 +494,50 @@ function AdminRegistrationsPage() {
       </Dialog>
 
       <Dialog open={rosterOf !== null} onOpenChange={(open) => !open && setRosterOf(null)}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{rosterOf ? rosterOf.title.zh : ""} 報名名單</DialogTitle>
             <DialogDescription>
-              電話與信箱只顯示遮罩值。完整聯絡方式與 CSV 匯出尚未開放——那兩條路都
-              會留下存取紀錄，等下一期一起做。
+              電話與信箱只顯示遮罩值，而且遮罩是在資料庫做的——這一頁拿不到明文。
+              要看某一位的完整聯絡方式或匯出簽到表，兩條路都會留下刪不掉的存取紀錄。
             </DialogDescription>
           </DialogHeader>
+
+          {/* ⚠️ 匯出只含已付款（on_roster）。未付款的人不會來，印進簽到表會讓現場
+              多準備座位與講義。那個條件寫在 0021 §3 的 view 裡，畫面、CSV 與
+              Phase 3 的提醒信共用同一份。 */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3 text-sm">
+            <span className="text-muted-foreground">
+              {rosterLoading ? (
+                "讀取中…"
+              ) : (
+                <>
+                  共 {roster?.length ?? 0} 筆，其中{" "}
+                  <strong>{(roster ?? []).filter((r) => r.on_roster).length}</strong>{" "}
+                  位已付款（＝會出現在簽到表上）；其餘是被未付款的訂單押著的位子。
+                </>
+              )}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              // ⚠️ disabled 只是畫面。擋住直接呼叫的是 server fn 的 requireRosterRead()。
+              disabled={
+                exporting ||
+                rosterLoading ||
+                !canReadRoster ||
+                rosterOf === null ||
+                (roster ?? []).filter((r) => r.on_roster).length === 0
+              }
+              title={canReadRoster ? undefined : "需要「查看活動報名名單」權限"}
+              onClick={() => rosterOf && void handleExport(rosterOf)}
+            >
+              <Download className="h-4 w-4" />
+              {exporting ? "匯出中…" : "匯出簽到表（CSV）"}
+            </Button>
+          </div>
+
           {rosterLoading ? (
             <p className="py-8 text-center text-sm text-muted-foreground">讀取中…</p>
           ) : (roster?.length ?? 0) === 0 ? (
@@ -417,25 +554,44 @@ function AdminRegistrationsPage() {
                     <TableHead>訂單</TableHead>
                     <TableHead className="w-24">付款</TableHead>
                     <TableHead className="w-24">注意事項</TableHead>
+                    <TableHead className="w-28 text-right">聯絡方式</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(roster ?? []).map((r, i) => (
-                    <TableRow key={r.id}>
+                    <TableRow key={r.registration_id}>
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                       <TableCell className="font-medium">{r.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{r.email_masked ?? "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{r.phone_masked ?? "—"}</TableCell>
+                      {/* 「沒填」與「填了但你看不到」要長得不一樣 —— 遮罩值本身分
+                          不出這兩件事，所以 view 另外送了 has_email / has_phone。 */}
+                      <TableCell className="text-muted-foreground">
+                        {r.has_email ? (r.email_masked ?? "—") : "（未填）"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {r.has_phone ? (r.phone_masked ?? "—") : "（未填）"}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {r.order_no}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={r.payment_status === "paid" ? "default" : "secondary"}>
-                          {r.payment_status === "paid" ? "已付款" : r.payment_status}
+                        <Badge variant={r.on_roster ? "default" : "secondary"}>
+                          {r.on_roster ? "已付款" : r.payment_status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {r.notice_ack_at ? "已同意" : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={!r.has_email && !r.has_phone}
+                          onClick={() => setRevealOf(r)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          顯示
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -445,6 +601,13 @@ function AdminRegistrationsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <RegistrationRevealDialog
+        open={revealOf !== null}
+        onOpenChange={(open) => !open && setRevealOf(null)}
+        registration={revealOf}
+        canReadRoster={canReadRoster}
+      />
 
       <AlertDialog
         open={deleteTarget !== null}

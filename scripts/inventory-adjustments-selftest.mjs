@@ -126,7 +126,14 @@ check("0018 在（4c 加的）", migFiles.some((f) => f.startsWith("0018_")), tr
 // 搬到 public.event_sessions —— 三件事都不碰 inv 的在庫異動，所以下面的斷言全部
 // 原樣成立。0020 自己的內容由 event-registration-selftest 驗。
 check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
-check("沒有多出 0021（0020 是最後一號）", migFiles.some((f) => f.startsWith("0021_")), false);
+// 0021（名單的遮罩 view、明文揭露與 CSV 匯出）第三次把人叫回來。逐條重讀過：
+// 它動的是 public.pii_access_log 的兩條 CHECK、public.staff_permissions 的
+// permission CHECK（第九種權限 event.roster.read），以及兩張 event_* 表上的
+// view 與函式。**inv 的任何一張表、任何一支函式都沒有被碰到**，尤其是
+// inv.inventory_adjustments 與 inv_admin_product_movements —— 下面的斷言全部原樣
+// 成立。0021 自己的內容由 roster-csv-selftest 驗。
+check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
+check("沒有多出 0022（0021 是最後一號）", migFiles.some((f) => f.startsWith("0022_")), false);
 
 const sql = read(MIG_0017);
 const exec = strip(sql);

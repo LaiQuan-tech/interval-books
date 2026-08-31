@@ -1271,6 +1271,15 @@ export const VENDOR_SENSITIVE_FIELD_LABELS: Record<
   bank_accounts: "匯款帳戶",
 };
 
+/**
+ * **廠商那一側**的查閱事由。
+ *
+ * ⚠️ 這不是 pii_access_log.reason 的完整值域。0021 §1 把那條 CHECK 放寬到七種，
+ *    多出來的兩種（attendee_contact / roster_export）是名單那一側的，見下面的
+ *    ROSTER_ACCESS_REASONS。兩份清單刻意分開，因為 VendorSensitiveDialog 的下拉
+ *    選單是直接 map 這一份 —— 合成一份的話，店員查廠商時就會看到「匯出報名名單」
+ *    這個選項，而那會產生一筆語意錯誤而且刪不掉的稽核紀錄。
+ */
 export const PII_ACCESS_REASONS = [
   "reconciliation",
   "payment",
@@ -1285,6 +1294,24 @@ export const PII_ACCESS_REASON_LABELS: Record<(typeof PII_ACCESS_REASONS)[number
   tax_filing: "報稅／扣繳申報",
   vendor_enquiry: "廠商來電查詢",
   self_service: "廠商自助入口",
+};
+
+/**
+ * **名單那一側**的查閱事由（0021 §1）。
+ *
+ * ⚠️ 與上面那五種有一個結構上的差別：這兩種**不是使用者挑的**，是由動作決定的。
+ *    按「顯示完整聯絡方式」永遠是 attendee_contact，按「匯出 CSV」永遠是
+ *    roster_export。名單只有這兩種看法，讓店員從一個永遠只有一個正確答案的下拉
+ *    選單裡挑，得到的不是資訊而是雜訊。
+ *
+ *    所以這裡沒有對應的 zod schema，也沒有任何 server fn 收 reason 參數 ——
+ *    這份清單只給畫面用（告訴使用者這次會以什麼事由留下紀錄）。
+ */
+export const ROSTER_ACCESS_REASONS = ["attendee_contact", "roster_export"] as const;
+
+export const ROSTER_ACCESS_REASON_LABELS: Record<(typeof ROSTER_ACCESS_REASONS)[number], string> = {
+  attendee_contact: "查看參加者聯絡方式",
+  roster_export: "匯出報名名單",
 };
 
 export const vendorSensitiveRequestSchema = z.object({

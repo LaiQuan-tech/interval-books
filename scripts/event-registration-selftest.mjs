@@ -123,8 +123,14 @@ check("0020 存在", existsSync(MIG_0020), true);
 const migrations = existsSync(join(ROOT, "supabase/migrations"))
   ? readdirSync(join(ROOT, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort()
   : [];
-check("migrations 共 20 支", migrations.length, 20);
-check("編號連續且 0020 是最後一支", migrations[19], "0020_event_sessions_registrations.sql");
+// 0021（名單的遮罩 view、明文揭露與 CSV 匯出）加進來時，這兩條會把人叫回來。
+// 逐條重讀過：0021 **不動** 0020 的任何一張表、任何一支函式，它只是在
+// event_registrations 上面加一個遮罩過的 view 與兩支會留痕的 security definer
+// 函式。所以下面每一條 0020 的斷言原樣成立。0021 自己的內容由
+// scripts/roster-csv-selftest.mjs 驗。
+check("migrations 共 21 支", migrations.length, 21);
+check("0020 仍在原位", migrations[19], "0020_event_sessions_registrations.sql");
+check("編號連續且 0021 是最後一支", migrations[20], "0021_roster_pii.sql");
 for (const f of ["0004_commerce_products.sql", "0006_order_expiry.sql", "0011_inventory_single_source.sql", "0019_vendors_pii_portal.sql"]) {
   check(`${f} 仍在`, migrations.includes(f), true);
 }
@@ -475,10 +481,23 @@ check("預檢不再讀 p.seats_taken", /p\.seats_taken \+ line\.quantity/.test(o
 // PostgREST 會把 Postgres 的 `DETAIL: Failing row contains (…)` 一路傳回來，
 // 對 event_registrations 來說那一行就是某個人的姓名與電話。
 console.log("\n[12] log 紀律（不可以把參加者個資寫進 log）");
+// ⚠️ **新增任何碰 registrations 的檔案，就要加進這個清單。** 這條規則守的是
+//    「參加者的姓名電話有沒有被寫進 Vercel 的 log」，而漏加一個檔案的後果是那個
+//    檔案永遠不被檢查、而且沒有任何人會發現。0021 加了四個。
 const piiSources = [
   ["src/server/repos/orders.ts", ordersTs],
   ["src/server/repos/event-registrations.ts", regRepoTs],
   ["src/server/repos/event-sessions.ts", sessionRepoTs],
+  ["src/lib/admin/fns/event-registrations.ts", regFnTs],
+  ["src/lib/admin/roster-csv.ts", readFile(join(ROOT, "src/lib/admin/roster-csv.ts"))],
+  [
+    "src/components/admin/RegistrationRevealDialog.tsx",
+    readFile(join(ROOT, "src/components/admin/RegistrationRevealDialog.tsx")),
+  ],
+  [
+    "src/routes/admin/_shell.registrations.tsx",
+    readFile(join(ROOT, "src/routes/admin/_shell.registrations.tsx")),
+  ],
 ];
 for (const [name, src] of piiSources) {
   // 抓 console.error(...) 的整段參數，看有沒有把 error / err **物件本身**當成
@@ -524,37 +543,63 @@ checkTrue(
 console.log("\n[13] 名單頁不開明文出口");
 checkTrue("repo 回的是 email_masked / phone_masked", /email_masked/.test(regRepoTs) && /phone_masked/.test(regRepoTs));
 // RegistrationRosterRow 這個對外型別裡不可以有明文 email / phone。
+// ⚠️ 切到型別自己的 `};` 為止，不是切到下一個 /** —— 0021 之後這個型別裡面就有
+//    JSDoc 註解了，用註解當終點會讓切出來的片段停在第一個欄位上，而那會讓下面
+//    兩條「沒有明文欄位」變成永遠通過的假性斷言。
+const rosterTypeStart = regRepoTs.indexOf("export type RegistrationRosterRow");
 const rosterType = regRepoTs.slice(
-  regRepoTs.indexOf("export type RegistrationRosterRow"),
-  regRepoTs.indexOf("/**", regRepoTs.indexOf("export type RegistrationRosterRow") + 10),
+  rosterTypeStart,
+  regRepoTs.indexOf("\n};", rosterTypeStart) + 3,
 );
-checkTrue("反空殼：切得出 RegistrationRosterRow", rosterType.length > 100);
+checkTrue("反空殼：切得出 RegistrationRosterRow", rosterType.length > 300, `實際 ${rosterType.length} 字`);
+checkTrue("反空殼：切出來的片段有完整結尾", rosterType.trimEnd().endsWith("};"));
+checkTrue("反空殼：切出來的片段包含最後一個欄位", /on_roster/.test(rosterType));
 check("對外型別沒有明文 email 欄位", /^\s+email: string/m.test(rosterType), false);
 check("對外型別沒有明文 phone 欄位", /^\s+phone: string/m.test(rosterType), false);
-// 這一期刻意不做揭露與匯出（那要先有 pii_access_log 的 reason，是 0021 的事）。
-check(
-  "Phase 1 沒有 reveal 出口",
-  /reveal_registration_contact/.test(stripTs(regRepoTs) + stripTs(regFnTs)),
-  false,
+
+// ── 0021 開了那兩條明文出口 ────────────────────────────────────────────────
+//
+// ⚠️ 這兩條在 Phase 1 是反過來寫的（`, false`），而那就是當時的設計意圖：
+//    **明文出口不可以在沒有 pii_access_log 的情況下先上線。** 0021 §5／§6 建了那
+//    兩支會留痕的函式、§1 加了對應的 reason，所以現在翻面。
+//
+//    翻面之後這兩條仍然有意義：它們守著「repo 真的走那兩支 SQL 函式」，而不是
+//    某天有人加一條 `.select("email, phone")` 就把明文撈出來 —— 那條路不會留痕。
+//    下面「明文只有兩個出口」那一段是同一件事的另一半。
+checkTrue(
+  "0021 之後有 reveal 出口（會留痕）",
+  /reveal_registration_contact/.test(stripTs(regRepoTs)),
 );
-check(
-  "Phase 1 沒有 CSV 匯出",
-  /export_event_roster|roster-csv/.test(stripTs(regRepoTs) + stripTs(regFnTs)),
-  false,
+checkTrue(
+  "0021 之後有 CSV 匯出（會留痕）",
+  /export_event_roster/.test(stripTs(regRepoTs)) && /roster-csv/.test(stripTs(regFnTs)),
 );
 // 報名資料只由 SQL 函式寫，repo 不可以有 insert/delete。
 check("registrations repo 沒有 insert", /\.insert\(/.test(regRepoTs), false);
 check("registrations repo 沒有 delete", /\.delete\(/.test(regRepoTs), false);
-checkTrue("兩支 admin fn 都掛 adminFnMiddleware", /adminFnMiddleware/.test(regFnTs) && /adminFnMiddleware/.test(sessionFnTs));
+// ⚠️ registrations 那一側在 0021 從 adminFnMiddleware 換成 staffFnMiddleware() +
+//    event.roster.read（0021 §4 的第九種權限）。sessions 那一側的**寫入**仍然是
+//    adminFnMiddleware，讀取跟著名單走 —— 場次本來就是 anon 讀得到的公開資訊。
+checkTrue(
+  // stripTs 先把註解拿掉：檔頭那段講「Phase 1 掛的是 adminFnMiddleware」的說明
+  // 不算掛載，但字面上會命中。
+  "registrations 的 fn 掛 staffFnMiddleware",
+  /staffFnMiddleware/.test(stripTs(regFnTs)) && !/adminFnMiddleware/.test(stripTs(regFnTs)),
+);
 check(
   "middleware 的掛載數 = 匯出的 server fn 數（registrations）",
-  (regFnTs.match(/\.middleware\(\[adminFnMiddleware\]\)/g) ?? []).length,
+  (regFnTs.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? []).length,
   (regFnTs.match(/export const \w+ = createServerFn/g) ?? []).length,
 );
 check(
   "middleware 的掛載數 = 匯出的 server fn 數（sessions）",
-  (sessionFnTs.match(/\.middleware\(\[adminFnMiddleware\]\)/g) ?? []).length,
+  (sessionFnTs.match(/\.middleware\(\[(adminFnMiddleware|staffFnMiddleware\(\))\]\)/g) ?? []).length,
   (sessionFnTs.match(/export const \w+ = createServerFn/g) ?? []).length,
+);
+checkTrue(
+  "場次的寫入仍然是 adminFnMiddleware",
+  /upsertEventSession[\s\S]{0,200}?middleware\(\[adminFnMiddleware\]\)/.test(sessionFnTs) &&
+    /removeEventSession[\s\S]{0,300}?middleware\(\[adminFnMiddleware\]\)/.test(sessionFnTs),
 );
 // repo 慣例
 checkTrue("兩支 repo 第一行都是 server-only", /^import "@tanstack\/react-start\/server-only";/m.test(regRepoTs) && /^import "@tanstack\/react-start\/server-only";/m.test(sessionRepoTs));

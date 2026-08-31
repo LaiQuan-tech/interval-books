@@ -128,7 +128,12 @@ for (let n = 1; n <= 17; n += 1) {
 // 斷言全部原樣成立。它動的是 public.products 的名額欄位與 event_sessions 那兩張
 // 新表，由 event-registration-selftest 驗。
 check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
-check("沒有多出 0021（0020 是最後一號）", migFiles.some((f) => f.startsWith("0021_")), false);
+// 0021（名單的遮罩 view、明文揭露與 CSV 匯出）同樣不碰套餐、二手書或 OCR bucket。
+// 逐條重讀過：它加了 inv.mask_email()（一支新的遮罩函式，沒有覆寫 inv.mask_tail），
+// 放寬了 pii_access_log 與 staff_permissions 的三條 CHECK，其餘全在 public 的
+// event_* 上。下面的斷言全部原樣成立。0021 自己的內容由 roster-csv-selftest 驗。
+check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
+check("沒有多出 0022（0021 是最後一號）", migFiles.some((f) => f.startsWith("0022_")), false);
 
 const sql = read(MIG_0018);
 const exec = strip(sql);

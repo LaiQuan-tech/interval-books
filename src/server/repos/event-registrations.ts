@@ -7,60 +7,71 @@
  * 零 grant**。瀏覽器沒有任何一條查詢打得到它，唯一的入口是 service_role，也就是
  * 這個檔案。所以這裡漏掉什麼，就沒有第二道門會擋。
  *
- * 三條規矩，每一條都對應一個具體的失敗：
+ * 四條規矩，每一條都對應一個具體的失敗：
  *
- *   1. **這個檔案不回明文聯絡方式。** listSessionRoster() 回的是遮罩過的
- *      `phone_masked` / `email_masked`，姓名則是全名（遮了現場點不了名，與 0019
- *      讓廠商名稱明文、只遮識別碼是同一條線）。要看單列明文是 Phase 2 的
- *      `reveal_registration_contact()`，它會在同一個交易裡先寫一筆
- *      public.pii_access_log 才回傳值 —— 讀成功 ⇔ 有紀錄。
+ *   1. **遮罩做在 SQL，不在這裡。** listSessionRoster() / loadPaidRoster() 讀的是
+ *      0021 §3 的 public.admin_event_roster，遮罩寫在那個 view 的 select list 裡
+ *      （inv.mask_email / inv.mask_tail）。這個檔案從此**看不到明文**，除非走
+ *      下面第 2 條那兩支。
  *
- *      ⚠️ 遮罩現在做在 TypeScript 這一側（maskTail 底下），不是 SQL。0019 §2 的
- *      線是「遮罩寫在 view 的 select list 裡，完整值不會離開資料庫」，而這一期還
- *      沒有那個 view —— Phase 2 的 0021 會建 public.admin_event_roster（用
- *      inv.mask_tail()）並把這裡換掉。在那之前，明文會進到這個 Node 行程的記憶體，
- *      但**不會離開它**：下面每一支函式回的型別裡都沒有明文欄位。這是這一期的
- *      折衷，寫出來是為了讓 Phase 2 知道要換的是哪一段，而不是讓它看起來已經完成。
+ *      Phase 1 曾經把遮罩做在這裡（maskTail / maskEmail 兩個函式），那是當時寫明
+ *      的折衷：明文會進到 Node 行程的記憶體，只是沒有離開它。0021 建好 view 之後
+ *      那兩支已經整段刪掉 —— 兩份實作同時存在的期間只有一期。
  *
- *   2. **console.error 只印 error.code 與 error.message，不印整包 error。**
+ *      （順帶：那份 TS 有一個真 bug。`v.slice(-keepTail)` 在 keepTail=0 時等於
+ *      `v.slice(0)`，整個 local part 又被接回去一次，`ab@x.com` 會遮成
+ *      `a*ab@x.com`。SQL 的 `right(v, 0)` 沒有這個坑。0021 §2 有寫。）
+ *
+ *   2. **明文只有兩個出口，而且兩個都一定留下紀錄。**
+ *      revealRegistrationContact() → public.reveal_registration_contact()
+ *      exportEventRoster()         → public.export_event_roster()
+ *      兩支 SQL 函式都在同一個交易裡**先寫一筆 public.pii_access_log 再組值**
+ *      （0019 §4.1 的形狀），所以「拿到值但沒留下紀錄」在結構上不可能發生。
+ *
+ *      ⚠️ **不要在這個檔案裡加第三支讀明文的函式。** 加了就等於多一條不留痕的路，
+ *         而稽核軌跡只要有一條旁路就等於沒有（0019 對 repos/inv-vendors.ts 的
+ *         原話）。
+ *
+ *   3. **console.error 只印 error.code 與 error.message，不印整包 error。**
  *      PostgREST 會把 Postgres 的 `DETAIL: Failing row contains (…)` 一路傳回來，
  *      而對這張表來說那一行就是某個人的姓名與電話。整包記下去就是把參加者的個資
  *      寫進 Vercel 的 log —— 一個沒有保存期限、沒有存取紀錄、也沒有任何人知道它在
  *      那裡的地方。scripts/event-registration-selftest.mjs 有靜態測試守著這一條。
  *
- *   3. **這個檔案不寫入。** 報名資料只由 reserve_session_seat() 寫、只由
+ *   4. **這個檔案不寫入。** 報名資料只由 reserve_session_seat() 寫、只由
  *      release_session_seat() 與 expire_unpaid_orders() 刪，因為「佔了 N 個位子」
  *      與「有 N 位參加者」必須是同一句 SQL 的兩個面向（0020 §2）。這裡多一條
  *      insert 或 delete，那個不變量就沒了。
+ *
+ * ── 「誰在簽到表上」只定義一次 ─────────────────────────────────────────────
+ *
+ * `on_roster` 這個欄位在 0021 §3 的 view 裡算出來（`payment_status = 'paid'`），
+ * 這個檔案只是 `.eq("on_roster", true)`。快樂手在 queries.ts:117-125 用一段紅字
+ * 註解要求「簽到表與提醒信必須用同一個條件」，靠的是下一個人會讀到那段註解；
+ * 這裡讓那個條件只存在一份，所以沒有第二個地方可以寫錯。
+ *
+ * ⚠️ **Phase 3 的提醒信要用 loadPaidRoster()，不要自己另外寫一次條件。** 否則
+ *    會出現「有人收到提醒卻不在簽到表上」—— 那正是快樂手那段註解在防的事。
  *
  * 保留期限：**不做自動清除**，與 orders 一致（業務紀錄，商業會計法五年）。
  */
 import "@tanstack/react-start/server-only";
 import { supabaseAdmin } from "@/server/supabase-admin";
+import type { Localized } from "@/i18n/types";
 
 /**
- * ⚠️ 明文欄位（name / email / phone）**只在這個型別裡出現**，而且它不 export。
- * 它是 select 回來的原始列，出這個檔案之前一定會經過 toMasked()。
+ * 0021 §3 的 public.admin_event_roster。
+ *
+ * ⚠️ 這個字串裡**沒有** `email` 與 `phone`。那兩個名字在 view 裡根本不存在
+ *    （view 只 select 出 email_masked / phone_masked），所以就算有人手滑加進來，
+ *    PostgREST 回的是 400 而不是明文。
  */
-const COLUMNS =
-  "id, session_id, order_id, order_item_id, seat_no, name, email, phone, notice_ack_at, created_at";
-
-type RawRegistrationRow = {
-  id: string;
-  session_id: string;
-  order_id: string;
-  order_item_id: number;
-  seat_no: number;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  notice_ack_at: string | null;
-  created_at: string;
-};
+const ROSTER_COLUMNS =
+  "registration_id, session_id, order_id, order_item_id, seat_no, name, email_masked, phone_masked, has_email, has_phone, notice_ack_at, created_at, order_no, payment_status, paid_at, on_roster";
 
 /** 名單頁看得到的一列。沒有明文 email / phone。 */
 export type RegistrationRosterRow = {
-  id: string;
+  registration_id: string;
   session_id: string;
   order_id: string;
   order_item_id: number;
@@ -69,83 +80,72 @@ export type RegistrationRosterRow = {
   name: string;
   email_masked: string | null;
   phone_masked: string | null;
+  /** 「沒填」與「填了但你看不到」在畫面上要長得不一樣。 */
+  has_email: boolean;
+  has_phone: boolean;
   /** 只回「有沒有同意」與「什麼時候」，那不是敏感值。 */
   notice_ack_at: string | null;
   created_at: string;
   /** 這一列屬於哪一張訂單，讓店員對得回去。 */
   order_no: string;
   payment_status: string;
+  paid_at: string | null;
+  /** 「這一列算不算在簽到表上」的唯一定義（0021 §3）。 */
+  on_roster: boolean;
 };
 
-/**
- * 遮罩，與 0019 的 inv.mask_tail(value, keep_tail, keep_head) 同一套規則，
- * 逐條對應：
- *
- *   - 空字串一律回 null —— 讓「沒填」與「填了但看不到」在畫面上長得不一樣。
- *   - 太短的值整串變星號 —— 留 4 碼的規則套在 4 碼的值上等於沒遮。
- *
- * Phase 2 會改成呼叫 SQL 那一支，這裡就整段拿掉。兩份實作同時存在的期間只有這
- * 一期，而且這一份的輸出格式是照著那一支寫的，所以換過去時畫面不會變。
- */
-function maskTail(value: string | null, keepTail: number, keepHead = 0): string | null {
-  const v = (value ?? "").trim();
-  if (v === "") return null;
-  if (v.length <= keepTail + keepHead) return "*".repeat(v.length);
-  return v.slice(0, keepHead) + "*".repeat(v.length - keepTail - keepHead) + v.slice(-keepTail);
-}
+/** reveal_registration_contact() 的回傳。**這裡面是明文。** */
+export type RegistrationContact = {
+  registration_id: string;
+  session_id: string;
+  seat_no: number;
+  /** 這一次查閱的 pii_access_log id。畫面會把它印出來。 */
+  log_id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+};
 
-/**
- * 電話留後 4 碼（`******7890`），信箱留頭 1 碼與 domain（`a****@example.com`）。
- *
- * 信箱不用 mask_tail 的理由：尾碼是 domain，遮了尾巴等於什麼都沒遮（大家都是
- * @gmail.com），遮了 domain 又會讓「這是不是同一個人」看不出來。所以遮的是
- * local part。
- */
-function maskEmail(value: string | null): string | null {
-  const v = (value ?? "").trim();
-  if (v === "") return null;
-  const at = v.lastIndexOf("@");
-  if (at <= 0) return maskTail(v, 2);
-  return `${maskTail(v.slice(0, at), 0, 1) ?? "*"}${v.slice(at)}`;
-}
+/** export_event_roster() 回的一列。**這裡面是明文。** */
+export type RosterExportRow = {
+  registration_id: string;
+  seat_no: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  notice_ack_at: string | null;
+  order_no: string;
+  paid_at: string | null;
+  created_at: string;
+};
 
-function toMasked(
-  row: RawRegistrationRow,
-  order: { order_no: string; payment_status: string } | undefined,
-): RegistrationRosterRow {
-  return {
-    id: row.id,
-    session_id: row.session_id,
-    order_id: row.order_id,
-    order_item_id: row.order_item_id,
-    seat_no: row.seat_no,
-    name: row.name,
-    email_masked: maskEmail(row.email),
-    phone_masked: maskTail(row.phone, 4),
-    notice_ack_at: row.notice_ack_at,
-    created_at: row.created_at,
-    order_no: order?.order_no ?? "",
-    payment_status: order?.payment_status ?? "unknown",
-  };
-}
+/** export_event_roster() 的整包回傳。 */
+export type RosterExport = {
+  session_id: string;
+  session_title: Localized;
+  starts_at: string;
+  capacity: number;
+  seats_taken: number;
+  log_id: string;
+  rows: RosterExportRow[];
+};
 
 /**
  * 一個場次的名單，遮罩過。
  *
  * ⚠️ 回的是**所有**報名，包含未付款與已取消的訂單，而且每一列都帶著
- *    `payment_status` 讓畫面自己分。Phase 2 的簽到表只算 `paid`，但那是簽到表的
- *    規則，不是這支查詢的規則 —— 後台需要看得到「有 3 個位子被未付款的訂單押著」，
- *    否則「為什麼還有 3 個位子卻報不了名」這個問題沒有地方可以回答。
+ *    `payment_status` 與 `on_roster` 讓畫面自己分。簽到表只算 on_roster，但那是
+ *    簽到表的規則，不是這支查詢的規則 —— 後台需要看得到「有 3 個位子被未付款的
+ *    訂單押著」，否則「為什麼還有 3 個位子卻報不了名」這個問題沒有地方可以回答。
  *
- * 兩次查詢而不是一次 join：PostgREST 的巢狀 select 會把 orders 整列拉回來，而那
- * 一列有訂購人的姓名電話 —— 這裡不需要它們，所以不去要。
+ * 0021 之後這裡只有一次查詢：訂單編號與付款狀態已經 join 在 view 裡了。Phase 1
+ * 分兩次查是為了避開 PostgREST 巢狀 select 會把 orders 整列（含訂購人姓名電話）
+ * 拉回來的問題，view 沒有那個問題 —— 它只 select 了 order_no 與 payment_status。
  */
 export async function listSessionRoster(sessionId: string): Promise<RegistrationRosterRow[]> {
-  const db = supabaseAdmin();
-
-  const { data, error } = await db
-    .from("event_registrations")
-    .select(COLUMNS)
+  const { data, error } = await supabaseAdmin()
+    .from("admin_event_roster")
+    .select(ROSTER_COLUMNS)
     .eq("session_id", sessionId)
     .order("created_at", { ascending: true })
     .order("seat_no", { ascending: true });
@@ -154,37 +154,47 @@ export async function listSessionRoster(sessionId: string): Promise<Registration
     console.error(`[repo/event-registrations] roster 失敗：${error.code} ${error.message}`);
     throw new Error(`[repo/event-registrations] roster 失敗：${error.code}`);
   }
-
-  const rows = (data ?? []) as unknown as RawRegistrationRow[];
-  if (rows.length === 0) return [];
-
-  const orderIds = [...new Set(rows.map((r) => r.order_id))];
-  const { data: orderRows, error: orderError } = await db
-    .from("orders")
-    .select("id, order_no, payment_status")
-    .in("id", orderIds);
-
-  if (orderError) {
-    console.error(
-      `[repo/event-registrations] roster orders 失敗：${orderError.code} ${orderError.message}`,
-    );
-    throw new Error(`[repo/event-registrations] roster orders 失敗：${orderError.code}`);
-  }
-
-  const byOrder = new Map(
-    ((orderRows ?? []) as unknown as { id: string; order_no: string; payment_status: string }[]).map(
-      (o) => [o.id, o],
-    ),
-  );
-  return rows.map((r) => toMasked(r, byOrder.get(r.order_id)));
+  return (data ?? []) as unknown as RegistrationRosterRow[];
 }
 
 /**
- * 每個場次有幾位報名、其中幾位是已付款的。
+ * 簽到表：這一場**會來的人**。
  *
- * 場次列表要顯示這兩個數字，而 `event_sessions.seats_taken` 只回答第一個 —— 而且
- * 回答的是「押住了幾個位子」，不是「有幾個人」。舊訂單回填出來的列刻意只有一位
- * （0020 §4.4），所以這兩個數字在那些場次上本來就會不一樣，畫面必須看得出來。
+ * ⚠️ **這是「誰在名單上」的唯一一支查詢。** 畫面、CSV 與 Phase 3 的提醒信都走
+ *    這裡（CSV 走的是 SQL 那一側的同一個 on_roster，見 exportEventRoster）。
+ *
+ *    快樂手 apps/web/app/admin/sessions/queries.ts:117-125 的原話：
+ *    「apps/worker/src/jobs/workshop-reminders.ts 寄開課提醒用的是同一個條件，
+ *      兩邊一致才不會發生『有人收到提醒卻不在簽到表上』。」
+ *    那句話在那邊是註解，在這裡是結構 —— 條件寫在 0021 §3 的 view 裡，
+ *    這個檔案只是 `.eq("on_roster", true)`。
+ *
+ * 回的仍然是**遮罩過的**列：知道「有誰」不需要看到聯絡方式。要明文就走
+ * exportEventRoster()，而那會留下一筆紀錄。
+ */
+export async function loadPaidRoster(sessionId: string): Promise<RegistrationRosterRow[]> {
+  const { data, error } = await supabaseAdmin()
+    .from("admin_event_roster")
+    .select(ROSTER_COLUMNS)
+    .eq("session_id", sessionId)
+    .eq("on_roster", true)
+    .order("created_at", { ascending: true })
+    .order("seat_no", { ascending: true });
+
+  if (error) {
+    console.error(`[repo/event-registrations] paid roster 失敗：${error.code} ${error.message}`);
+    throw new Error(`[repo/event-registrations] paid roster 失敗：${error.code}`);
+  }
+  return (data ?? []) as unknown as RegistrationRosterRow[];
+}
+
+/**
+ * 每個場次有幾位報名、其中幾位在簽到表上。
+ *
+ * 場次列表要顯示這兩個數字，而 `event_sessions.seats_taken` 是**第三個**數字 ——
+ * 它回答的是「押住了幾個位子」，不是「有幾個人」。0020 §4.4 回填的舊場次只補
+ * 一位參加者（捏造另外兩位是說謊），所以那些場次上三個數字本來就不一樣，畫面必須
+ * 看得出來（「另有 N 位未登錄姓名」）。
  *
  * 沒有 group by 就自己數：PostgREST 沒有便宜的 group by，而場次是幾十列的量級。
  * 同 src/server/repos/events.ts 的 countEventsByCategory()。
@@ -192,34 +202,92 @@ export async function listSessionRoster(sessionId: string): Promise<Registration
 export async function countRegistrationsBySession(): Promise<
   Record<string, { total: number; paid: number }>
 > {
-  const db = supabaseAdmin();
+  const { data, error } = await supabaseAdmin()
+    .from("admin_event_roster")
+    .select("session_id, on_roster");
 
-  const { data, error } = await db.from("event_registrations").select("session_id, order_id");
   if (error) {
     console.error(`[repo/event-registrations] count 失敗：${error.code} ${error.message}`);
     throw new Error(`[repo/event-registrations] count 失敗：${error.code}`);
   }
-  const rows = (data ?? []) as unknown as { session_id: string; order_id: string }[];
-  if (rows.length === 0) return {};
 
-  const { data: paidRows, error: paidError } = await db
-    .from("orders")
-    .select("id")
-    .eq("payment_status", "paid")
-    .in("id", [...new Set(rows.map((r) => r.order_id))]);
-  if (paidError) {
-    console.error(
-      `[repo/event-registrations] count orders 失敗：${paidError.code} ${paidError.message}`,
-    );
-    throw new Error(`[repo/event-registrations] count orders 失敗：${paidError.code}`);
-  }
-  const paidIds = new Set(((paidRows ?? []) as unknown as { id: string }[]).map((o) => o.id));
-
+  const rows = (data ?? []) as unknown as { session_id: string; on_roster: boolean }[];
   const counts: Record<string, { total: number; paid: number }> = {};
   for (const r of rows) {
     const entry = (counts[r.session_id] ??= { total: 0, paid: 0 });
     entry.total += 1;
-    if (paidIds.has(r.order_id)) entry.paid += 1;
+    if (r.on_roster) entry.paid += 1;
   }
   return counts;
+}
+
+/**
+ * 一位參加者的完整聯絡方式。
+ *
+ * ⚠️ **呼叫這一支就等於留下一筆 pii_access_log。** 那不是副作用，是它一半的工作：
+ *    0021 §5 的函式先寫紀錄再組值，兩件事在同一個交易裡。
+ *
+ * ⚠️ 權限檢查不在這裡，在 src/lib/admin/fns/event-registrations.ts（那一層才拿得到
+ *    session）。這一層假設呼叫端已經檢查過 —— 與 src/server/repos/** 的整體約定
+ *    一致（見 lib/admin/middleware.ts 檔頭）。
+ *
+ * ⚠️ 錯誤訊息**不轉譯也不吞**，但也不印回傳值：這支函式回的東西就是個資本身。
+ */
+export async function revealRegistrationContact(input: {
+  actorUserId: string;
+  actorEmail: string;
+  registrationId: string;
+}): Promise<RegistrationContact> {
+  const { data, error } = await supabaseAdmin().rpc("reveal_registration_contact", {
+    p_actor_user_id: input.actorUserId,
+    p_actor_email: input.actorEmail,
+    p_registration_id: input.registrationId,
+    p_reason: "attendee_contact",
+  });
+
+  if (error) {
+    console.error(`[repo/event-registrations] reveal 失敗：${error.code} ${error.message}`);
+    throw new Error(speak(error.message, "聯絡方式讀取失敗"));
+  }
+  return data as unknown as RegistrationContact;
+}
+
+/**
+ * 整場的明文名單（只含 on_roster 的列），給 CSV 匯出用。
+ *
+ * ⚠️ 一次呼叫 = **一筆** pii_access_log，subject 是**場次**不是每一位參加者
+ *    （0021 §0.1）。拆成每人一筆會讓「有人一次帶走了整場名單」這個真正重要的
+ *    資訊在稽核畫面上看不見。
+ *
+ * ⚠️ 整份名單會進到這個 Node 行程的記憶體。那是「CSV 做成 server fn 而不是 HTTP
+ *    路由」的代價，而書店一場 20–60 人可以忽略。換來的是
+ *    src/lib/admin/fns/event-registrations.ts 檔頭那一段：登入頁的 HTML 被存成
+ *    roster.csv 這件事在結構上不可能發生。
+ */
+export async function exportEventRoster(input: {
+  actorUserId: string;
+  actorEmail: string;
+  sessionId: string;
+}): Promise<RosterExport> {
+  const { data, error } = await supabaseAdmin().rpc("export_event_roster", {
+    p_actor_user_id: input.actorUserId,
+    p_actor_email: input.actorEmail,
+    p_session_id: input.sessionId,
+    p_reason: "roster_export",
+  });
+
+  if (error) {
+    console.error(`[repo/event-registrations] export 失敗：${error.code} ${error.message}`);
+    throw new Error(speak(error.message, "名單匯出失敗"));
+  }
+  return data as unknown as RosterExport;
+}
+
+/**
+ * 把 PL/pgSQL 的 `PREFIX: 中文訊息` 剝成給店員看的那一句（與 repos/inv-vendors.ts
+ * 的同名函式一模一樣，刻意沒有共用 —— 兩個檔案的錯誤前綴各自演進）。
+ */
+function speak(message: string, fallback: string): string {
+  const m = /[A-Z_]+:\s*(.+)/.exec(message ?? "");
+  return m ? m[1].trim() : fallback;
 }

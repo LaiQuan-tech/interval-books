@@ -59,12 +59,19 @@ export class PendingApprovalError extends Error {
 export type BackOfficeRole = "admin" | "staff" | "pending";
 
 /**
- * 0010 的七種 approve_*，加上 0019 §3.7 的 inv.vendor.pii.read。
- * 與 staff_permissions 的 CHECK 逐字對齊 —— 那條 CHECK 才是真正的值域，這裡是鏡射。
+ * 0010 的七種 approve_*，加上 0019 §3.7 的 inv.vendor.pii.read 與 0021 §4 的
+ * event.roster.read。與 staff_permissions 的 CHECK 逐字對齊 —— **那條 CHECK 才是
+ * 真正的值域**，這裡是鏡射。
  *
- * ⚠️ 前七種回答「能不能簽核」，最後一種回答「能不能看」。兩者是不同維度：一個
- *    管收貨的店員有理由簽核進貨，沒有理由看到廠商的身分證字號。名字用點分格式
- *    就是要讓它在清單裡一眼看得出不同類。
+ * ⚠️ 三個維度，不是一個清單：
+ *
+ *      approve_*            能不能簽核（七種）
+ *      inv.vendor.pii.read  能不能看廠商的完整識別碼／匯款帳號
+ *      event.roster.read    能不能看活動報名名單
+ *
+ *    後兩種都是「能不能看」，但看的是不同人的個資：廠商是合作對象，參加者是客人。
+ *    一個負責活動現場的工讀生需要簽到表，沒有理由看到廠商的身分證字號；一個管
+ *    收貨的店員兩個都不需要。名字用點分格式就是要讓它們在清單裡一眼看得出不同類。
  */
 export const STAFF_PERMISSIONS = [
   "approve_products",
@@ -75,6 +82,7 @@ export const STAFF_PERMISSIONS = [
   "approve_stock_adjustments",
   "approve_inventory_adjustments",
   "inv.vendor.pii.read",
+  "event.roster.read",
 ] as const;
 
 export type StaffPermission = (typeof STAFF_PERMISSIONS)[number];
@@ -83,7 +91,7 @@ export type BackOfficeUser = {
   userId: string;
   email: string;
   role: BackOfficeRole;
-  /** admin 恆為完整七種；staff 是 staff_permissions 裡實際有的列。 */
+  /** admin 恆為完整九種；staff 是 staff_permissions 裡實際有的列。 */
   permissions: StaffPermission[];
 };
 
@@ -135,10 +143,10 @@ async function loadAdminProfile(userId: string) {
  * `IF is_admin() THEN RETURN true`，這裡照抄那個語意。管理員身上沒有
  * staff_permissions 列是正常的，不是缺資料。
  *
- * ⚠️ 0019 的 inv.vendor.pii.read 也適用這一條。這家店的 admin 就是老闆，也就是
- *    那批個資的持有人，讓他先授權給自己是儀式而不是控制。真正的控制是
- *    public.pii_access_log —— admin 讀了一樣留紀錄，而且他刪不掉那筆紀錄
- *    （0019 §1.3 的 trigger 連 table owner 都擋）。
+ * ⚠️ 0019 的 inv.vendor.pii.read 與 0021 的 event.roster.read 也適用這一條。這家店
+ *    的 admin 就是老闆，也就是那批個資的持有人，讓他先授權給自己是儀式而不是控制。
+ *    真正的控制是 public.pii_access_log —— admin 讀了一樣留紀錄，而且他刪不掉那筆
+ *    紀錄（0019 §1.3 的 trigger 連 table owner 都擋）。
  */
 async function loadStaffPermissions(userId: string, role: BackOfficeRole) {
   if (role === "admin") return [...STAFF_PERMISSIONS];
