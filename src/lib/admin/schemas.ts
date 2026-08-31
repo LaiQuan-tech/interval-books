@@ -8,6 +8,7 @@
  * message instead of a raw Postgres error code.
  */
 import { z } from "zod";
+import { LIST_MAX_ITEMS, LIST_MAX_ITEM_CHARS, splitLines } from "@/lib/admin/localized-list";
 
 export const localizedSchema = z.object({
   zh: z.string().trim().min(1, "請輸入中文內容"),
@@ -16,6 +17,83 @@ export const localizedSchema = z.object({
 });
 
 export type LocalizedInput = z.infer<typeof localizedSchema>;
+
+// ---------------------------------------------------------------------------
+// 「一行一項」的三語清單欄位
+// ---------------------------------------------------------------------------
+// 活動詳情頁的七個清單欄位（活動亮點、適合對象、不適合對象、帶得走什麼、流程大綱、
+// 費用包含、注意事項）最後都存成 jsonb {"zh":[…],"en":[…],"ja":[…]}。
+//
+// ⚠️ 下面兩支是**明著配對**的一組，不是同一支的兩種寫法 —— 沿用
+//    src/routes/admin/_shell.pages.$slug.tsx:60-90 的既有先例（那裡是
+//    optionalLocalizedFormSchema 與 optionalLocalizedSchema 的配對）：
+//
+//      · localizedLinesFormSchema —— **表單端**。react-hook-form 綁的是三個 textarea，
+//        活著的值永遠是三個「一行一項」的原始字串，不是陣列。使用者打到一半、
+//        中間夾了空行、最後多一個換行，都必須算「還在編輯」而不是驗證失敗。
+//      · localizedListSchema —— **送出端**。真正要進資料庫的形狀：三個 string[]。
+//
+//    送出前用 linesToList() 把前者換成後者（那一步會丟錯，見 localized-list.ts；
+//    這裡不 slice，超過就是超過）。
+//
+// 分工沿用這個檔案既有的那條線：**資料庫管形狀（jsonb 是不是三個 key）、zod 管內容
+// （幾項、每項多長、是不是空的）**。40／200 這兩個數字的唯一來源是 localized-list.ts，
+// 不在這裡重打一次。
+
+/** 表單端一個語言的 textarea 原始字串。 */
+function localizedLinesField(lang: string) {
+  return z.string().superRefine((raw, ctx) => {
+    const items = splitLines(raw);
+    if (items.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `請至少填一行${lang}內容` });
+      return;
+    }
+    if (items.length > LIST_MAX_ITEMS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${lang}最多 ${LIST_MAX_ITEMS} 項，目前 ${items.length} 行，請自己刪到 ${LIST_MAX_ITEMS} 行以內`,
+      });
+    }
+    items.forEach((line, i) => {
+      if (line.length > LIST_MAX_ITEM_CHARS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${lang}第 ${i + 1} 行（共 ${items.length} 行）有 ${line.length} 個字，超過單項上限 ${LIST_MAX_ITEM_CHARS} 字`,
+        });
+      }
+    });
+  });
+}
+
+/** 送出端一個語言的 string[]。 */
+function localizedListField(lang: string) {
+  return z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, `${lang}的項目不可以是空的`)
+        .max(LIST_MAX_ITEM_CHARS, `${lang}單項最多 ${LIST_MAX_ITEM_CHARS} 字`),
+    )
+    .min(1, `請至少填一項${lang}內容`)
+    .max(LIST_MAX_ITEMS, `${lang}最多 ${LIST_MAX_ITEMS} 項`);
+}
+
+export const localizedLinesFormSchema = z.object({
+  zh: localizedLinesField("中文"),
+  en: localizedLinesField("英文"),
+  ja: localizedLinesField("日文"),
+});
+
+export type LocalizedLinesFormValues = z.infer<typeof localizedLinesFormSchema>;
+
+export const localizedListSchema = z.object({
+  zh: localizedListField("中文"),
+  en: localizedListField("英文"),
+  ja: localizedListField("日文"),
+});
+
+export type LocalizedListInput = z.infer<typeof localizedListSchema>;
 
 /**
  * Covers both create and update: `id` absent/empty means "create a new row"
