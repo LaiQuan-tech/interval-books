@@ -135,8 +135,38 @@ const migrations = existsSync(MIG_DIR)
       .filter((f) => f.endsWith(".sql"))
       .sort()
   : [];
-check("migrations 共 22 支", migrations.length, 22);
-check("0022 是最後一支", migrations[21], "0022_email_outbox_notify.sql");
+check("migrations 共 23 支", migrations.length, 23);
+check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// to_regproc() 不吃簽名 —— 帶括號就永遠回 null，而且不報錯。
+//
+// 0020 §3 與 0022 §9 都寫成 `to_regproc('cron.schedule(text,text,text)')`，所以
+// 那兩支的排程段在**每一台機器上**都被跳過，包含正式庫：dispatch-notify-task
+// 從來沒被建立，而 migration 看起來是成功的（只印 warning）。0023 修掉並補建。
+//
+// 帶簽名要用 to_regprocedure()。這條掃全部 migration，出現 to_regproc('…(' 就紅。
+// 這是這個專案第三次踩到「看起來有防護、其實沒有，而且不報錯」——前兩次是遮罩
+// 的 slice(-0)（0021 §2）與 CSV forceText 漏引號（58aec58）。
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const offenders = [];
+  for (const f of migrations) {
+    const body = readFileSync(join(MIG_DIR, f), "utf8");
+    // 先剝掉註解再掃：0023 的檔頭要**說明**這個 bug，本文就會出現這個字串。
+    // 守衛要抓的是程式碼，不是文件。（同 4b 對 stripTs 的處理。）
+    const code = body.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*--.*$/gm, "");
+    if (/to_regproc\s*\(\s*'[^']*\(/.test(code)) offenders.push(f);
+  }
+  // 0020 與 0022 是踩到這個坑的那兩支。它們已經套用，依規約不能改（0023 補建了
+  // 被跳過的排程）。所以這裡不是「不准有」，而是「只准有這兩支」—— 第三支出現
+  // 就代表有人又寫了一次，那時候還來得及在套用前修掉。
+  check(
+    "只有 0020／0022 用了 to_regproc() 帶簽名（新的不准再有）",
+    offenders.join(","),
+    "0020_event_sessions_registrations.sql,0022_email_outbox_notify.sql",
+  );
+}
 // 這一期不准動到既有的 0001–0021，所以它們也必須都還在。
 for (let n = 1; n <= 21; n += 1) {
   const prefix = String(n).padStart(4, "0");

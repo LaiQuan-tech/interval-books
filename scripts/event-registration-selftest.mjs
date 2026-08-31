@@ -138,10 +138,10 @@ const migrations = existsSync(join(ROOT, "supabase/migrations"))
 // 面向**這個不變量因此原封不動：0022 一行 insert / delete 都沒有打在
 // event_registrations 上，它只把地址讀出來寫進 email_outbox。
 // 所以下面每一條 0020 的斷言原樣成立。0022 自己的內容由 notify-selftest 驗。
-check("migrations 共 22 支", migrations.length, 22);
+check("migrations 共 23 支", migrations.length, 23);
 check("0020 仍在原位", migrations[19], "0020_event_sessions_registrations.sql");
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
-check("編號連續且 0022 是最後一支", migrations[21], "0022_email_outbox_notify.sql");
+check("編號連續且 0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
 for (const f of ["0004_commerce_products.sql", "0006_order_expiry.sql", "0011_inventory_single_source.sql", "0019_vendors_pii_portal.sql"]) {
   check(`${f} 仍在`, migrations.includes(f), true);
 }
