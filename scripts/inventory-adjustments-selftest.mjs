@@ -144,7 +144,12 @@ check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_
 // 0024 是黑貓 PAY 線上刷卡加的（見 supabase/migrations/0024_blackcat_payment.sql）。
 // 它沒有碰進銷存的任何一張表，所以這一支測試的其他斷言原樣成立。
 check("0024 在（黑貓 PAY 金流欄位）", migFiles.some((f) => f.startsWith("0024_")), true);
-check("沒有多出 0025（0024 是最後一號）", migFiles.some((f) => f.startsWith("0025_")), false);
+// 0025_event_speaker.sql（活動掛講者：public.events.speaker_id -> public.artists.id）
+// 是這一期加的。它只在 public.events 上加一欄與一個索引，**inv 的任何一張表、
+// 任何一支函式都沒有被碰到**，也沒有任何 drop。下面的斷言全部原樣成立。
+// 0025 自己的內容由 artists-selftest 驗。
+check("0025 在（活動掛講者）", migFiles.some((f) => f.startsWith("0025_")), true);
+check("沒有多出 0026（0025 是最後一號）", migFiles.some((f) => f.startsWith("0026_")), false);
 
 const sql = read(MIG_0017);
 const exec = strip(sql);

@@ -11,6 +11,14 @@
  * Rows are returned exactly as Supabase returns them — snake_case columns,
  * no camelCase renaming — so what you see here matches
  * supabase/migrations/0001_init.sql:172-205 column-for-column.
+ *
+ * ⚠️ 部署順序：下面的 COLUMNS 會 select speaker_id，而那一欄是
+ *    supabase/migrations/0025_event_speaker.sql 加的。**0025 必須先套上 live DB，
+ *    才能推這支程式碼** —— 欄位還不存在時 PostgREST 直接回錯誤，而這支是
+ *    /admin/events 的 loader，也就是整個活動後台打不開。
+ *
+ *    公開站不受影響：src/lib/cms.ts#fetchEvents() 的欄位清單是它自己寫死的一串，
+ *    沒有 speaker_id。
  */
 import "@tanstack/react-start/server-only";
 import { randomUUID } from "node:crypto";
@@ -18,7 +26,7 @@ import { supabaseAdmin } from "@/server/supabase-admin";
 import type { Localized } from "@/i18n/types";
 
 const COLUMNS =
-  "id, title, summary, description, display_date, iso_date, category, external_url, registration_type, payment_enabled, is_published, sort_order, created_at, updated_at";
+  "id, title, summary, description, display_date, iso_date, category, speaker_id, external_url, registration_type, payment_enabled, is_published, sort_order, created_at, updated_at";
 
 export type EventRegistrationType = "external" | "internal";
 
@@ -34,6 +42,14 @@ export type EventRow = {
   /** FK -> event_categories.id, `on delete restrict` (see
    * supabase/migrations/0001_init.sql:182-183). */
   category: string;
+  /**
+   * 主講人。FK -> public.artists(id)，`on delete set null`（見
+   * supabase/migrations/0025_event_speaker.sql）。NULL 代表這場沒有指定講者。
+   *
+   * ⚠️ 刪掉一位講者**不會**刪掉活動 —— 那個外鍵刻意不是 cascade。活動底下還掛著
+   *    報名紀錄（0020）與訂單（0005），cascade 會把它們一起帶走。
+   */
+  speaker_id: string | null;
   external_url: string;
   registration_type: EventRegistrationType;
   payment_enabled: boolean;
@@ -52,6 +68,7 @@ export type EventUpsertInput = {
   display_date: string;
   iso_date?: string | null;
   category: string;
+  speaker_id?: string | null;
   external_url: string;
   registration_type: EventRegistrationType;
   payment_enabled: boolean;
@@ -99,6 +116,9 @@ export async function upsertEvent(input: EventUpsertInput): Promise<EventRow> {
         display_date: input.display_date,
         iso_date: isoDate,
         category: input.category,
+        // 空字串（下拉選了「不指定」）與 undefined 一律寫回 NULL —— 空字串不是
+        // 合法的 artists.id，送出去只會吃 23503。
+        speaker_id: input.speaker_id && input.speaker_id.trim() ? input.speaker_id.trim() : null,
         external_url: input.external_url,
         registration_type: input.registration_type,
         payment_enabled: input.payment_enabled,

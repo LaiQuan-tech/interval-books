@@ -140,11 +140,16 @@ const migrations = existsSync(join(ROOT, "supabase/migrations"))
 // 所以下面每一條 0020 的斷言原樣成立。0022 自己的內容由 notify-selftest 驗。
 // 0024_blackcat_payment.sql（黑貓 PAY 線上刷卡：orders.payment_url /
 // payments.gateway_trans_id / payment_alerts()）是這一期加的。
-check("migrations 共 24 支", migrations.length, 24);
+// 0025_event_speaker.sql（活動掛講者：public.events.speaker_id -> public.artists.id）
+// 是這一期加的。它只在 public.events 上加一欄與一個索引，沒有碰
+// event_sessions / event_registrations / order_items 任何一張表或任何一支函式，
+// 所以下面每一條 0020 的斷言原樣成立。0025 自己的內容由 artists-selftest 驗。
+check("migrations 共 25 支", migrations.length, 25);
 check("0020 仍在原位", migrations[19], "0020_event_sessions_registrations.sql");
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
 check("0023 仍在原位", migrations[22], "0023_fix_cron_guard.sql");
-check("編號連續且 0024 是最後一支", migrations[23], "0024_blackcat_payment.sql");
+check("0024 仍在原位", migrations[23], "0024_blackcat_payment.sql");
+check("編號連續且 0025 是最後一支", migrations[24], "0025_event_speaker.sql");
 for (const f of ["0004_commerce_products.sql", "0006_order_expiry.sql", "0011_inventory_single_source.sql", "0019_vendors_pii_portal.sql"]) {
   check(`${f} 仍在`, migrations.includes(f), true);
 }

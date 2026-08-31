@@ -60,6 +60,14 @@ export const eventSchema = z.object({
   // optional so the form does not invent a date.
   iso_date: z.string().trim().optional().nullable(),
   category: z.string().trim().min(1, "請選擇分類"),
+  /**
+   * 主講人。FK -> public.artists(id)，可留空（0025_event_speaker.sql）。
+   *
+   * 表單上是**下拉**不是自由輸入：自由輸入的話，同一位講者會以「王小明」
+   * 「王 小明」「Wang Xiaoming」三種寫法散在不同活動上，而且欄位是外鍵，
+   * 打錯一個字直接吃 Postgres 23503。
+   */
+  speaker_id: z.string().trim().min(1).optional().nullable(),
   ...registrationFields,
 });
 export type EventFormValues = z.infer<typeof eventSchema>;
@@ -101,6 +109,62 @@ export const collaborationSchema = z.object({
   description: localizedSchema,
 });
 export type CollaborationFormValues = z.infer<typeof collaborationSchema>;
+
+// ---------------------------------------------------------------------------
+// 講者（public.artists）
+// ---------------------------------------------------------------------------
+/**
+ * 一位講者可編輯的欄位。
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 這裡**一個 localizedSchema 都沒有**，而那是故意的
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * public.artists 的 bio / long_bio / discipline 在資料庫裡是 `text`，不是
+ * `jsonb`（supabase/migrations/0019_vendors_pii_portal.sql:2146-2160）。這張表上
+ * 唯一的第二語言是 name 與 name_en —— 兩個獨立的 text 欄位，不是一個三語物件。
+ *
+ * 所以：
+ *   · 不可以對這些欄位用 localizedSchema；
+ *   · 不可以把它們丟進 <LocalizedField>（那個元件讀寫 `${name}.zh` 這種路徑，
+ *     套在字串欄位上會把 "王小明" 變成 {zh: undefined}）；
+ *   · 不可以丟給自動翻譯（src/lib/admin/fns/translate.ts）—— 人名尤其不該被
+ *     機器翻譯。
+ *
+ * 這件事型別上擋得住（`string` 不相容 `{zh,en,ja}`），但只要中間過一層 any 或
+ * 型別斷言就會安靜地變成畫面上的 "[object Object]"。所以後台 UI 那一側另外用
+ * 文字明講「此欄不分語言，三種語系都會顯示同一份內容」，而不是只靠型別。
+ *
+ * 要不要把 bio 升級成三語 jsonb 是另一期的決定（需要一支資料搬遷 migration），
+ * 不在這一期範圍內。
+ *
+ * ⚠️ 也**沒有** vendor_id。那是指到 inv.vendors 的會計面綁定（那張表有身分證
+ *    字號與匯款帳號），與門面資料是兩個不同的授權決定。zod 預設剝掉未宣告的
+ *    key，所以這個 schema 同時是 UI 的欄位清單與 server fn 的輸入白名單。
+ *    完整理由見 src/server/repos/artists.ts 的檔頭。
+ */
+export const artistSchema = z.object({
+  id: z.string().trim().min(1).optional(),
+  slug: z.string().trim().min(1, "請輸入網址代稱"),
+  name: z.string().trim().min(1, "請輸入講者姓名"),
+  name_en: z.string().trim().max(200).optional().nullable(),
+  discipline: z.string().trim().max(200).optional().nullable(),
+  bio: z.string().trim().max(2000).optional().nullable(),
+  long_bio: z.string().trim().max(20000).optional().nullable(),
+  image_key: z.string().trim().max(300).optional().nullable(),
+  // 空字串代表「沒有個人網站」，所以不能用 z.string().url() 硬擋（同
+  // publicationSchema.external_url 的處理）。
+  portal_url: z
+    .string()
+    .trim()
+    .max(1000)
+    .refine((v) => v === "" || /^https?:\/\//.test(v), "請輸入完整網址（含 https://）或留空")
+    .optional()
+    .nullable(),
+  sort_order: z.number().int("排序必須是整數"),
+  is_active: z.boolean(),
+});
+export type ArtistFormValues = z.infer<typeof artistSchema>;
 
 export const curatedThemeSchema = z.object({
   ...publishFields,

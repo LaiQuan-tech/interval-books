@@ -18,6 +18,7 @@ import {
   ImageIcon,
   LayoutDashboard,
   LogOut,
+  Mic,
   Newspaper,
   Package,
   Package2,
@@ -120,6 +121,11 @@ const NAV_GROUPS = [
       { to: "/admin", label: "儀表板", icon: LayoutDashboard, staff: false },
       { to: "/admin/news", label: "最新消息", icon: Newspaper, staff: false },
       { to: "/admin/events", label: "活動", icon: CalendarDays, staff: false },
+      // 講者（public.artists）緊接在活動後面，因為它就是活動的一部分：一場講座
+      // 的主體是「誰來講」。放在內容管理而不是進銷存，是因為這一頁編的是門面
+      // 資料 —— 同一張表的 vendor_id 那一半（統編、匯款）在「廠商」頁，
+      // 那是另一個授權面，見 src/server/repos/artists.ts 檔頭。
+      { to: "/admin/artists", label: "講者", icon: Mic, staff: false },
       { to: "/admin/exhibitions", label: "展覽", icon: ImageIcon, staff: false },
       { to: "/admin/publications", label: "地方刊物展", icon: BookOpen, staff: false },
       // lucide's `Route` icon would collide with this file's `export const Route`.

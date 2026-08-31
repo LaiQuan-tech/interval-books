@@ -59,6 +59,7 @@ import { Route as AdminShellEventsRouteImport } from './routes/admin/_shell.even
 import { Route as AdminShellCuratedRouteImport } from './routes/admin/_shell.curated'
 import { Route as AdminShellCollaborationsRouteImport } from './routes/admin/_shell.collaborations'
 import { Route as AdminShellCategoriesRouteImport } from './routes/admin/_shell.categories'
+import { Route as AdminShellArtistsRouteImport } from './routes/admin/_shell.artists'
 import { Route as AdminShellPagesSlugRouteImport } from './routes/admin/_shell.pages.$slug'
 
 const VisitRoute = VisitRouteImport.update({
@@ -319,6 +320,11 @@ const AdminShellCategoriesRoute = AdminShellCategoriesRouteImport.update({
   path: '/categories',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellArtistsRoute = AdminShellArtistsRouteImport.update({
+  id: '/artists',
+  path: '/artists',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellPagesSlugRoute = AdminShellPagesSlugRouteImport.update({
   id: '/$slug',
   path: '/$slug',
@@ -349,6 +355,7 @@ export interface FileRoutesByFullPath {
   '/vendor/pending': typeof VendorPendingRoute
   '/checkout/': typeof CheckoutIndexRoute
   '/shop/': typeof ShopIndexRoute
+  '/admin/artists': typeof AdminShellArtistsRoute
   '/admin/categories': typeof AdminShellCategoriesRoute
   '/admin/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/curated': typeof AdminShellCuratedRoute
@@ -400,6 +407,7 @@ export interface FileRoutesByTo {
   '/vendor/pending': typeof VendorPendingRoute
   '/checkout': typeof CheckoutIndexRoute
   '/shop': typeof ShopIndexRoute
+  '/admin/artists': typeof AdminShellArtistsRoute
   '/admin/categories': typeof AdminShellCategoriesRoute
   '/admin/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/curated': typeof AdminShellCuratedRoute
@@ -454,6 +462,7 @@ export interface FileRoutesById {
   '/vendor/pending': typeof VendorPendingRoute
   '/checkout/': typeof CheckoutIndexRoute
   '/shop/': typeof ShopIndexRoute
+  '/admin/_shell/artists': typeof AdminShellArtistsRoute
   '/admin/_shell/categories': typeof AdminShellCategoriesRoute
   '/admin/_shell/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/_shell/curated': typeof AdminShellCuratedRoute
@@ -509,6 +518,7 @@ export interface FileRouteTypes {
     | '/vendor/pending'
     | '/checkout/'
     | '/shop/'
+    | '/admin/artists'
     | '/admin/categories'
     | '/admin/collaborations'
     | '/admin/curated'
@@ -560,6 +570,7 @@ export interface FileRouteTypes {
     | '/vendor/pending'
     | '/checkout'
     | '/shop'
+    | '/admin/artists'
     | '/admin/categories'
     | '/admin/collaborations'
     | '/admin/curated'
@@ -613,6 +624,7 @@ export interface FileRouteTypes {
     | '/vendor/pending'
     | '/checkout/'
     | '/shop/'
+    | '/admin/_shell/artists'
     | '/admin/_shell/categories'
     | '/admin/_shell/collaborations'
     | '/admin/_shell/curated'
@@ -1021,6 +1033,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellCategoriesRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/artists': {
+      id: '/admin/_shell/artists'
+      path: '/artists'
+      fullPath: '/admin/artists'
+      preLoaderRoute: typeof AdminShellArtistsRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/pages/$slug': {
       id: '/admin/_shell/pages/$slug'
       path: '/$slug'
@@ -1044,6 +1063,7 @@ const AdminShellPagesRouteWithChildren = AdminShellPagesRoute._addFileChildren(
 )
 
 interface AdminShellRouteChildren {
+  AdminShellArtistsRoute: typeof AdminShellArtistsRoute
   AdminShellCategoriesRoute: typeof AdminShellCategoriesRoute
   AdminShellCollaborationsRoute: typeof AdminShellCollaborationsRoute
   AdminShellCuratedRoute: typeof AdminShellCuratedRoute
@@ -1072,6 +1092,7 @@ interface AdminShellRouteChildren {
 }
 
 const AdminShellRouteChildren: AdminShellRouteChildren = {
+  AdminShellArtistsRoute: AdminShellArtistsRoute,
   AdminShellCategoriesRoute: AdminShellCategoriesRoute,
   AdminShellCollaborationsRoute: AdminShellCollaborationsRoute,
   AdminShellCuratedRoute: AdminShellCuratedRoute,

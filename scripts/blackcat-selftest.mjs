@@ -1189,7 +1189,9 @@ for (const [label, src] of [
   const nums = readdirSync(MIG_DIR)
     .filter((f) => f.endsWith(".sql"))
     .sort();
-  check("migration 編號連續且 0024 是最後一支", nums[nums.length - 1], "0024_blackcat_payment.sql");
+  // 0025_event_speaker.sql（活動掛講者）是後來加的。它只在 public.events 上加一欄，
+  // 沒有碰 orders / payments / webhook_events，所以這一支的其他斷言原樣成立。
+  check("migration 編號連續且 0025 是最後一支", nums[nums.length - 1], "0025_event_speaker.sql");
 }
 
 {

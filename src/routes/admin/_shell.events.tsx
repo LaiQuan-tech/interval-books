@@ -33,12 +33,21 @@ import { LocalizedField } from "@/components/admin/LocalizedField";
 import { eventSchema, type EventFormValues } from "@/lib/admin/schemas";
 import { countEventsByCategory, listEvents, removeEvent, upsertEvent } from "@/lib/admin/fns/events";
 import { listEventCategories } from "@/lib/admin/fns/event-categories";
+import { listArtistOptions } from "@/lib/admin/fns/artists";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type EventRow = Awaited<ReturnType<typeof listEvents>>[number];
 type EventCategoryRow = Awaited<ReturnType<typeof listEventCategories>>[number];
+type ArtistOption = Awaited<ReturnType<typeof listArtistOptions>>[number];
 
 const EMPTY_LOCALIZED = { zh: "", en: "", ja: "" };
+
+/**
+ * Radix 的 <SelectItem> 不接受 value=""（空字串是「沒有選任何東西」的內部狀態，
+ * 拿來當選項值會讓 placeholder 與「已選不指定」變成同一件事）。所以「不指定
+ * 主講人」用一個哨兵值，送進表單之前再換回 null。
+ */
+const NO_SPEAKER = "__none__";
 
 const REGISTRATION_TYPE_LABEL: Record<EventFormValues["registration_type"], string> = {
   external: "外部連結報名",
@@ -51,11 +60,21 @@ const REGISTRATION_TYPE_LABEL: Record<EventFormValues["registration_type"], stri
  * below is a dropdown sourced from the DB, never free text — typing an id
  * that doesn't exist in event_categories would fail events.category's FK
  * (supabase/migrations/0001_init.sql:182-183).
+ *
+ * public.artists 一起載入，理由完全一樣：「主講人」也是外鍵
+ * （events.speaker_id -> artists.id，supabase/migrations/0025_event_speaker.sql），
+ * 所以它是**下拉不是自由輸入**。自由輸入的話，同一位講者會以「王小明」「王 小明」
+ * 「Wang Xiaoming」三種寫法散在不同活動上 —— 那就是講者資料永遠對不齊的起點，
+ * 而且打錯一個字會直接吃 Postgres 23503。
  */
 export const Route = createFileRoute("/admin/_shell/events")({
   loader: async () => {
-    const [events, categories] = await Promise.all([listEvents(), listEventCategories()]);
-    return { events, categories };
+    const [events, categories, artists] = await Promise.all([
+      listEvents(),
+      listEventCategories(),
+      listArtistOptions(),
+    ]);
+    return { events, categories, artists };
   },
   head: () => ({
     meta: [{ title: "活動｜小時光書店後台" }],
@@ -72,6 +91,7 @@ function toFormValues(row: EventRow): EventFormValues {
     display_date: row.display_date,
     iso_date: row.iso_date ?? "",
     category: row.category,
+    speaker_id: row.speaker_id,
     external_url: row.external_url,
     registration_type: row.registration_type,
     payment_enabled: row.payment_enabled,
@@ -81,7 +101,7 @@ function toFormValues(row: EventRow): EventFormValues {
 }
 
 function AdminEventsPage() {
-  const { events, categories } = Route.useLoaderData();
+  const { events, categories, artists } = Route.useLoaderData();
   const router = useRouter();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -143,6 +163,7 @@ function AdminEventsPage() {
         display_date: "",
         iso_date: "",
         category: "",
+        speaker_id: null,
         external_url: "",
         registration_type: "external",
         payment_enabled: false,
@@ -152,6 +173,22 @@ function AdminEventsPage() {
 
   function categoryLabel(id: string): string {
     return categories.find((c) => c.id === id)?.label.zh ?? id;
+  }
+
+  function speakerLabel(id: string | null): string {
+    if (!id) return "—";
+    return artists.find((a) => a.id === id)?.name ?? id;
+  }
+
+  /**
+   * 下拉要列出來的講者：啟用中的，**加上**這一場目前掛著的那一位（就算他已經
+   * 被停用）。
+   *
+   * 少了後面那半句就是一個無聲的資料流失：講者停用之後，去編輯任何一場已經掛著
+   * 他的舊活動，下拉裡選不到目前這個值，隨手按個儲存就把講者洗成空的。
+   */
+  function optionsFor(current: string | null | undefined): ArtistOption[] {
+    return artists.filter((a) => a.is_active || a.id === current);
   }
 
   return (
@@ -174,6 +211,7 @@ function AdminEventsPage() {
               <TableHead className="w-16">排序</TableHead>
               <TableHead>標題</TableHead>
               <TableHead>分類</TableHead>
+              <TableHead>主講人</TableHead>
               <TableHead>顯示日期</TableHead>
               <TableHead>報名方式</TableHead>
               <TableHead className="w-24">狀態</TableHead>
@@ -184,7 +222,7 @@ function AdminEventsPage() {
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                   尚無資料，點右上角「新增活動」開始。
                 </TableCell>
               </TableRow>
@@ -195,6 +233,9 @@ function AdminEventsPage() {
                   <TableCell className="max-w-sm truncate font-medium">{e.title.zh}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{categoryLabel(e.category)}</Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {speakerLabel(e.speaker_id)}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{e.display_date}</TableCell>
                   <TableCell className="text-muted-foreground">
@@ -243,6 +284,7 @@ function AdminEventsPage() {
             key={formKey}
             defaultValues={defaultValues}
             categories={categories}
+            artists={optionsFor(defaultValues.speaker_id)}
             onSubmit={handleSubmit}
             submitting={submitting}
             submitLabel={editing ? "儲存變更" : "新增"}
@@ -280,12 +322,21 @@ function AdminEventsPage() {
 type EventFormProps = {
   defaultValues: EventFormValues;
   categories: EventCategoryRow[];
+  /** 已經篩過的講者選項（啟用中的＋這一場目前掛著的那一位），見 optionsFor()。 */
+  artists: ArtistOption[];
   onSubmit: (values: EventFormValues) => Promise<void>;
   submitting: boolean;
   submitLabel: string;
 };
 
-function EventForm({ defaultValues, categories, onSubmit, submitting, submitLabel }: EventFormProps) {
+function EventForm({
+  defaultValues,
+  categories,
+  artists,
+  onSubmit,
+  submitting,
+  submitLabel,
+}: EventFormProps) {
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventSchema),
     defaultValues,
@@ -325,6 +376,46 @@ function EventForm({ defaultValues, categories, onSubmit, submitting, submitLabe
               ) : (
                 <FormDescription>
                   選項來自「活動分類」頁——分類與活動之間有資料庫關聯，不能自由輸入。
+                </FormDescription>
+              )}
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="speaker_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>主講人（選填）</FormLabel>
+              <Select
+                value={field.value ?? NO_SPEAKER}
+                onValueChange={(v) => field.onChange(v === NO_SPEAKER ? null : v)}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="不指定" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value={NO_SPEAKER}>不指定</SelectItem>
+                  {artists.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                      {a.discipline ? `（${a.discipline}）` : ""}
+                      {a.is_active ? "" : "・已停用"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {artists.length === 0 ? (
+                <FormDescription>
+                  尚無講者，請先到「講者」頁新增。這一欄可以留空，之後再回來補。
+                </FormDescription>
+              ) : (
+                <FormDescription>
+                  選項來自「講者」頁——講者與活動之間有資料庫關聯，不能自由輸入。留空代表這場不顯示講者介紹。
                 </FormDescription>
               )}
               <FormMessage />
