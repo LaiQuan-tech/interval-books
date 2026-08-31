@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * Static meta-tag audit for ZH / EN / JA — no browser required.
  *
@@ -282,8 +282,30 @@ async function main() {
 
   const report = buildReport(files);
   await mkdir("reports", { recursive: true });
-  await writeFile(REPORT_PATH, JSON.stringify(report, null, 2) + "\n", "utf8");
-  console.log(`\n→ Wrote ${relative(process.cwd(), REPORT_PATH)}`);
+
+  // 只有實質內容真的變了才重寫。
+  //
+  // 🔴 這一段是為了一個具體的意外存在：generatedAt 每次都不一樣，所以每跑一次
+  //    驗收就會把這個 **tracked** 檔案弄髒一次。結果是任何人跑完 check:meta 再
+  //    `git add -A`，就會把一個純時間戳的變動掃進一個完全不相干的 commit ——
+  //    這確實發生過（08bef43）。
+  //
+  //    比對時把 generatedAt 拿掉：留著它，比對永遠不相等，這段就白寫了。
+  const next = JSON.stringify(report, null, 2) + "\n";
+  const stripStamp = (s) => s.replace(/^\s*"generatedAt":.*$/m, "");
+  let prev = "";
+  try {
+    prev = await readFile(REPORT_PATH, "utf8");
+  } catch {
+    // 檔案還不存在（第一次跑，或被清掉了）—— 照寫。
+  }
+
+  if (prev && stripStamp(prev) === stripStamp(next)) {
+    console.log(`\n→ ${relative(process.cwd(), REPORT_PATH)} 內容未變，略過寫入`);
+  } else {
+    await writeFile(REPORT_PATH, next, "utf8");
+    console.log(`\n→ Wrote ${relative(process.cwd(), REPORT_PATH)}`);
+  }
 
   if (findings.length) {
     console.error(`\n✗ ${findings.length} issue(s):`);
