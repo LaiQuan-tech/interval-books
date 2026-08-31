@@ -7,7 +7,7 @@ import { PRODUCT_TYPE_LABELS } from "@/components/shop/labels";
 import { PriceTag, QuantityStepper, StockBadge } from "@/components/shop/ShopBits";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { useCart, useCartHydrated, useCartSubtotal, type CartLine } from "@/lib/cart";
+import { keyOfLine, useCart, useCartHydrated, useCartSubtotal, type CartLine } from "@/lib/cart";
 import { imageFor } from "@/lib/images";
 import { fetchActiveProducts, formatPrice } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
@@ -122,13 +122,16 @@ function Cart() {
     syncFromCatalogue(catalogue.products);
   }, [hydrated, catalogue, syncFromCatalogue]);
 
+  // ⚠️ keyOfLine(), not line.productId. Since migration 0020 a product can be in
+  // the cart twice — once per sitting — and keying these on the product id would
+  // change the quantity of whichever line happened to come first.
   function handleQty(line: CartLine, next: number) {
-    const result = setQty(line.productId, next);
+    const result = setQty(keyOfLine(line), next);
     if (result === "capped") toast.warning(t(PAGE.cappedToast));
   }
 
   function handleRemove(line: CartLine) {
-    removeItem(line.productId);
+    removeItem(keyOfLine(line));
     toast.success(t(PAGE.removed));
   }
 
@@ -160,7 +163,7 @@ function Cart() {
               const atLimit = line.limit !== null && line.qty >= line.limit;
               return (
                 <li
-                  key={line.productId}
+                  key={keyOfLine(line)}
                   className="flex gap-5 border-b border-border py-7 md:gap-7"
                 >
                   <Link
@@ -185,6 +188,11 @@ function Cart() {
                     >
                       {t(line.title)}
                     </Link>
+                    {/* 場次名稱：同一件商品可能在購物車裡出現兩次（兩個梯次），
+                        沒有這一行就分不出哪一列是哪一場。 */}
+                    {line.sessionTitle ? (
+                      <p className="mt-1 text-xs text-muted-foreground">{t(line.sessionTitle)}</p>
+                    ) : null}
 
                     {gone ? (
                       <div className="mt-3">

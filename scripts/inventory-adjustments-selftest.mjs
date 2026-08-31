@@ -120,7 +120,13 @@ check("0018 在（4c 加的）", migFiles.some((f) => f.startsWith("0018_")), tr
 // 加進來時它就是這樣把人叫回來的 —— 那一期改了 sales_product_id_fkey 與
 // combo_set_items_product_id_fkey 的 ON DELETE 行為（SET NULL/CASCADE → RESTRICT），
 // 所以下面的清理順序與「刪商品」相關的斷言都要在 0019 的前提下重讀一次。
-check("沒有多出 0020（0019 是最後一號）", migFiles.some((f) => f.startsWith("0020_")), false);
+//
+// 0020（場次名額／逐位參加者）加進來時再被叫回來過一次。那一期覆寫了
+// expire_unpaid_orders() 與 product_availability，並且把名額從 public.products
+// 搬到 public.event_sessions —— 三件事都不碰 inv 的在庫異動，所以下面的斷言全部
+// 原樣成立。0020 自己的內容由 event-registration-selftest 驗。
+check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
+check("沒有多出 0021（0020 是最後一號）", migFiles.some((f) => f.startsWith("0021_")), false);
 
 const sql = read(MIG_0017);
 const exec = strip(sql);

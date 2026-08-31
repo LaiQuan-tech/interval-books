@@ -208,6 +208,12 @@ checkTrue("update_stock_on_sale 被覆寫", exec0011.includes("function inv.upda
 checkTrue("channel 預設 pos", exec0011.includes("add column if not exists channel text not null default 'pos'"));
 checkTrue("override 會留痕", exec0011.includes("'pos_override'"));
 
+// ⚠️ 0020 之後，`expire_unpaid_orders()` 與 `product_availability` 這兩樣東西的
+//    **現行定義在 0020，不在 0011**。上面那幾條讀的是 0011 這個檔案，守的是
+//    「0011 當時說了什麼」不要被人偷改；「現在生效的是什麼」由
+//    scripts/event-registration-selftest.mjs 對 0020 驗。兩支各守一半，不要把
+//    其中一支的斷言搬到另一支去。
+//
 // expire 的回傳形狀不能變（改了要先 DROP，而 DROP 會影響已排程的呼叫）。
 checkTrue("expire_unpaid_orders 被覆寫", exec0011.includes("function public.expire_unpaid_orders"));
 checkTrue("expire 回傳形狀不變", exec0011.includes("restored_stock   integer"));

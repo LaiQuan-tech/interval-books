@@ -15,13 +15,17 @@
  * specific code and rethrows a message naming the offending slug, same
  * pattern as src/server/repos/exhibitions.ts#upsertExhibition.
  *
- * seats_taken is deliberately absent from ProductUpsertInput and never
- * appears in the upsert() write payload below. It is maintained exclusively
- * by the reserve_product_seat() RPC (see
- * supabase/migrations/0004_commerce_products.sql) as bookings come in through
- * checkout; a form write here would race that RPC and could silently
- * under/overcount seats. It is still selected in COLUMNS so the admin
- * list/edit views can show it read-only (e.g. "已報名 3 / 20").
+ * ⚠️ capacity 與 seats_taken **都不再是可寫欄位**（0020）。
+ *
+ * seats_taken 從來就不是：它由持有列鎖的 RPC 維護，表單寫回一個幾分鐘前讀到的
+ * 計數器就會與那支 RPC 對撞。0020 讓 capacity 加入同一類 —— 名額搬到
+ * public.event_sessions，而 `products_capacity_moved_to_sessions` 這條 CHECK 要求
+ * `capacity is null and seats_taken = 0`，所以寫任何非 null 的 capacity 進來只會
+ * 換到一個 23514。名額改由 src/server/repos/event-sessions.ts 按場次維護。
+ *
+ * 兩欄都還留在 COLUMNS 裡。理由與 0020 §1 不 drop 欄位是同一個：程式碼先上線、
+ * migration 後套用，中間那段時間欄位還帶著舊值，而一個查不到欄位的 select 會讓
+ * PostgREST 回 400、整頁掛掉。留著讀到的是 null，那是失敗時比較安全的那一邊。
  */
 import "@tanstack/react-start/server-only";
 import { randomUUID } from "node:crypto";
@@ -78,7 +82,6 @@ export type ProductUpsertInput = {
   price: number;
   compare_at_price?: number | null;
   stock?: number | null;
-  capacity?: number | null;
   image_key?: string | null;
   requires_shipping: boolean;
   status: ProductStatus;
@@ -115,9 +118,10 @@ export async function getProductById(id: string): Promise<ProductRow | null> {
  * news.id), so id generation has to happen here rather than being left to
  * Postgres.
  *
- * The write payload deliberately omits seats_taken — see file header — so a
- * concurrent reserve_product_seat() call can never be clobbered by an admin
- * saving this form.
+ * The write payload deliberately omits both seats_taken and capacity — see the
+ * file header — so a concurrent reserve_session_seat() call can never be
+ * clobbered by an admin saving this form, and so the form cannot try to write a
+ * number the database now refuses.
  */
 export async function upsertProduct(input: ProductUpsertInput): Promise<ProductRow> {
   const id = input.id && input.id.trim() ? input.id : randomUUID();
@@ -137,7 +141,7 @@ export async function upsertProduct(input: ProductUpsertInput): Promise<ProductR
         price: input.price,
         compare_at_price: input.compare_at_price ?? null,
         stock: input.stock ?? null,
-        capacity: input.capacity ?? null,
+        // capacity 刻意不在這裡。見檔頭 —— 寫進來只會換到一個 23514。
         image_key: input.image_key ?? null,
         requires_shipping: input.requires_shipping,
         status: input.status,
@@ -155,13 +159,11 @@ export async function upsertProduct(input: ProductUpsertInput): Promise<ProductR
       );
     }
     if (error.code === "23514") {
-      // Defence in depth: the form's zod schema (productSchema, in
-      // src/lib/admin/schemas.ts) already blocks the most common way to hit
-      // this — event/journey without a capacity — before the request is
-      // ever sent. This branch only fires for a case that schema cannot see,
-      // e.g. lowering capacity below an existing seats_taken on an update.
+      // 0020 之後這一支最可能觸發的是 products_capacity_moved_to_sessions ——
+      // 也就是有人（舊 bundle、腳本、dashboard）還在往 capacity 寫值。訊息原文
+      // 帶出去，因為約束名稱本身就說明了問題在哪。
       throw new Error(
-        `[repo/products] upsert 失敗：欄位組合不符合資料庫限制（例如名額低於目前已報名人數）。${error.message}`,
+        `[repo/products] upsert 失敗：欄位組合不符合資料庫限制（名額請到「活動報名」按場次設定，不要寫進商品）。${error.message}`,
       );
     }
     throw new Error(`[repo/products] upsert 失敗：${error.message}`);

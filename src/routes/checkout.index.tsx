@@ -41,17 +41,18 @@ import {
 } from "@/components/ui/form";
 import { useLang, useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { useCart, useCartHydrated, type CartLine } from "@/lib/cart";
+import { keyOfLine, useCart, useCartHydrated, type CartLine } from "@/lib/cart";
 import {
   amountToFreeShipping,
   checkoutErrorText,
-  checkoutFormSchema,
+  checkoutFormSchemaWithParticipants,
   computeShippingFee,
   SHIPPING_RULES,
   type CheckoutFormValues,
   type OfferedShippingMethod,
 } from "@/lib/checkout";
 import { fetchPaymentOptions, placeOrder } from "@/lib/checkout-fns";
+import { ParticipantFields } from "@/components/shop/ParticipantFields";
 import { submitPaymentForm } from "@/lib/payment-redirect";
 import { fetchActiveProducts, formatPrice } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
@@ -80,6 +81,12 @@ const PAGE = {
     ja: "カートが空のため、お手続きに進めません。",
   },
   contactSection: { zh: "聯絡資料", en: "Your details", ja: "ご連絡先" },
+  participantsSection: { zh: "參加者資料", en: "Who is coming", ja: "参加者情報" },
+  participantsIntro: {
+    zh: "活動報名需要每一位參加者的姓名與聯絡方式，現場才點得到名。",
+    en: "Bookings need a name and a way to reach each attendee, so we can check everyone in on the day.",
+    ja: "当日の受付のため、参加者お一人ずつのお名前とご連絡先をご入力ください。",
+  },
   shippingSection: { zh: "寄送方式", en: "Delivery", ja: "お届け方法" },
   addressSection: { zh: "收件地址", en: "Delivery address", ja: "お届け先住所" },
   noteSection: { zh: "備註", en: "Notes", ja: "備考" },
@@ -289,9 +296,36 @@ function Checkout() {
   const freeGap = amountToFreeShipping({ needsShipping, method: effectiveMethod, subtotal });
 
   const requireAddress = needsShipping && method === "home";
+
+  /**
+   * 每一行 booking 展開成 qty 個位子，攤平成一個有順序的清單。
+   *
+   * 這個順序就是表單欄位 `participants.<index>` 的順序，也是送出時分組回
+   * items[].participants 的依據 —— 兩邊都從這一個陣列推導，所以不可能對不上。
+   *
+   * 排序固定成購物車的順序（buyable 本身的順序），不要換成 Map 迭代或 sort：
+   * 順序一變，已經填好的欄位就會跳到別位參加者身上。
+   */
+  const participantSlots = useMemo(
+    () =>
+      buyable
+        .filter((l) => l.productType === "event" || l.productType === "journey")
+        .map((l) => ({ line: l, lineKey: keyOfLine(l), count: l.qty })),
+    [buyable],
+  );
+  const totalParticipants = useMemo(
+    () => participantSlots.reduce((sum, s) => sum + s.count, 0),
+    [participantSlots],
+  );
+
   const schema = useMemo(
-    () => checkoutFormSchema({ t, requireAddress }),
-    [t, requireAddress],
+    () =>
+      checkoutFormSchemaWithParticipants({
+        t,
+        requireAddress,
+        participantSlots: participantSlots.map((s) => ({ lineKey: s.lineKey, count: s.count })),
+      }),
+    [t, requireAddress, participantSlots],
   );
 
   const form = useForm<CheckoutFormValues>({
@@ -310,6 +344,9 @@ function Checkout() {
         street: "",
       },
       note: "",
+      // 參加者由下面的 useEffect 依購物車補齊。這裡給空陣列而不是 undefined，
+      // 因為 react-hook-form 要有一個穩定的初始形狀才綁得住 participants.N.*。
+      participants: [],
       // 預設個人、無載具 —— 這是絕大多數客人的情況，也是不做任何選擇時最不會出錯的
       // 一種（發票開得出來、寄得到信箱、之後還能補登載具）。
       invoice: {
@@ -322,6 +359,39 @@ function Checkout() {
       },
     },
   });
+
+  /**
+   * 讓 participants 陣列的長度與購物車一致。
+   *
+   * 購物車在這一頁是會變的（syncFromCatalogue 會把賣完的行 clamp 成 0），所以
+   * 欄位數不能只在 mount 時算一次。已經填好的值**逐格保留** —— 用同一個
+   * (lineKey, offset) 去對舊值，所以「某一行少了一個位子」不會把後面每一位的
+   * 資料往前推一格。
+   *
+   * 只有在真的不一樣時才 setValue，否則這個 effect 會自己觸發自己。
+   */
+  useEffect(() => {
+    const current = form.getValues("participants") ?? [];
+    const byKey = new Map<string, CheckoutFormValues["participants"]>();
+    for (const p of current) {
+      const list = byKey.get(p.lineKey) ?? [];
+      list.push(p);
+      byKey.set(p.lineKey, list);
+    }
+    const next: NonNullable<CheckoutFormValues["participants"]> = [];
+    for (const slot of participantSlots) {
+      const old = byKey.get(slot.lineKey) ?? [];
+      for (let i = 0; i < slot.count; i++) {
+        next.push(
+          old[i] ?? { lineKey: slot.lineKey, name: "", email: "", phone: "", noticeAck: false },
+        );
+      }
+    }
+    const same =
+      next.length === current.length &&
+      next.every((p, i) => p === current[i] || p.lineKey === current[i]?.lineKey);
+    if (!same) form.setValue("participants", next, { shouldValidate: false });
+  }, [participantSlots, form]);
 
   /**
    * 切換發票類型時，把另外兩種的欄位清空。
@@ -359,9 +429,32 @@ function Checkout() {
         data: {
           ...values,
           shippingMethod: effectiveMethod,
-          // Only what and how many. Prices, names and totals are the server's
-          // to decide — see src/lib/checkout-fns.ts.
-          items: buyable.map((l) => ({ productId: l.productId, quantity: l.qty })),
+          // Only what, which sitting, how many, and who is coming. Prices,
+          // names and totals are still the server's to decide — see
+          // src/lib/checkout-fns.ts.
+          //
+          // 參加者從攤平的表單陣列依 lineKey 分組回每一行。分組的來源與
+          // participantSlots 是同一個 keyOfLine()，所以不會有「填在 A 行、送到
+          // B 行」的可能。伺服器仍然自己驗一次筆數，最後由
+          // reserve_session_seat() 的第 ① 步在同一個交易裡拍板。
+          items: buyable.map((l) => {
+            const key = keyOfLine(l);
+            const people = (values.participants ?? []).filter((p) => p.lineKey === key);
+            return {
+              productId: l.productId,
+              quantity: l.qty,
+              sessionId: l.sessionId,
+              participants:
+                l.productType === "event" || l.productType === "journey"
+                  ? people.map((p) => ({
+                      name: p.name,
+                      email: p.email ?? null,
+                      phone: p.phone ?? null,
+                      noticeAck: p.noticeAck === true,
+                    }))
+                  : undefined,
+            };
+          }),
           address: requireAddress ? values.address : null,
           locale: lang,
           idempotencyKey,
@@ -492,6 +585,29 @@ function Checkout() {
                   )}
                 />
               </fieldset>
+
+              {/* 參加者放在聯絡資料之後、寄送之前：填的順序與客人腦中的順序一致
+                  （先是「我是誰」，再是「誰要來」，最後才是「寄到哪」）。
+                  全是書的購物車不會渲染這一段，連標題都不會出現。 */}
+              {participantSlots.length > 0 ? (
+                <fieldset className="space-y-5">
+                  <legend className="eyebrow text-xl">{t(PAGE.participantsSection)}</legend>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {t(PAGE.participantsIntro)}
+                  </p>
+                  {participantSlots.map((slot, idx) => (
+                    <ParticipantFields
+                      key={slot.lineKey}
+                      lineTitle={slot.line.title}
+                      sessionTitle={slot.line.sessionTitle}
+                      startIndex={participantSlots
+                        .slice(0, idx)
+                        .reduce((sum, s) => sum + s.count, 0)}
+                      count={slot.count}
+                    />
+                  ))}
+                </fieldset>
+              ) : null}
 
               {needsShipping ? (
                 <>
@@ -896,9 +1012,14 @@ function Checkout() {
 
             <ul className="mt-6 space-y-4 border-b border-border pb-6">
               {buyable.map((line) => (
-                <li key={line.productId} className="flex justify-between gap-4 text-sm">
+                <li key={keyOfLine(line)} className="flex justify-between gap-4 text-sm">
                   <span className="min-w-0">
                     <span className="block truncate">{t(line.title)}</span>
+                    {line.sessionTitle ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {t(line.sessionTitle)}
+                      </span>
+                    ) : null}
                     <span className="text-xs text-muted-foreground">× {line.qty}</span>
                   </span>
                   <span className="shrink-0 tabular-nums">

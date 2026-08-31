@@ -60,6 +60,19 @@ export const SHOP_PRODUCT_TYPES: ShopProductType[] = ["goods", "book", "event", 
  * by construction, so there is no value a component could usefully branch on
  * and no way for a non-active row to be mistaken for a sellable one.
  */
+export type ShopSession = {
+  id: string;
+  productId: string;
+  title: Localized;
+  location: Localized;
+  /** ISO 8601 from timestamptz. */
+  startsAt: string;
+  endsAt: string | null;
+  capacity: number;
+  seatsTaken: number;
+  sortOrder: number;
+};
+
 export type ShopProduct = {
   id: string;
   slug: string;
@@ -73,9 +86,20 @@ export type ShopProduct = {
   compareAtPrice: number | null;
   /** goods/book only. NULL = not stock-managed, i.e. always purchasable. */
   stock: number | null;
-  /** event/journey only. NOT NULL for those types per products_capacity_shape. */
+  /**
+   * ⚠️ 0020 之後這兩欄**一律是 null / 0** —— 名額搬到 public.event_sessions，
+   * `products_capacity_moved_to_sessions` 這條 CHECK 強制的。欄位還讀著是因為
+   * 那個 CHECK 是 migration 帶來的，而程式碼先上線：套用之前它們還有舊值，
+   * 套用之後變成 null。兩種情況下 remainingFor() 都不看它們（見下面），所以
+   * 這裡留著純粹是為了讓 COLUMNS 字串在 migration 套用前後都查得到欄位。
+   */
   capacity: number | null;
   seatsTaken: number;
+  /**
+   * 這件商品的**可報名梯次**，只有 event/journey 會有。空陣列的意思是「現在
+   * 沒有任何一場開放報名」，不是「不限名額」——  remainingFor() 據此回 0。
+   */
+  sessions: ShopSession[];
   imageKey: string | null;
   requiresShipping: boolean;
   sortOrder: number;
@@ -177,6 +201,7 @@ function toProduct(r: Row): ShopProduct | null {
     stock: nullableInt(r.stock),
     capacity: nullableInt(r.capacity),
     seatsTaken: int(r.seats_taken, 0),
+    sessions: [],
     imageKey: nullableStr(r.image_key),
     requiresShipping: r.requires_shipping !== false,
     sortOrder: int(r.sort_order, 0),
@@ -231,18 +256,126 @@ async function attachAvailability(products: ShopProduct[]): Promise<void> {
   }
 }
 
+/**
+ * Every column the storefront needs from public.event_sessions.
+ *
+ * `capacity` / `seats_taken` are in here for the same reason products used to
+ * carry them: the shopper has to be told how many places are left. Migration
+ * 0020 moved those two numbers from public.products to this table without
+ * changing who may read them — event_sessions has anon SELECT plus a policy
+ * (`status='open'` and the product is active), exactly like products.
+ */
+const SESSION_COLUMNS =
+  "id, product_id, title, location, starts_at, ends_at, capacity, seats_taken, sort_order";
+
+function toSession(r: Row): ShopSession | null {
+  const id = typeof r.id === "string" ? r.id : null;
+  const productId = typeof r.product_id === "string" ? r.product_id : null;
+  const title = loc(r.title);
+  const location = loc(r.location);
+  const startsAt = typeof r.starts_at === "string" ? r.starts_at : null;
+  const capacity = nullableInt(r.capacity);
+  if (!id || !productId || !title || !location || !startsAt || capacity === null) return null;
+  return {
+    id,
+    productId,
+    title,
+    location,
+    startsAt,
+    endsAt: nullableStr(r.ends_at),
+    capacity,
+    seatsTaken: int(r.seats_taken, 0),
+    sortOrder: int(r.sort_order, 0),
+  };
+}
+
+/**
+ * Reads the open sessions for whichever of these products are bookings, and
+ * writes them onto the products in place.
+ *
+ * ⚠️ Unlike attachAvailability() this one is NOT best effort in its effect: a
+ * failed read leaves `sessions` empty, and an empty session list means
+ * remainingFor() reports 0 — sold out. That is deliberate and it is the
+ * opposite direction from the availability read, because the two answer
+ * different questions. "How many books are left" has a safe fallback
+ * (products.stock); "which sitting is this shopper booking" does not, and a
+ * booking without a session id is an order the checkout must refuse. Failing
+ * closed here costs a sale; failing open would create bookings nobody can seat.
+ *
+ * Only queried for event/journey products, so an all-books catalogue makes no
+ * extra round trip at all.
+ */
+async function attachSessions(products: ShopProduct[]): Promise<void> {
+  const db = supabase;
+  const bookings = products.filter(
+    (p) => p.productType === "event" || p.productType === "journey",
+  );
+  if (!db || bookings.length === 0) return;
+  try {
+    const { data, error } = await db
+      .from("event_sessions")
+      .select(SESSION_COLUMNS)
+      .in(
+        "product_id",
+        bookings.map((p) => p.id),
+      )
+      .order("sort_order", { ascending: true })
+      .order("starts_at", { ascending: true })
+      .order("id", { ascending: true });
+
+    if (error || !Array.isArray(data)) {
+      logFailure("sessions", error?.message ?? "unexpected response shape");
+      return;
+    }
+    const byProduct = new Map<string, ShopSession[]>();
+    for (const row of data as unknown as Row[]) {
+      const session = toSession(row);
+      if (!session) continue;
+      const list = byProduct.get(session.productId);
+      if (list) list.push(session);
+      else byProduct.set(session.productId, [session]);
+    }
+    for (const p of bookings) p.sessions = byProduct.get(p.id) ?? [];
+  } catch (err) {
+    logFailure("sessions", err instanceof Error ? err.message : String(err));
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Availability
 // -----------------------------------------------------------------------------
 
 /**
+ * How many places are left in one sitting. Never null — a session always has a
+ * capacity (`event_sessions.capacity` is NOT NULL), so "unlimited" is not a
+ * state a booking can be in.
+ *
+ * This is the number every booking-related limit in the app comes from: the
+ * cart line's `limit`, the quantity stepper's max, and the pre-check in
+ * src/server/repos/orders.ts. The authoritative one is still
+ * reserve_session_seat()'s step ⑤, which holds a row lock; this one is a
+ * display value read a moment earlier and may already be stale.
+ */
+export function remainingForSession(s: ShopSession): number {
+  return Math.max(0, s.capacity - s.seatsTaken);
+}
+
+/**
  * How many units may still be added, or null when the product is not
  * quantity-limited at all.
  *
- * event/journey are limited by remaining seats; `capacity` is NOT NULL for those
- * types (products_capacity_shape in 0004), so the null branch there only fires
- * on malformed data and errs towards "no limit known" rather than blocking a
- * sale.
+ * ⚠️ event/journey no longer read `p.capacity` / `p.seatsTaken`. Migration 0020
+ * moved the seat count to public.event_sessions and pinned those two columns to
+ * null / 0 with a CHECK, so reading them would report every activity as
+ * "no limit known" — the fail-OPEN direction. The answer here is instead "does
+ * any open sitting still have room", i.e. the largest remaining count across
+ * this product's sessions. A booking with no open sessions returns 0 (sold out
+ * / not open yet), never null.
+ *
+ * Note this is the *product-level* number, used for the sold-out badge on the
+ * list page. What actually caps a cart line is remainingForSession() for the
+ * one sitting the shopper picked — a product with two sessions of 5 places is
+ * not a product you can buy 10 seats of in one line.
  *
  * goods/book have two sources and the order between them is load-bearing:
  *
@@ -258,8 +391,8 @@ async function attachAvailability(products: ShopProduct[]): Promise<void> {
  */
 export function remainingFor(p: ShopProduct): number | null {
   if (p.productType === "event" || p.productType === "journey") {
-    if (p.capacity === null) return null;
-    return Math.max(0, p.capacity - p.seatsTaken);
+    if (p.sessions.length === 0) return 0;
+    return p.sessions.reduce((max, s) => Math.max(max, remainingForSession(s)), 0);
   }
   if (p.stock !== null) return p.stock;
   return p.availableCapped;
@@ -304,7 +437,7 @@ export async function fetchActiveProducts(): Promise<ShopListResult> {
       const p = toProduct(row);
       if (p) products.push(p);
     }
-    await attachAvailability(products);
+    await Promise.all([attachAvailability(products), attachSessions(products)]);
     return { products, unavailable: false };
   } catch (err) {
     logFailure("products", err instanceof Error ? err.message : String(err));
@@ -352,7 +485,7 @@ export async function fetchActiveProductsByIds(ids: string[]): Promise<ShopListR
       const p = toProduct(row);
       if (p) products.push(p);
     }
-    await attachAvailability(products);
+    await Promise.all([attachAvailability(products), attachSessions(products)]);
     return { products, unavailable: false };
   } catch (err) {
     logFailure("products", err instanceof Error ? err.message : String(err));
@@ -385,7 +518,7 @@ export async function fetchActiveProductBySlug(slug: string): Promise<ShopProduc
     }
     if (!data) return { product: null, unavailable: false };
     const product = toProduct(data as unknown as Row);
-    if (product) await attachAvailability([product]);
+    if (product) await Promise.all([attachAvailability([product]), attachSessions([product])]);
     return { product, unavailable: false };
   } catch (err) {
     logFailure(`products/${slug}`, err instanceof Error ? err.message : String(err));

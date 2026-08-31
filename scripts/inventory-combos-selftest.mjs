@@ -124,7 +124,11 @@ for (let n = 1; n <= 17; n += 1) {
 // 加進來時它就是這樣把人叫回來的 —— 那一期改了 sales_product_id_fkey 與
 // combo_set_items_product_id_fkey 的 ON DELETE 行為（SET NULL/CASCADE → RESTRICT），
 // 所以下面的清理順序與「刪商品」相關的斷言都要在 0019 的前提下重讀一次。
-check("沒有多出 0020（0019 是最後一號）", migFiles.some((f) => f.startsWith("0020_")), false);
+// 0020（場次名額／逐位參加者）不碰套餐、二手書或 OCR bucket，所以這支測試的
+// 斷言全部原樣成立。它動的是 public.products 的名額欄位與 event_sessions 那兩張
+// 新表，由 event-registration-selftest 驗。
+check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
+check("沒有多出 0021（0020 是最後一號）", migFiles.some((f) => f.startsWith("0021_")), false);
 
 const sql = read(MIG_0018);
 const exec = strip(sql);

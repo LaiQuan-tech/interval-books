@@ -107,9 +107,16 @@ function formatTWD(n: number): string {
   return `NT$${n.toLocaleString("zh-Hant-TW")}`;
 }
 
-/** List-table / read-only summary of stock or capacity, e.g. "已報名 3 / 20" or "庫存 12". */
+/**
+ * List-table summary of what limits this product, e.g. "庫存 12".
+ *
+ * ⚠️ 活動／策旅在這裡永遠是「場次管理」而不是一個數字。0020 把名額搬到
+ *    public.event_sessions，products.capacity 被 CHECK 綁成 null，所以這一欄
+ *    原本那句 `已報名 3 / 20` 之後永遠會印成「—」。一件活動商品可以有兩個梯次、
+ *    兩個名額，本來就沒有單一個數字可以印 —— 指去有答案的那一頁才是誠實的。
+ */
 function inventoryLabel(p: ProductRow): string {
-  if (p.capacity != null) return `已報名 ${p.seats_taken} / ${p.capacity}`;
+  if (isBookableType(p.product_type)) return "場次管理";
   if (p.stock != null) return `庫存 ${p.stock}`;
   return "—";
 }
@@ -138,7 +145,6 @@ function toFormValues(row: ProductRow): ProductFormValues {
     price: row.price,
     compare_at_price: row.compare_at_price,
     stock: row.stock,
-    capacity: row.capacity,
     image_key: row.image_key,
     requires_shipping: row.requires_shipping,
     status: row.status,
@@ -213,7 +219,6 @@ function AdminProductsPage() {
         price: 0,
         compare_at_price: null,
         stock: null,
-        capacity: null,
         image_key: null,
         requires_shipping: true,
         status: "draft",
@@ -320,7 +325,6 @@ function AdminProductsPage() {
           <ProductForm
             key={formKey}
             defaultValues={defaultValues}
-            seatsTaken={editing ? editing.seats_taken : null}
             onSubmit={handleSubmit}
             submitting={submitting}
             submitLabel={editing ? "儲存變更" : "新增"}
@@ -337,10 +341,11 @@ function AdminProductsPage() {
             <AlertDialogTitle>確定要刪除這件商品嗎？</AlertDialogTitle>
             <AlertDialogDescription>
               「{deleteTarget?.title.zh}」刪除後無法復原。
-              {deleteTarget && deleteTarget.seats_taken > 0 ? (
+              {deleteTarget && isBookableType(deleteTarget.product_type) ? (
                 <span className="mt-2 block font-medium text-destructive">
-                  此商品已有 {deleteTarget.seats_taken}{" "}
-                  筆報名／訂位紀錄，刪除前請確認不會影響既有訂單。
+                  這是活動類商品。刪除會連帶刪掉它的所有場次——只要任何一個場次有人
+                  報名或下過單，資料庫會擋下整筆刪除（場次與訂單明細之間是
+                  on delete restrict）。請先到「活動報名」處理那些場次。
                 </span>
               ) : null}
             </AlertDialogDescription>
@@ -366,27 +371,18 @@ function AdminProductsPage() {
 
 type ProductFormProps = {
   defaultValues: ProductFormValues;
-  /** editing row's seats_taken, or null when creating (there is nothing to show yet). Read-only — see repo file header. */
-  seatsTaken: number | null;
   onSubmit: (values: ProductFormValues) => Promise<void>;
   submitting: boolean;
   submitLabel: string;
 };
 
-function ProductForm({
-  defaultValues,
-  seatsTaken,
-  onSubmit,
-  submitting,
-  submitLabel,
-}: ProductFormProps) {
+function ProductForm({ defaultValues, onSubmit, submitting, submitLabel }: ProductFormProps) {
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues,
   });
 
   const productType = useWatch({ control: form.control, name: "product_type" });
-  const capacityValue = useWatch({ control: form.control, name: "capacity" });
   const bookable = isBookableType(productType);
   const shippable = isShippableType(productType);
 
@@ -404,14 +400,13 @@ function ProductForm({
                   value={field.value}
                   onValueChange={(next) => {
                     field.onChange(next);
-                    // Clear whichever of stock/capacity no longer applies —
-                    // otherwise a stale hidden value rides along to the
-                    // server (e.g. an "event" product still carrying a
-                    // leftover stock number from when it was "goods").
+                    // Switching to a booking clears the leftover stock number,
+                    // otherwise an "event" product rides along carrying the
+                    // figure it had while it was "goods". There is no capacity
+                    // field to clear in the other direction any more — 0020
+                    // moved that number to public.event_sessions.
                     if (isBookableType(next as ProductType)) {
                       form.setValue("stock", null, { shouldValidate: true });
-                    } else {
-                      form.setValue("capacity", null, { shouldValidate: true });
                     }
                   }}
                 >
@@ -586,43 +581,14 @@ function ProductForm({
           </div>
         ) : null}
 
+        {/* 名額不在這裡了。0020 把它搬到 public.event_sessions，並且用一條 CHECK
+            強制 products.capacity 是 null —— 留一個會被資料庫拒收的輸入框，比沒有
+            這個輸入框更糟。一件活動也可能有兩個梯次、兩個名額，本來就放不進單一
+            欄位。 */}
         {bookable ? (
-          <div className="space-y-2 rounded-md border border-border p-4">
-            <FormField
-              control={form.control}
-              name="capacity"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>名額</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      inputMode="numeric"
-                      step={1}
-                      name={field.name}
-                      ref={field.ref}
-                      onBlur={field.onBlur}
-                      value={field.value ?? ""}
-                      onChange={(e) =>
-                        field.onChange(
-                          e.target.value === "" ? null : Math.trunc(Number(e.target.value)),
-                        )
-                      }
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    活動／策旅商品必填——資料庫會拒絕沒有名額的活動類商品。
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {seatsTaken != null ? (
-              <p className="text-sm text-muted-foreground">
-                已報名 {seatsTaken} / {capacityValue ?? "—"}{" "}
-                ——唯讀，由訂位系統（reserve_product_seat）自動維護，無法在此編輯。
-              </p>
-            ) : null}
+          <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
+            名額與日期改由「活動報名」頁按場次維護。先在這裡把商品存起來，再到那一頁
+            為它新增場次——沒有開放中的場次，前台就報不了名。
           </div>
         ) : null}
 

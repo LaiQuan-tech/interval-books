@@ -323,6 +323,10 @@ function PublicationCard({
 
   function handleAdd() {
     if (!product) return;
+    // 刊物展賣的是書，所以這裡永遠是 goods/book。萬一有人把某一本的 product_id
+    // 指到活動商品，加進購物車會產生一行沒有 sessionId 的 booking —— 結帳會拒收
+    // 它，而客人看到的是一句籠統的失敗。寧可在這裡什麼都不做，讓他走商品頁選場次。
+    if (product.productType === "event" || product.productType === "journey") return;
     const result = addItem(cartInputFor(product, 1));
     if (result === "added") toast.success(t(text.block("addedToast", PAGE.addedToast)));
     else if (result === "capped") toast.warning(t(text.block("cappedToast", PAGE.cappedToast)));

@@ -230,14 +230,16 @@ const PRODUCT_STATUSES = ["draft", "active", "archived"] as const;
  * news.id — see src/server/repos/products.ts), so `id` absent/empty means
  * "create a new row", same convention as newsSchema.
  *
- * The superRefine below reproduces the DB's products_capacity_shape CHECK
- * (supabase/migrations/0004_commerce_products.sql) client-side: event/journey
- * products must have a capacity. Doing it here puts the error on the
- * capacity field itself instead of letting the admin hit a raw Postgres
- * 23514 check-violation message after submit.
+ * ⚠️ `capacity` 與 `seats_taken` **都不是這張表單的欄位**，而且不可以加回來。
  *
- * `seats_taken` is deliberately not a field on this schema at all — see
- * src/server/repos/products.ts for why it must never be part of a form write.
+ * 0004 原本有一條 products_capacity_shape CHECK 要求 event/journey 必須填名額，
+ * 這個 schema 也照著做了一條 superRefine。0020 把名額整個搬到
+ * public.event_sessions，並且用 `products_capacity_moved_to_sessions` 這條新
+ * CHECK 強制 `capacity is null and seats_taken = 0` —— 所以那條 superRefine 現在
+ * 會逼使用者填一個資料庫拒收的值。名額改在「活動報名」頁按場次維護。
+ *
+ * `seats_taken` 從來就不是這裡的欄位，理由見 src/server/repos/products.ts：
+ * 表單寫回一個幾分鐘前讀到的計數器，就是 reserve_session_seat() 存在的理由。
  */
 export const productSchema = z
   .object({
@@ -266,32 +268,51 @@ export const productSchema = z
       .min(0, "庫存不可為負數")
       .nullable()
       .optional(),
-    // Bookings only (event/journey) — required-when-applicable enforced below.
-    capacity: z
-      .number()
-      .int("名額必須是整數，不接受小數")
-      .min(0, "名額不可為負數")
-      .nullable()
-      .optional(),
     image_key: z.string().trim().nullable().optional(),
     requires_shipping: z.boolean(),
     status: z.enum(PRODUCT_STATUSES),
     sort_order: z.number().int("排序必須是整數"),
+  });
+
+export type ProductFormValues = z.infer<typeof productSchema>;
+
+/**
+ * 一個梯次（public.event_sessions，0020 §1）。
+ *
+ * ⚠️ 沒有 `seats_taken`。它只由三支持有列鎖的 SQL 函式維護，見
+ *    src/server/repos/event-sessions.ts 的檔頭。
+ *
+ * `capacity` 有，因為調降名額是合法的後台動作 —— 而且資料庫會擋下降到低於
+ * seats_taken 的那一種（event_sessions_seats_within_capacity），所以「已經有 12 人
+ * 報名卻想改成 10」會當場失敗，而不是留下一個超過自己上限的場次。
+ */
+export const eventSessionSchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    product_id: z.string().trim().min(1, "請選擇活動商品"),
+    title: localizedSchema,
+    location: localizedSchema,
+    // datetime-local 的值（YYYY-MM-DDTHH:mm），由路由轉成 ISO 再送出。
+    starts_at: z.string().trim().min(1, "請輸入開始時間"),
+    ends_at: z.string().trim().nullable().optional(),
+    capacity: z.number().int("名額必須是整數，不接受小數").min(0, "名額不可為負數"),
+    status: z.enum(["open", "closed"]),
+    sort_order: z.number().int("排序必須是整數"),
   })
   .superRefine((data, ctx) => {
-    if (
-      (data.product_type === "event" || data.product_type === "journey") &&
-      data.capacity == null
-    ) {
+    // 與 0020 的 event_sessions_time_order CHECK 逐字對應。放在這裡是為了讓錯誤
+    // 印在「結束時間」那個輸入框旁邊，而不是變成一句 23514。
+    const ends = (data.ends_at ?? "").trim();
+    if (ends !== "" && ends < data.starts_at) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "活動／策旅類型的商品必須填寫名額",
-        path: ["capacity"],
+        message: "結束時間不可以早於開始時間",
+        path: ["ends_at"],
       });
     }
   });
 
-export type ProductFormValues = z.infer<typeof productSchema>;
+export type EventSessionFormValues = z.infer<typeof eventSessionSchema>;
 
 /**
  * 上架表單：把一個進銷存品項變成型錄商品。

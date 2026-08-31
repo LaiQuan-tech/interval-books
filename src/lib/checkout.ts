@@ -297,6 +297,21 @@ const MSG = {
     en: "A donation code is 3–7 digits",
     ja: "愛心コードは 3〜7 桁の数字です",
   },
+  participantName: {
+    zh: "請輸入參加者姓名",
+    en: "Please enter this attendee's name",
+    ja: "参加者のお名前をご入力ください",
+  },
+  participantContact: {
+    zh: "請至少留下電子信箱或手機號碼其中一項",
+    en: "Please leave at least an email address or a mobile number",
+    ja: "メールアドレスか携帯番号のいずれかをご入力ください",
+  },
+  participantNotice: {
+    zh: "請先閱讀並同意活動注意事項",
+    en: "Please read and accept the activity notes first",
+    ja: "ご参加にあたっての注意事項をご確認のうえ、同意してください",
+  },
 } satisfies Record<string, Localized>;
 
 /**
@@ -369,6 +384,60 @@ function invoiceSchema(t: Translate) {
 }
 
 /**
+ * 一位參加者。
+ *
+ * ⚠️ 這裡沒有任何金額欄位，而且不可以加 —— 與 invoiceSchema 同一條規矩
+ *    （見 checkoutPayloadSchema 的註解）。它描述的是「誰要來」，不是「要付多少」。
+ *
+ * `email` 與 `phone` 各自可以留空，但不能兩個都空：現場找不到人的一列名單沒有用。
+ * 這條規則與 0020 的 `event_registrations_contactable` CHECK 逐字對應。
+ *
+ * `noticeAck` 必須是 true。存進資料庫的是 `notice_ack_at`（時間，不是 boolean），
+ * 由 reserve_session_seat() 在寫入的當下取 now()。一個永遠沒人勾的同意欄位就是
+ * 一個死欄位 —— 那正是 events.registration_type 的下場，所以這裡讓它是必填。
+ */
+function participantSchema(t: Translate) {
+  return z
+    .object({
+      /** 對應購物車的 cartLineKey()，讓伺服器知道這一位屬於哪一行。 */
+      lineKey: z.string().trim().min(1).max(200),
+      name: z.string().trim().min(1, t(MSG.participantName)).max(60, t(MSG.nameLong)),
+      email: z.string().trim().max(120, t(MSG.tooLong)).optional().nullable(),
+      phone: z.string().trim().max(30, t(MSG.tooLong)).optional().nullable(),
+      noticeAck: z.boolean(),
+    })
+    .superRefine((value, ctx) => {
+      const hasEmail = (value.email ?? "").trim().length > 0;
+      const hasPhone = (value.phone ?? "").trim().length > 0;
+      if (!hasEmail && !hasPhone) {
+        // 掛在 email 上而不是整個物件上：react-hook-form 才印得到輸入框旁邊。
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["email"],
+          message: t(MSG.participantContact),
+        });
+      }
+      if (hasEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((value.email ?? "").trim())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["email"],
+          message: t(MSG.emailFormat),
+        });
+      }
+      if (hasPhone && !TW_MOBILE.test((value.phone ?? "").trim())) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: t(MSG.phone) });
+      }
+      if (!value.noticeAck) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["noticeAck"],
+          message: t(MSG.participantNotice),
+        });
+      }
+    });
+}
+
+/**
  * One schema definition, rendered in whichever language is asked for.
  *
  * The browser passes the live translator so a Japanese shopper gets Japanese
@@ -431,12 +500,64 @@ export function checkoutFormSchema({
     address: (requireAddress ? strictAddress : looseAddress).optional().nullable(),
     note: z.string().trim().max(500, t(MSG.noteLong)).optional().nullable(),
     /**
+     * 逐位參加者，攤平成一個陣列（每一筆自己帶 lineKey）而不是
+     * `Record<lineKey, Participant[]>`。
+     *
+     * 理由是 react-hook-form：巢狀 record 的欄位名稱裡會出現 uuid 與冒號，
+     * `name="participants.<uuid>:<uuid>.0.name"` 這種路徑 RHF 解析不了（它把
+     * `.` 當成層級分隔）。攤平之後每個欄位就是 `participants.3.name`，錯誤訊息
+     * 也印得回正確的輸入框。
+     *
+     * `.optional()` 是同 invoice 的向後相容：一個全是書的購物車沒有這個欄位。
+     */
+    participants: z.array(participantSchema(t)).max(200).optional(),
+    /**
      * 發票開法。`.optional()` 是刻意的向後相容：這個欄位是在金流之後才加的，一個
      * 還在跑舊 bundle 的分頁送上來的 payload 沒有它，那種請求應該照舊建立訂單並開
      * 一張 B2C 個人發票，而不是整筆結帳失敗。伺服器端用 normalizeInvoiceChoice()
      * 補上預設值。
      */
     invoice: invoiceSchema(t).optional().nullable(),
+  });
+}
+
+/**
+ * The schema the /checkout form actually binds to: checkoutFormSchema plus the
+ * cross-field rule that每一行 booking 要幾位就必須有幾位.
+ *
+ * 分成兩支而不是一支的理由很實際：superRefine 會把 ZodObject 變成 ZodEffects，
+ * 而 ZodEffects 沒有 `.extend()` —— 下面的 checkoutPayloadSchema 需要 extend。
+ * 所以「可以被 extend 的那一份」與「表單用的那一份」分開，而不是讓伺服器端的
+ * payload schema 遷就表單。
+ *
+ * ⚠️ 這一條規則只是**體驗**：少一位在畫面上長得像「那一格沒填」，多一位則是
+ *    payload 被改過，兩者都應該讓客人當場看到，而不是送到伺服器才換回一句籠統的
+ *    「訂單建立失敗」。真正的保證在 reserve_session_seat() 的第 ① 步，它與寫入在
+ *    同一個交易裡（supabase/migrations/0020 §2），而且伺服器端根本不看這個陣列 ——
+ *    它從 items[].quantity 自己推導該有幾位。
+ */
+export function checkoutFormSchemaWithParticipants(args: {
+  t: Translate;
+  requireAddress: boolean;
+  participantSlots: { lineKey: string; count: number }[];
+}) {
+  const { t, participantSlots } = args;
+  return checkoutFormSchema(args).superRefine((value, ctx) => {
+    if (participantSlots.length === 0) return;
+    const got = new Map<string, number>();
+    for (const p of value.participants ?? []) {
+      got.set(p.lineKey, (got.get(p.lineKey) ?? 0) + 1);
+    }
+    for (const slot of participantSlots) {
+      if ((got.get(slot.lineKey) ?? 0) !== slot.count) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["participants"],
+          message: t(MSG.participantName),
+        });
+        return;
+      }
+    }
   });
 }
 
@@ -460,6 +581,14 @@ export type CheckoutFormValues = {
     street?: string | null;
   } | null;
   note?: string | null;
+  /** 逐位參加者，攤平成一個陣列。空陣列＝這個購物車裡沒有活動。 */
+  participants?: {
+    lineKey: string;
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    noticeAck: boolean;
+  }[];
   /**
    * Optional for the same reason `address` is loose: this is the *input* shape
    * react-hook-form binds to, and it has to be at least as permissive as the
@@ -477,10 +606,38 @@ export type CheckoutFormValues = {
   } | null;
 };
 
-/** One cart line as the browser is permitted to describe it: what, and how many. */
+/**
+ * One cart line as the browser is permitted to describe it: what, which sitting,
+ * how many, and who is coming.
+ *
+ * ⚠️ `sessionId` is the first field the browser has ever been able to send that
+ * points at a *different row* than `productId` does, and that opened a new way
+ * to lie: "charge me for product A, seat me in product B's session". Nothing in
+ * this schema can catch that — the two ids are individually well-formed — so it
+ * is caught in the database, inside the same transaction that takes the seat
+ * (reserve_session_seat() step ③, supabase/migrations/0020 §2). Do not move that
+ * check up here and delete it down there.
+ *
+ * `participants` still carries no money field, same as the rest of this payload:
+ * a name, an email, a phone and a consent flag. zod strips unknown keys, so a
+ * `price` bolted onto a participant never reaches the repo.
+ */
 export const checkoutItemSchema = z.object({
   productId: z.string().trim().min(1).max(200),
   quantity: z.number().int().min(1).max(99),
+  /** uuid of public.event_sessions. Required for event/journey, null otherwise. */
+  sessionId: z.string().uuid().nullable().optional(),
+  participants: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(60),
+        email: z.string().trim().max(120).nullable().optional(),
+        phone: z.string().trim().max(30).nullable().optional(),
+        noticeAck: z.boolean().optional(),
+      }),
+    )
+    .max(99)
+    .optional(),
 });
 
 /**
@@ -502,6 +659,9 @@ export const checkoutItemSchema = z.object({
 export const checkoutPayloadSchema = checkoutFormSchema({
   t: (m) => m.zh,
   requireAddress: false,
+  // 伺服器端用的是 items[].participants，不是表單那一份攤平的 participants ——
+  // 「這一行要幾位」的答案在伺服器上是從 items[].quantity 推導的，不是從瀏覽器
+  // 送來的 slot 清單。所以這裡用的是不帶那條 superRefine 的版本。
 }).extend({
   items: z.array(checkoutItemSchema).min(1).max(50),
   locale: z.enum(["zh", "en", "ja"]),

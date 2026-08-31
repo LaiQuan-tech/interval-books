@@ -28,7 +28,7 @@
  *   3. insert order_items                                       (undo: cascade)
  *   4. insert order_addresses                                   (undo: cascade)
  *  4b. insert invoices (the shopper's invoice choice)            (undo: cascade)
- *   5. reserve seats, one reserve_product_seat() per booking     (undo: CAS)
+ *   5. reserve_session_seat() per booking line                   (undo: delete)
  *  6a. reserve_inventory_stock() for inventory-backed lines      (undo: delete)
  *  6b. atomic_deduct_stock() for every catalog-stock line        (no undo needed)
  *   7. record the payment intent and build the PayUni form       (no writes to undo)
@@ -52,12 +52,39 @@
  * leaves the inventory system with no sales row and no stock movement at all.
  * That is the property this whole design exists to buy; see 0011's header.
  *
- * Step 5 is the one genuinely awkward part — reserve_product_seat() takes one
- * product at a time, so an order with two different bookings is two calls and
- * the second can fail after the first succeeded. releaseSeats() below undoes it
- * with a compare-and-swap rather than a relative update, because a
- * read-modify-write on seats_taken is exactly the oversell bug that
- * atomic_deduct_stock() exists to prevent.
+ * Step 5 changed shape in migration 0020 and is worth re-reading. It used to be
+ * reserve_product_seat(product_id, quantity), which moved a counter on
+ * public.products and nothing else. It is now
+ * reserve_session_seat(order_id, order_item_id, session_id, quantity,
+ * participants) — one call that takes the seats on public.event_sessions AND
+ * writes the N attendee rows, in one statement.
+ *
+ * That is not a convenience. `order_items.quantity = N ⇒ N registrations` is a
+ * cross-row invariant, and there is no transaction here to enforce it across
+ * two calls (see the paragraph above: PostgREST gives one statement per round
+ * trip). Splitting it would mean a window where the seats are taken and nobody
+ * knows who is sitting in them — and orders created inside that window would
+ * survive it. Migration 0020 §2 works through why a deferred constraint trigger
+ * cannot express this either.
+ *
+ * It is still one call per booking line, so an order with two sittings is two
+ * calls and the second can fail after the first succeeded. The undo is now
+ * release_session_seat(order_item_id), whose DELETE … RETURNING is its own
+ * idempotent claim — strictly better than the read/compare-and-swap/retry loop
+ * this file used to run, and it gives the attendee rows back along with the
+ * seats.
+ *
+ * ⚠️ The order inside the catch block is load-bearing: release BEFORE delete.
+ *    event_registrations cascades from order_items, which cascades from orders,
+ *    so deleting the order first would take the attendee rows away while
+ *    event_sessions.seats_taken kept counting them. Nothing would ever notice.
+ *
+ * Step 5 is also the only place a browser-supplied id points at a row other
+ * than the product it is paying for: `sessionId`. reserve_session_seat() step ③
+ * refuses a session whose product is not this line's product, and refuses an
+ * order_item that belongs to another order. Do not remove that check on the
+ * grounds that this file "already knows" — this file is exactly what a tampered
+ * payload is trying to talk its way past.
  *
  * Step 7 is outside that scheme on purpose: it happens after the order is
  * durable, and its only write (the payments row) is an audit record. If it
@@ -107,15 +134,60 @@ type ProductRow = {
   title: Localized;
   price: number;
   stock: number | null;
+  /**
+   * ⚠️ 0020 之後這兩欄一律是 null / 0（`products_capacity_moved_to_sessions`）。
+   *    留在 PRODUCT_COLUMNS 裡是為了讓這支查詢在 migration 套用前後都成立 ——
+   *    程式碼先上線、migration 後套用，中間那段時間欄位還帶著舊值。名額真正的
+   *    來源是 public.event_sessions，見 SESSION_COLUMNS。
+   */
   capacity: number | null;
   seats_taken: number;
   requires_shipping: boolean;
   status: string;
 };
 
+/** 名額的真相在這張表（0020）。 */
+const SESSION_COLUMNS = "id, product_id, capacity, seats_taken, status";
+
+type SessionRow = {
+  id: string;
+  product_id: string;
+  capacity: number;
+  seats_taken: number;
+  status: string;
+};
+
+/** 一位參加者，如同瀏覽器被允許描述的樣子。沒有任何金額欄位。 */
+type ParticipantInput = {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  noticeAck?: boolean;
+};
+
 /** A line after the server has priced it. Nothing here came from the browser except `quantity`. */
 type PricedLine = {
   productId: string;
+  /**
+   * The sitting this line books, or null for goods/book. Taken from the
+   * payload and then **verified against the database** — priceLines() refuses a
+   * booking whose sessionId is missing, closed, or belongs to another product,
+   * and refuses a non-booking that carries one at all.
+   *
+   * That check is repeated inside reserve_session_seat() (step ③) on purpose.
+   * This one gives the shopper a clean rejection before an order number is
+   * burned; that one is the guard that holds the row lock.
+   */
+  sessionId: string | null;
+  /**
+   * Who is coming, in the order the shopper typed them. Exactly `quantity`
+   * entries for a booking, empty for everything else.
+   *
+   * ⚠️ PII. It exists inside this function call and inside the SQL statement
+   *    that writes it, and nowhere else — it is never logged, never returned to
+   *    the browser, and never written to any table but event_registrations.
+   */
+  participants: ParticipantInput[];
   productType: ProductTypeForOrder;
   name: Localized;
   unitPrice: number;
@@ -173,37 +245,104 @@ const isBooking = (t: ProductTypeForOrder) => t === "event" || t === "journey";
  * independent lines against the same row.
  */
 async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]> {
-  const wanted = new Map<string, number>();
+  // ⚠️ Merged on (product, sitting), not on product alone. Before 0020 the key
+  // was the product id, because two lines for the same product really were
+  // indistinguishable. They are not any more: one activity with a morning and
+  // an evening sitting is two different things to buy, and merging them would
+  // charge for both while seating everyone in whichever one came first.
+  const wanted = new Map<
+    string,
+    { productId: string; sessionId: string | null; quantity: number; participants: ParticipantInput[] }
+  >();
   for (const item of items) {
-    wanted.set(item.productId, (wanted.get(item.productId) ?? 0) + item.quantity);
+    const sessionId = item.sessionId ?? null;
+    const key = `${item.productId}:${sessionId ?? ""}`;
+    const existing = wanted.get(key);
+    if (existing) {
+      existing.quantity += item.quantity;
+      existing.participants = existing.participants.concat(item.participants ?? []);
+    } else {
+      wanted.set(key, {
+        productId: item.productId,
+        sessionId,
+        quantity: item.quantity,
+        participants: [...(item.participants ?? [])],
+      });
+    }
   }
   if (wanted.size === 0) throw new CheckoutError("cart_empty");
 
+  const productIds = [...new Set([...wanted.values()].map((w) => w.productId))];
   const { data, error } = await supabaseAdmin()
     .from("products")
     .select(PRODUCT_COLUMNS)
     .eq("status", "active")
-    .in("id", [...wanted.keys()]);
+    .in("id", productIds);
 
   if (error) throw new CheckoutError("order_failed");
 
   const rows = (data ?? []) as unknown as ProductRow[];
   const byId = new Map(rows.map((r) => [r.id, r]));
 
+  // The sittings this cart claims to be booking, read back from the database.
+  // Only queried when the cart actually holds a booking, so an all-books
+  // checkout costs exactly the round trips it did before 0020.
+  const sessionIds = [
+    ...new Set([...wanted.values()].map((w) => w.sessionId).filter((id): id is string => id !== null)),
+  ];
+  const sessionById = new Map<string, SessionRow>();
+  if (sessionIds.length > 0) {
+    const { data: sessionRows, error: sessionError } = await supabaseAdmin()
+      .from("event_sessions")
+      .select(SESSION_COLUMNS)
+      .in("id", sessionIds);
+    if (sessionError) throw new CheckoutError("order_failed");
+    for (const row of (sessionRows ?? []) as unknown as SessionRow[]) {
+      sessionById.set(row.id, row);
+    }
+  }
+
   // Every requested id must still be on sale. Reporting the whole cart as
   // unavailable rather than silently dropping the line is deliberate: dropping
   // it would charge the shopper for an order they did not agree to.
   const lines: PricedLine[] = [];
-  for (const [productId, quantity] of wanted) {
-    const p = byId.get(productId);
+  for (const w of wanted.values()) {
+    const p = byId.get(w.productId);
     if (!p) throw new CheckoutError("product_unavailable");
+
+    // ---- the shape rules order_items' CHECK will enforce anyway -----------
+    // Checked here first so the shopper gets a sentence instead of a 23514.
+    if (isBooking(p.product_type)) {
+      if (w.sessionId === null) throw new CheckoutError("product_unavailable");
+      const session = sessionById.get(w.sessionId);
+      // Missing, closed, or belonging to a different product — all three mean
+      // "you cannot book this", and all three are reported the same way. Being
+      // more specific here would turn the checkout into an oracle that tells a
+      // prober which session ids exist.
+      if (!session || session.status !== "open" || session.product_id !== p.id) {
+        throw new CheckoutError("product_unavailable");
+      }
+      if (w.participants.length !== w.quantity) throw new CheckoutError("order_failed");
+      for (const person of w.participants) {
+        const hasName = person.name.trim().length > 0;
+        const hasContact =
+          (person.email ?? "").trim().length > 0 || (person.phone ?? "").trim().length > 0;
+        if (!hasName || !hasContact) throw new CheckoutError("order_failed");
+      }
+    } else if (w.sessionId !== null || w.participants.length > 0) {
+      // A book with a sitting attached is a payload that has been edited.
+      throw new CheckoutError("product_unavailable");
+    }
+
     lines.push({
       productId: p.id,
+      sessionId: w.sessionId,
+      participants: w.participants,
       productType: p.product_type,
       name: p.title,
       unitPrice: p.price,
-      quantity,
-      subtotal: p.price * quantity,
+      quantity: w.quantity,
+      subtotal: p.price * w.quantity,
       requiresShipping: p.requires_shipping,
       stockManaged: p.stock !== null,
     });
@@ -223,7 +362,7 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
     const { data: availRows } = await supabaseAdmin()
       .from("product_availability")
       .select("product_id, available_capped")
-      .in("product_id", [...wanted.keys()]);
+      .in("product_id", productIds);
     for (const row of (availRows ?? []) as unknown as {
       product_id: string;
       available_capped: number;
@@ -238,7 +377,12 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
   for (const line of lines) {
     const p = byId.get(line.productId)!;
     if (isBooking(p.product_type)) {
-      if (p.capacity !== null && p.seats_taken + line.quantity > p.capacity) {
+      // ⚠️ Reads event_sessions, NOT products.capacity/seats_taken. After 0020
+      // those two are pinned to null/0 by a CHECK, so the old condition
+      // (`p.capacity !== null && …`) is false for every row — it would wave
+      // every booking through, which is the fail-OPEN direction.
+      const session = sessionById.get(line.sessionId!)!;
+      if (session.seats_taken + line.quantity > session.capacity) {
         throw new CheckoutError("no_seats_left");
       }
     } else if (line.stockManaged) {
@@ -262,42 +406,41 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
 // -----------------------------------------------------------------------------
 
 /**
- * Give back seats claimed by reserve_product_seat() when a later step failed.
+ * Give back the seats — and the attendee rows — claimed by
+ * reserve_session_seat() when a later step failed.
  *
- * Compare-and-swap, not `seats_taken = seats_taken - n`: PostgREST can only
- * send an absolute value, and writing back a number read a moment ago is how
- * two concurrent bookings overwrite each other. Filtering the PATCH on the
- * observed value means a row someone else touched in between simply matches
- * nothing, and we re-read and try again.
+ * One RPC per order item. `release_session_seat()` deletes this item's
+ * event_registrations with DELETE … RETURNING and subtracts exactly the number
+ * of rows it actually removed, all under the session's row lock. That makes it
+ * its own idempotent claim: calling it twice gives back the seats once, and the
+ * second call reports 0.
  *
- * Best effort by design. This runs while another error is already being
- * reported, so it must never throw and mask it; the worst case is a seat that
- * stays counted until someone looks, which is far better than a seat sold twice.
+ * ⚠️ This replaced a read / compare-and-swap / retry-three-times loop against
+ *    products.seats_taken. Do not reintroduce anything of that shape here.
+ *    PostgREST can only send an absolute value for a PATCH, which is why that
+ *    loop existed at all; doing the arithmetic inside the function removes the
+ *    read-modify-write entirely rather than making it survivable.
+ *
+ * Best effort by design, on both sides: this runs while another error is
+ * already being reported, so it must never throw and mask it, and the SQL
+ * function has its own `exception when others then return 0`. The worst case is
+ * a seat that stays counted until someone looks, which is far better than a
+ * seat sold twice.
  */
-async function releaseSeats(reserved: { productId: string; quantity: number }[]): Promise<void> {
+async function releaseSeats(orderItemIds: number[]): Promise<void> {
   const db = supabaseAdmin();
-  for (const { productId, quantity } of reserved) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const { data: current } = await db
-          .from("products")
-          .select("seats_taken")
-          .eq("id", productId)
-          .maybeSingle();
-        const taken = (current as { seats_taken?: number } | null)?.seats_taken;
-        if (typeof taken !== "number") break;
-
-        const next = Math.max(0, taken - quantity);
-        const { data: updated } = await db
-          .from("products")
-          .update({ seats_taken: next })
-          .eq("id", productId)
-          .eq("seats_taken", taken) // ← the compare half of compare-and-swap
-          .select("id");
-        if (Array.isArray(updated) && updated.length > 0) break;
-      } catch {
-        break;
+  for (const orderItemId of orderItemIds) {
+    try {
+      const { error } = await db.rpc("release_session_seat", { p_order_item_id: orderItemId });
+      if (error) {
+        // ⚠️ code + message only, never the whole error object. PostgREST
+        // forwards Postgres's `DETAIL: Failing row contains (…)`, and for
+        // event_registrations that row is somebody's name and phone number.
+        // Logging the object would put attendee PII in the Vercel log.
+        console.error(`[seats] release 失敗 item=${orderItemId}: ${error.code} ${error.message}`);
       }
+    } catch {
+      /* best effort — see the doc comment */
     }
   }
 }
@@ -380,7 +523,12 @@ export async function commitInventoryForOrder(orderId: string): Promise<number> 
     }
     return oversold;
   } catch (err) {
-    console.error(`[inventory] commit 例外 order=${orderId}:`, err);
+    // 訊息字串，不是整包物件 —— 同 releaseSeats() 的理由：supabase-js 把
+    // PostgREST 的 `DETAIL: Failing row contains (…)` 掛在 error 物件上，而這條
+    // 路徑跑在有 order_items 的交易之後，那個 DETAIL 可能帶著訂單內容。
+    console.error(
+      `[inventory] commit 例外 order=${orderId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return 0;
   }
 }
@@ -437,7 +585,9 @@ async function buildPayuniHandoff(order: {
     await recordPaymentIntent(order);
     return { kind: "form", action, fields };
   } catch (err) {
-    console.error("[checkout] buildPayuniHandoff failed", order.order_no, err);
+    console.error(
+      `[checkout] buildPayuniHandoff failed order=${order.order_no}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return null;
   }
 }
@@ -571,7 +721,8 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
     public_token: string;
     total: number;
   };
-  const reserved: { productId: string; quantity: number }[] = [];
+  /** order_items ids whose seats have been taken and must be given back on failure. */
+  const reservedItemIds: number[] = [];
   let reservedInventory = false;
 
   try {
@@ -580,18 +731,64 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
     // PostgREST rejects a batch whose objects differ ("All object keys must
     // match") — adding, say, product_id to only the rows that have one turns
     // the whole insert into a 400.
-    const { error: itemsError } = await db.from("order_items").insert(
-      lines.map((l) => ({
-        order_id: order.id,
-        product_id: l.productId,
-        name: l.name,
-        unit_price: l.unitPrice,
-        quantity: l.quantity,
-        subtotal: l.subtotal,
-        product_type: l.productType,
-      })),
-    );
-    if (itemsError) throw new CheckoutError("order_failed");
+    //
+    // ⚠️ Two rules govern the shape of these objects and they pull in opposite
+    //    directions:
+    //
+    //    1. Every object in the batch must carry an IDENTICAL key set.
+    //       PostgREST rejects a mixed batch with "All object keys must match",
+    //       so `session_id` cannot be present on only the booking rows.
+    //
+    //    2. `order_items.session_id` does not exist until migration 0020 is
+    //       applied — and this code ships BEFORE the migration does. Sending
+    //       the column unconditionally would 400 every book checkout in the
+    //       window between the deploy and the migration. (Verified: PostgREST
+    //       answers `column "session_id" of relation "order_items" does not
+    //       exist`, and there is nothing about a cart of books that should care
+    //       whether sittings exist yet.)
+    //
+    //    Both are satisfied by deciding ONCE per order: a cart with no booking
+    //    in it omits the column entirely — which is also exactly what it means
+    //    — and a cart with one carries it on every row, null on the books. A
+    //    cart with a booking cannot exist before 0020 anyway: there is no way
+    //    to create a sitting until the table does.
+    //
+    // The ids come back because step 5 needs them: reserve_session_seat() keys
+    // the attendee rows on order_item_id, which does not exist until this
+    // insert has run.
+    const anySession = lines.some((l) => l.sessionId !== null);
+    const { data: insertedItems, error: itemsError } = await db
+      .from("order_items")
+      .insert(
+        lines.map((l) => {
+          const row: Record<string, unknown> = {
+            order_id: order.id,
+            product_id: l.productId,
+            name: l.name,
+            unit_price: l.unitPrice,
+            quantity: l.quantity,
+            subtotal: l.subtotal,
+            product_type: l.productType,
+          };
+          if (anySession) row.session_id = l.sessionId;
+          return row;
+        }),
+      )
+      .select(anySession ? "id, product_id, session_id" : "id, product_id");
+    if (itemsError || !insertedItems) throw new CheckoutError("order_failed");
+
+    // Matched by (product, sitting) rather than by array position: priceLines()
+    // already merged duplicates on exactly that key, so it is unique per order,
+    // and relying on PostgREST returning rows in insertion order would be an
+    // assumption nothing in its contract makes.
+    const itemIdByKey = new Map<string, number>();
+    for (const row of insertedItems as unknown as {
+      id: number;
+      product_id: string | null;
+      session_id?: string | null;
+    }[]) {
+      itemIdByKey.set(`${row.product_id ?? ""}:${row.session_id ?? ""}`, row.id);
+    }
 
     // ---- step 4: order_addresses -------------------------------------------
     if (address) {
@@ -635,19 +832,52 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
     });
     if (invoiceError) throw new CheckoutError("order_failed");
 
-    // ---- step 5: seats ------------------------------------------------------
-    // Sorted so concurrent multi-booking orders take the row locks in the same
-    // order and cannot deadlock against each other — the same reasoning
-    // atomic_deduct_stock() applies internally.
-    for (const line of lines.filter((l) => isBooking(l.productType)).sort((a, b) =>
-      a.productId < b.productId ? -1 : 1,
-    )) {
-      const { error } = await db.rpc("reserve_product_seat", {
-        p_product_id: line.productId,
+    // ---- step 5: seats + attendees (ONE call, see the file header) ---------
+    // Sorted by session id so two concurrent orders that book the same pair of
+    // sittings take the row locks in the same order and cannot deadlock against
+    // each other — the same reasoning atomic_deduct_stock() applies internally.
+    // Sorting by product id (what this loop used to do) is not enough any more:
+    // two sittings of the SAME product are two different rows to lock.
+    for (const line of lines
+      .filter((l) => isBooking(l.productType))
+      .sort((a, b) => ((a.sessionId ?? "") < (b.sessionId ?? "") ? -1 : 1))) {
+      const orderItemId = itemIdByKey.get(`${line.productId}:${line.sessionId ?? ""}`);
+      if (orderItemId === undefined) throw new CheckoutError("order_failed");
+
+      const { error } = await db.rpc("reserve_session_seat", {
+        p_order_id: order.id,
+        p_order_item_id: orderItemId,
+        p_session_id: line.sessionId,
         p_quantity: line.quantity,
+        p_participants: line.participants.map((person) => ({
+          name: person.name.trim(),
+          email: (person.email ?? "").trim() || null,
+          phone: (person.phone ?? "").trim() || null,
+          // The database stores a timestamp, not a flag — it takes now() when
+          // this is true. See event_registrations.notice_ack_at.
+          noticeAck: person.noticeAck === true ? "true" : "false",
+        })),
       });
-      if (error) throw new CheckoutError("no_seats_left");
-      reserved.push({ productId: line.productId, quantity: line.quantity });
+
+      if (error) {
+        // ⚠️ code + message only. PostgREST forwards Postgres's
+        // `DETAIL: Failing row contains (…)`, which for this statement is an
+        // attendee's name and phone number. Logging `error` whole would write
+        // that into the Vercel log; there is a static test asserting this line
+        // does not.
+        console.error(
+          `[seats] reserve 失敗 order=${order.id} item=${orderItemId}: ${error.code} ${error.message}`,
+        );
+        // Only NO_SEATS_LEFT is something the shopper can act on ("pick fewer
+        // places"). Everything else the function raises — a mismatched session,
+        // a closed sitting, a participant count that does not match the
+        // quantity — means the payload was edited or this file has a bug, and
+        // neither is worth a specific sentence in the shop's three languages.
+        throw new CheckoutError(
+          (error.message ?? "").includes("NO_SEATS_LEFT") ? "no_seats_left" : "order_failed",
+        );
+      }
+      reservedItemIds.push(orderItemId);
     }
 
     // ---- step 6a: inventory reservations (REVERSIBLE) ------------------------
@@ -689,8 +919,12 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
     // The reservation release is also covered by `on delete cascade` from the
     // orders row, but doing it explicitly means the stock comes back even if
     // deleteOrder() is the thing that failed.
+    // ⚠️ releaseSeats BEFORE deleteOrder, always. event_registrations cascades
+    //    from order_items which cascades from orders, so deleting first would
+    //    take the attendee rows away while event_sessions.seats_taken kept
+    //    counting them — a seat held forever with nothing pointing at it.
     await releaseInventoryReservations(reservedInventory ? order.id : null);
-    await releaseSeats(reserved);
+    await releaseSeats(reservedItemIds);
     await deleteOrder(order.id);
     throw err instanceof CheckoutError ? err : new CheckoutError("order_failed");
   }

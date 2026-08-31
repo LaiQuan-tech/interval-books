@@ -10,7 +10,13 @@ import type { Localized } from "@/i18n/types";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { cartInputFor, useCart } from "@/lib/cart";
 import { imageFor } from "@/lib/images";
-import { fetchActiveProductBySlug, isSoldOut, remainingFor } from "@/lib/shop";
+import {
+  fetchActiveProductBySlug,
+  isSoldOut,
+  remainingFor,
+  remainingForSession,
+  type ShopSession,
+} from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
 import curatedImg from "@/assets/curated-objects.jpg";
 
@@ -37,6 +43,18 @@ const PAGE = {
   remainingCount: { zh: "僅剩", en: "Only", ja: "残り" },
   remainingUnit: { zh: "件", en: "left", ja: "点" },
   seatsLeft: { zh: "尚餘名額", en: "Places left", ja: "残り枠" },
+  chooseSession: { zh: "選擇場次", en: "Choose a sitting", ja: "回を選ぶ" },
+  sessionFull: { zh: "已額滿", en: "Full", ja: "満席" },
+  noSessions: {
+    zh: "目前沒有開放報名的場次。歡迎來信詢問下一次的時間。",
+    en: "No sittings are open for booking right now. Write to us and we will let you know the next one.",
+    ja: "現在お申し込みいただける回はありません。次回の日程についてはお問い合わせください。",
+  },
+  pickSessionFirst: {
+    zh: "請先選擇場次",
+    en: "Please choose a sitting first",
+    ja: "先に回をお選びください",
+  },
   unlimited: { zh: "常備品項", en: "Always in stock", ja: "常時ご用意" },
   soldOutNote: {
     zh: "這件已經售完了。歡迎來信或到店詢問補貨。",
@@ -104,6 +122,14 @@ function ProductDetail() {
   const { ui } = useSiteContent();
   const addItem = useCart((s) => s.addItem);
   const [qty, setQty] = useState(1);
+  /**
+   * 只有 event/journey 用得到。預設選第一個**還有位子**的場次，沒有的話就是 null
+   * —— 不預設一個已額滿的場次，否則「加入購物車」會在客人還沒選之前就是灰的，
+   * 而灰的原因看不出來。
+   */
+  const [sessionId, setSessionId] = useState<string | null>(
+    () => product?.sessions.find((s) => remainingForSession(s) > 0)?.id ?? null,
+  );
 
   useDocumentMeta({
     title: metaOr(product?.title, PAGE.metaTitle),
@@ -125,14 +151,25 @@ function ProductDetail() {
     );
   }
 
-  const soldOut = isSoldOut(product);
-  const remaining = remainingFor(product);
   const isBooking = product.productType === "event" || product.productType === "journey";
+  const selectedSession: ShopSession | null = isBooking
+    ? (product.sessions.find((s) => s.id === sessionId) ?? null)
+    : null;
+
+  // 活動的「還剩幾個」是**選中那一場**的剩餘，不是商品層級的最大值。用後者當
+  // 上限的話，兩個各 5 個位子的梯次會讓單一梯次的數量選到 5 —— 而那一場可能只
+  // 剩 1 個。沒選場次時退回商品層級的數字，那只是給徽章看的。
+  const remaining = selectedSession ? remainingForSession(selectedSession) : remainingFor(product);
+  const soldOut = isBooking ? (remaining ?? 0) <= 0 : isSoldOut(product);
 
   function handleAdd() {
     // `product` is narrowed above, but the closure needs its own guard.
     if (!product || soldOut) return;
-    const result = addItem(cartInputFor(product, qty));
+    if (isBooking && !selectedSession) {
+      toast.error(t(PAGE.pickSessionFirst));
+      return;
+    }
+    const result = addItem(cartInputFor(product, qty, selectedSession));
     if (result === "added") {
       toast.success(t(PAGE.addedToast));
       setQty(1);
@@ -192,6 +229,52 @@ function ProductDetail() {
 
           <div className="rule my-8" />
 
+          {/* 場次選擇。只有活動／策旅會渲染，而且**先於**數量選擇 —— 上限是選中
+              那一場的剩餘，所以順序反過來會讓數量先被一個還沒決定的上限夾住。 */}
+          {isBooking ? (
+            product.sessions.length === 0 ? (
+              <p className="mb-8 text-sm leading-relaxed text-muted-foreground">
+                {t(PAGE.noSessions)}
+              </p>
+            ) : (
+              <fieldset className="mb-8 space-y-3">
+                <legend className="eyebrow text-xl">{t(PAGE.chooseSession)}</legend>
+                {product.sessions.map((session) => {
+                  const left = remainingForSession(session);
+                  const full = left <= 0;
+                  const selected = session.id === sessionId;
+                  return (
+                    <button
+                      key={session.id}
+                      type="button"
+                      disabled={full}
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setSessionId(session.id);
+                        // 換場次就把數量收回 1：舊的數量可能超過新場次的剩餘，
+                        // 而 clampToLimit 只在加入購物車那一刻才作用。
+                        setQty(1);
+                      }}
+                      className={`block w-full border p-4 text-left transition-colors ${
+                        selected ? "border-foreground" : "border-border hover:border-foreground/50"
+                      } ${full ? "cursor-not-allowed opacity-50" : ""}`}
+                    >
+                      <span className="block text-sm">{t(session.title)}</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {formatSessionWhen(session.startsAt)}
+                        {" ・ "}
+                        {t(session.location)}
+                      </span>
+                      <span className="mt-2 block text-xs text-muted-foreground">
+                        {full ? t(PAGE.sessionFull) : `${t(PAGE.seatsLeft)} ${left}`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </fieldset>
+            )
+          ) : null}
+
           {soldOut ? (
             <p className="text-sm leading-relaxed text-muted-foreground">{t(PAGE.soldOutNote)}</p>
           ) : (
@@ -237,6 +320,17 @@ function ProductDetail() {
       </section>
     </PageShell>
   );
+}
+
+/**
+ * 場次時間。用瀏覽器的時區與語系無關的固定格式：這個頁面是三語的，而
+ * `toLocaleString` 會在三種語系之間給出三種長度差很多的字串，把卡片撐歪。
+ */
+function formatSessionWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function BackLink({ label }: { label: string }) {

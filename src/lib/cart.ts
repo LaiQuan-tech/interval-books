@@ -36,13 +36,23 @@
  *
  * Checkout and payment are explicitly out of scope for this module; nothing
  * here talks to the server, and the cart is browser-local only.
+ *
+ * ⚠️ 參加者姓名／聯絡方式**不在這裡**，而且不可以搬進來。
+ * ------------------------------------------------------
+ * 0020 之後活動報名要逐位填寫參加者，最順手的做法是把那幾筆資料掛在 CartLine 上
+ * 一路帶到結帳。**不要這樣做。** 這個 store 會被 persist() 寫進 localStorage，
+ * 那等於把第三人的姓名與電話留在瀏覽器裡，沒有到期時間，也沒有任何一頁告訴使用者
+ * 它在那裡。參加者資料只在 /checkout 的表單狀態裡活著，送出之後就交給伺服器 ——
+ * 一次結帳一次，不落地。
+ *
+ * 購物車只記「哪一場、幾個位子」（sessionId + qty），那是報價需要的全部。
  */
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Localized } from "@/i18n/types";
-import type { ShopProduct, ShopProductType } from "@/lib/shop";
-import { remainingFor } from "@/lib/shop";
+import type { ShopProduct, ShopProductType, ShopSession } from "@/lib/shop";
+import { remainingFor, remainingForSession } from "@/lib/shop";
 
 /**
  * Why a line can no longer be bought. Kept as a reason rather than a boolean so
@@ -61,6 +71,28 @@ export type CartUnavailableReason = "delisted" | "sold_out";
  */
 export type CartLine = {
   productId: string;
+  /**
+   * Which sitting this line books. `null` for goods/book — and the two are not
+   * interchangeable: migration 0020 puts a CHECK on order_items that refuses a
+   * booking without a session and a book with one.
+   *
+   * ⚠️ This is why the line key stopped being `productId`. One activity with a
+   * morning and an evening sitting is two different things to buy, and keying
+   * on the product alone would have merged them into one line with one quantity
+   * — silently sending the shopper to whichever sitting was added first.
+   */
+  sessionId: string | null;
+  /**
+   * Snapshot of the sitting's name, for the cart and checkout summaries. Kept
+   * as {zh,en,ja} for the same reason `title` is: localStorage is the only copy
+   * the cart page has, so switching language has to re-render from it.
+   *
+   * Refreshed by syncFromCatalogue like every other snapshot field. Null for
+   * non-bookings.
+   */
+  sessionTitle: Localized | null;
+  /** ISO 8601. Snapshot, same treatment as sessionTitle. */
+  sessionStartsAt: string | null;
   slug: string;
   title: Localized;
   productType: ShopProductType;
@@ -97,17 +129,49 @@ export type CartInput = Omit<CartLine, "qty" | "unavailable"> & { qty: number };
 type CartStore = {
   items: CartLine[];
   addItem: (line: CartInput) => CartResult;
-  setQty: (productId: string, qty: number) => CartResult;
-  removeItem: (productId: string) => void;
+  /** `key` is a cartLineKey(), NOT a product id — see that function. */
+  setQty: (key: string, qty: number) => CartResult;
+  removeItem: (key: string) => void;
   clear: () => void;
   syncFromCatalogue: (products: ShopProduct[]) => void;
 };
 
+/**
+ * What makes two cart lines the same line.
+ *
+ * Was `productId` alone until migration 0020 introduced sittings. An activity
+ * with two sittings is two distinct things to buy, so the identity of a line is
+ * (product, sitting) — otherwise adding the evening sitting to a cart that
+ * already holds the morning one just increments the morning one's quantity and
+ * the shopper is booked into the wrong session with no way to tell.
+ *
+ * goods/book always pass `null`, so their key is `"<id>:"` — stable, and it can
+ * never collide with a uuid-suffixed booking key.
+ */
+export function cartLineKey(productId: string, sessionId: string | null): string {
+  return `${productId}:${sessionId ?? ""}`;
+}
+
+/** The key of an existing line. */
+export function keyOfLine(line: { productId: string; sessionId: string | null }): string {
+  return cartLineKey(line.productId, line.sessionId);
+}
+
 /** Namespaced like the language key in src/i18n/LanguageContext.tsx. */
 const STORAGE_KEY = "interval-books-cart";
 
-/** Bump whenever CartLine changes shape; older payloads are dropped, not merged. */
-const STORAGE_VERSION = 1;
+/**
+ * Bump whenever CartLine changes shape; older payloads are dropped, not merged.
+ *
+ * 1 → 2 (migration 0020): lines gained `sessionId`, and the line key changed
+ * from `productId` to `productId:sessionId`. A version-1 payload has no session
+ * id on any line, so a booking carried across would reach the checkout with
+ * `sessionId: null` — which the server refuses, and which the CHECK on
+ * order_items refuses again. **Throwing one cart away is far better than
+ * submitting an order that cannot say which sitting it is for**, so the
+ * migrate() below keeps discarding rather than trying to patch.
+ */
+const STORAGE_VERSION = 2;
 
 function clampToLimit(qty: number, limit: number | null): number {
   if (limit === null) return Math.max(0, qty);
@@ -121,7 +185,8 @@ export const useCart = create<CartStore>()(
 
       addItem: (line) => {
         const items = get().items;
-        const existing = items.find((i) => i.productId === line.productId);
+        const key = keyOfLine(line);
+        const existing = items.find((i) => keyOfLine(i) === key);
         // Trust the incoming limit over the stored one: it came from the page
         // the shopper is looking at, which is newer than the snapshot.
         const limit = line.limit;
@@ -131,9 +196,7 @@ export const useCart = create<CartStore>()(
           if (next <= existing.qty) return next <= 0 ? "out_of_stock" : "capped";
           set({
             items: items.map((i) =>
-              i.productId === line.productId
-                ? { ...i, ...line, qty: next, unavailable: undefined }
-                : i,
+              keyOfLine(i) === key ? { ...i, ...line, qty: next, unavailable: undefined } : i,
             ),
           });
           return "added";
@@ -145,33 +208,33 @@ export const useCart = create<CartStore>()(
         return "added";
       },
 
-      setQty: (productId, qty) => {
+      setQty: (key, qty) => {
         const items = get().items;
-        const existing = items.find((i) => i.productId === productId);
+        const existing = items.find((i) => keyOfLine(i) === key);
         if (!existing) return "out_of_stock";
 
         // Matching Realreal: decrementing past zero removes the line rather
         // than leaving a 0-quantity row behind.
         if (qty <= 0) {
-          set({ items: items.filter((i) => i.productId !== productId) });
+          set({ items: items.filter((i) => keyOfLine(i) !== key) });
           return "added";
         }
 
         const next = clampToLimit(qty, existing.limit);
         if (next <= 0) {
-          set({ items: items.filter((i) => i.productId !== productId) });
+          set({ items: items.filter((i) => keyOfLine(i) !== key) });
           return "out_of_stock";
         }
         if (next !== existing.qty) {
           set({
-            items: items.map((i) => (i.productId === productId ? { ...i, qty: next } : i)),
+            items: items.map((i) => (keyOfLine(i) === key ? { ...i, qty: next } : i)),
           });
         }
         return next < qty ? "capped" : "added";
       },
 
-      removeItem: (productId) =>
-        set((state) => ({ items: state.items.filter((i) => i.productId !== productId) })),
+      removeItem: (key) =>
+        set((state) => ({ items: state.items.filter((i) => keyOfLine(i) !== key) })),
 
       clear: () => set({ items: [] }),
 
@@ -199,7 +262,23 @@ export const useCart = create<CartStore>()(
             return { ...line, unavailable: "delisted" as const };
           }
 
-          const limit = remainingFor(p);
+          // A booking's limit is its OWN sitting's remaining places, not the
+          // product-wide maximum remainingFor() reports. Two sittings of 5
+          // would otherwise let one line reach 5 while the picked sitting had
+          // only 1 left. A sitting that has vanished from the catalogue (closed
+          // by the back office, or its date passed) is `delisted` rather than
+          // `sold_out`: waiting will not bring it back.
+          const session =
+            line.sessionId === null
+              ? null
+              : (p.sessions.find((s) => s.id === line.sessionId) ?? null);
+          if (line.sessionId !== null && session === null) {
+            if (line.unavailable === "delisted") return line;
+            changed = true;
+            return { ...line, unavailable: "delisted" as const };
+          }
+
+          const limit = session ? remainingForSession(session) : remainingFor(p);
           const qty = clampToLimit(line.qty, limit);
           const next: CartLine = {
             ...line,
@@ -209,6 +288,8 @@ export const useCart = create<CartStore>()(
             price: p.price,
             compareAtPrice: p.compareAtPrice,
             imageKey: p.imageKey,
+            sessionTitle: session ? session.title : null,
+            sessionStartsAt: session ? session.startsAt : null,
             limit,
             qty,
             unavailable: qty <= 0 ? "sold_out" : undefined,
@@ -221,6 +302,8 @@ export const useCart = create<CartStore>()(
             line.price === next.price &&
             line.compareAtPrice === next.compareAtPrice &&
             line.imageKey === next.imageKey &&
+            line.sessionTitle === next.sessionTitle &&
+            line.sessionStartsAt === next.sessionStartsAt &&
             line.limit === next.limit &&
             line.qty === next.qty &&
             line.unavailable === next.unavailable;
@@ -284,17 +367,32 @@ export function useCartSubtotal(): number {
   );
 }
 
-/** Builds a cart line from a catalogue product. Single source of the mapping. */
-export function cartInputFor(p: ShopProduct, qty: number): CartInput {
+/**
+ * Builds a cart line from a catalogue product. Single source of the mapping.
+ *
+ * `session` is required for event/journey and must be null for goods/book —
+ * the caller decides, because only it knows which sitting the shopper picked.
+ * Passing null for a booking is not rejected here (the store has no business
+ * throwing), but it produces a line the checkout will refuse, so the product
+ * page must never offer an "add" button before a sitting is chosen.
+ */
+export function cartInputFor(
+  p: ShopProduct,
+  qty: number,
+  session: ShopSession | null = null,
+): CartInput {
   return {
     productId: p.id,
+    sessionId: session ? session.id : null,
+    sessionTitle: session ? session.title : null,
+    sessionStartsAt: session ? session.startsAt : null,
     slug: p.slug,
     title: p.title,
     productType: p.productType,
     price: p.price,
     compareAtPrice: p.compareAtPrice,
     imageKey: p.imageKey,
-    limit: remainingFor(p),
+    limit: session ? remainingForSession(session) : remainingFor(p),
     qty,
   };
 }

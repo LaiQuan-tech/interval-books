@@ -11,6 +11,7 @@ import {
   Boxes,
   Building2,
   CalendarDays,
+  ClipboardCheck,
   ClipboardList,
   FileText,
   Handshake,
@@ -126,7 +127,13 @@ const NAV_GROUPS = [
   },
   {
     label: "電商",
-    items: [{ to: "/admin/products", label: "商品", icon: Package, staff: false }],
+    items: [
+      { to: "/admin/products", label: "商品", icon: Package, staff: false },
+      // 活動場次與報名名單（0020）。名額搬離 products 之後，「這場還剩幾個位子」
+      // 只有這裡答得出來。名單是第三人的個資，所以 staff: false —— 比 CMS 更嚴，
+      // 不是更鬆。Phase 2 會給它自己的 event.roster.read 權限。
+      { to: "/admin/registrations", label: "活動報名", icon: ClipboardCheck, staff: false },
+    ],
   },
   {
     label: "進銷存",

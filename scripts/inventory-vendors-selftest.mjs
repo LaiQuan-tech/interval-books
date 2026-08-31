@@ -141,7 +141,12 @@ for (let n = 1; n <= 18; n += 1) {
   const prefix = String(n).padStart(4, "0");
   check(`migration ${prefix} 仍在`, migFiles.some((f) => f.startsWith(`${prefix}_`)), true);
 }
-check("沒有多出 0020（0019 是最後一號）", migFiles.some((f) => f.startsWith("0020_")), false);
+// 0020 加了 public.event_registrations —— 這個專案第二張放 PII 的表。它**不動**
+// pii_access_log 的 subject_table / reason CHECK，也不動 inv_vendor_sensitive()，
+// 所以這支測試的斷言全部原樣成立。名單的明文揭露與 CSV 匯出（會用到 pii_access_log
+// 的新 reason）留到 0021，那一期要回來重讀 §1 那幾條。
+check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
+check("沒有多出 0021（0020 是最後一號）", migFiles.some((f) => f.startsWith("0021_")), false);
 
 const sql = read(MIG_0019);
 const exec = strip(sql);
