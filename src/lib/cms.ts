@@ -104,6 +104,34 @@ export type EventEntry = {
 
 export type EventCategoryEntry = { id: string; label: Localized };
 
+/** Mirrors the events_registration_type_valid CHECK in 0001_init.sql. */
+export type EventRegistrationType = "external" | "internal";
+
+/**
+ * One event, as the detail page needs it. Adds the one column the list page
+ * has no use for: `registrationType`, which decides where the 報名 button goes.
+ *
+ * ⚠️ public.events has exactly 14 columns (0001 + 0025's speaker_id) and none of
+ *    them is a cover image — there is no `image_key` here and the detail page
+ *    therefore ships without a hero image on purpose. Do not reach for
+ *    imageFor() with an invented key: it always returns *something*, so the
+ *    page would gain a grey placeholder that means nothing.
+ */
+export type EventDetailEntry = EventEntry & {
+  registrationType: EventRegistrationType;
+};
+
+/**
+ * `event: null` with `unavailable: false` means the id really is not there (or
+ * the row is unpublished, which RLS makes indistinguishable — see the
+ * events_select_public policy in 0001). `unavailable: true` means we could not
+ * tell. Callers must 404 only on the first.
+ */
+export type EventDetailResult = {
+  event: EventDetailEntry | null;
+  unavailable: boolean;
+};
+
 export type ExhibitionEntry = {
   id: string;
   slug: string;
@@ -534,6 +562,76 @@ export async function fetchEvents(): Promise<EventEntry[]> {
     });
   }
   return mapped.length ? mapped : FALLBACK_EVENTS;
+}
+
+/**
+ * One event for /events/$slug.
+ *
+ * ── 為什麼參數叫 slug，查的卻是 events.id ────────────────────────────────────
+ * public.events **沒有 slug 欄位**（0001 建的 14 欄裡沒有，0025 也只加了
+ * speaker_id）。`id` 是 text primary key、本來就唯一，所以網址直接吃 id。
+ *
+ * 這不是將就，是計畫好的：之後補上 events.slug 時會用 `slug = id` 回填，於是
+ * **今天發出去的網址在那之後仍然有效**。路由參數與這支函式一律用 slug 這個詞，
+ * 到那一天要改的只有下面那一行 `.eq("id", slug)` → `.eq("slug", slug)`。
+ *
+ * ── 為什麼這一支不走本檔的 select() ──────────────────────────────────────────
+ * 本檔的 select() 把每一種失敗都吞成 null，因為站台文案有 in-repo fallback。
+ * 詳情頁沒有：如果讀取失敗與「查無此活動」都收斂成同一個 null，路由就只能二選一
+ * ——要嘛把資料庫打嗝當成 404 告訴爬蟲這場活動不存在，要嘛對真的不存在的網址
+ * 回 200。所以這裡照 src/lib/shop.ts#fetchActiveProductBySlug 的做法回報
+ * `unavailable`，讓路由自己分。它仍然不 throw，這一點與本檔其他函式一致。
+ *
+ * 也刻意**不**退回 FALLBACK_EVENTS：那份 bundled 資料是 0001 當初的種子，拿它
+ * 頂替一個讀不到的即時活動，等於把過期的日期與名額當成現況印給客人看。
+ */
+export async function fetchEventBySlug(slug: string): Promise<EventDetailResult> {
+  const db = supabase;
+  if (!db) {
+    logFailure(`events/${slug}`, "Supabase is not configured");
+    return { event: null, unavailable: true };
+  }
+  try {
+    const { data, error } = await db
+      .from("events")
+      // 只有 public.events 真的有的欄位。這個 repo 剛因為 select 了一個不存在的
+      // 欄位（0025 的 speaker_id 還沒套上正式庫）把整個活動後台弄掛 ——
+      // PostgREST 對此回 42703，整頁 500。
+      .select("id,title,summary,description,display_date,category,external_url,registration_type")
+      .eq("id", slug)
+      .maybeSingle();
+
+    if (error) {
+      logFailure(`events/${slug}`, error.message);
+      return { event: null, unavailable: true };
+    }
+    if (!data) return { event: null, unavailable: false };
+
+    const r = data as unknown as Row;
+    const title = loc(r.title);
+    const summary = loc(r.summary);
+    const description = loc(r.description);
+    // 三個 jsonb 有任何一個不是 {zh,en,ja}，這一列就不能拿來渲染。回 null 而不是
+    // unavailable：這是資料本身壞了，重試一次也不會變好。
+    if (!title || !summary || !description) return { event: null, unavailable: false };
+
+    return {
+      event: {
+        id: str(r.id),
+        title,
+        summary,
+        description,
+        date: str(r.display_date),
+        category: str(r.category),
+        externalUrl: str(r.external_url),
+        registrationType: r.registration_type === "internal" ? "internal" : "external",
+      },
+      unavailable: false,
+    };
+  } catch (err) {
+    logFailure(`events/${slug}`, err instanceof Error ? err.message : String(err));
+    return { event: null, unavailable: true };
+  }
 }
 
 export async function fetchEventCategories(): Promise<EventCategoryEntry[]> {

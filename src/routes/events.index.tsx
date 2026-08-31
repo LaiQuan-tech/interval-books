@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
@@ -7,6 +7,15 @@ import { eyebrowOf, fetchEventCategories, fetchEvents, fetchPage, pageText } fro
 import { useSiteContent } from "@/lib/site-content";
 import { imageFor } from "@/lib/images";
 import eventImg from "@/assets/event-reading.jpg";
+
+/**
+ * 活動列表頁。
+ *
+ * 🔴 檔名是 events.index.tsx，不是 events.tsx。flat routing 下 `events.tsx` 會變成
+ *    /events 底下所有路由的 parent layout —— 它得渲染 <Outlet />，否則
+ *    /events/$slug 就是一片空白。repo 自己的慣例已經給了答案：沒有 shop.tsx，
+ *    只有 shop.index.tsx + shop.$slug.tsx。這一組照抄。
+ */
 
 /** Fallback copy — used only when the Supabase read fails. */
 const PAGE = {
@@ -36,7 +45,15 @@ const PAGE = {
 /** "all" filter pill — a page_block on the events page. */
 const ALL = { zh: "全部", en: "All", ja: "すべて" };
 
-export const Route = createFileRoute("/events")({
+/**
+ * 「活動詳情」——  連到 /events/$slug。
+ *
+ * 走 p.block() 讓後台可以覆寫，與這一頁其他文案一致；PAGE 裡的這一份只是
+ * 資料庫讀不到時的退路。
+ */
+const DETAIL = { zh: "活動詳情", en: "Event details", ja: "イベント詳細" };
+
+export const Route = createFileRoute("/events/")({
   loader: async () => {
     const [page, events, categories] = await Promise.all([
       fetchPage("events"),
@@ -123,14 +140,26 @@ function Events() {
             <h3 className="display mt-4 text-2xl md:text-3xl leading-snug">{t(e.title)}</h3>
             <p className="mt-4 text-sm text-muted-foreground">{e.date}</p>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(e.summary)}</p>
-            <a
-              href={e.externalUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-8 inline-block self-start border border-foreground px-5 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
-            >
-              {t(ui.buttons.toEvent)}
-            </a>
+            {/* 詳情頁擺在外部連結前面：這一則活動在**這個站上**的那一頁，才是
+                我們自己說得清楚的地方。外部連結原樣留著 —— 主辦方的報名表單、
+                售票頁通常都還在那裡。 */}
+            <div className="mt-8 flex flex-wrap items-center gap-4">
+              <Link
+                to="/events/$slug"
+                params={{ slug: e.id }}
+                className="inline-block border border-foreground px-5 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
+              >
+                {t(p.block("detail", DETAIL))}
+              </Link>
+              <a
+                href={e.externalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm tracking-widest text-muted-foreground hover-underline hover:text-foreground transition-colors"
+              >
+                {t(ui.buttons.toEvent)}
+              </a>
+            </div>
           </article>
         ))}
       </section>

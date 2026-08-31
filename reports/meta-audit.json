@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-31T18:23:24.510Z",
+  "generatedAt": "2026-08-31T19:06:42.126Z",
   "summary": {
-    "routesAudited": 17,
+    "routesAudited": 18,
     "languages": [
       "zh",
       "en",
@@ -23,7 +23,7 @@
         "ogTitle",
         "ogDescription"
       ],
-      "approxChecks": 204
+      "approxChecks": 216
     }
   },
   "routes": {
@@ -62,8 +62,13 @@
       "ok": true,
       "issues": []
     },
-    "/events": {
-      "file": "src/routes/events.tsx",
+    "/events.$slug": {
+      "file": "src/routes/events.$slug.tsx",
+      "ok": true,
+      "issues": []
+    },
+    "/events.index": {
+      "file": "src/routes/events.index.tsx",
       "ok": true,
       "issues": []
     },

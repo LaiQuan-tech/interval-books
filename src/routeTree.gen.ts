@@ -15,7 +15,6 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as JourneysRouteImport } from './routes/journeys'
 import { Route as ExhibitionsRouteImport } from './routes/exhibitions'
-import { Route as EventsRouteImport } from './routes/events'
 import { Route as CurationRouteImport } from './routes/curation'
 import { Route as CuratedRouteImport } from './routes/curated'
 import { Route as ContactRouteImport } from './routes/contact'
@@ -23,11 +22,13 @@ import { Route as CartRouteImport } from './routes/cart'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShopIndexRouteImport } from './routes/shop.index'
+import { Route as EventsIndexRouteImport } from './routes/events.index'
 import { Route as CheckoutIndexRouteImport } from './routes/checkout.index'
 import { Route as VendorPendingRouteImport } from './routes/vendor/pending'
 import { Route as VendorLoginRouteImport } from './routes/vendor/login'
 import { Route as VendorShellRouteImport } from './routes/vendor/_shell'
 import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
+import { Route as EventsSlugRouteImport } from './routes/events.$slug'
 import { Route as CheckoutCompleteRouteImport } from './routes/checkout.complete'
 import { Route as AdminPendingRouteImport } from './routes/admin/pending'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
@@ -92,11 +93,6 @@ const ExhibitionsRoute = ExhibitionsRouteImport.update({
   path: '/exhibitions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EventsRoute = EventsRouteImport.update({
-  id: '/events',
-  path: '/events',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CurationRoute = CurationRouteImport.update({
   id: '/curation',
   path: '/curation',
@@ -132,6 +128,11 @@ const ShopIndexRoute = ShopIndexRouteImport.update({
   path: '/shop/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EventsIndexRoute = EventsIndexRouteImport.update({
+  id: '/events/',
+  path: '/events/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CheckoutIndexRoute = CheckoutIndexRouteImport.update({
   id: '/checkout/',
   path: '/checkout/',
@@ -155,6 +156,11 @@ const VendorShellRoute = VendorShellRouteImport.update({
 const ShopSlugRoute = ShopSlugRouteImport.update({
   id: '/shop/$slug',
   path: '/shop/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EventsSlugRoute = EventsSlugRouteImport.update({
+  id: '/events/$slug',
+  path: '/events/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CheckoutCompleteRoute = CheckoutCompleteRouteImport.update({
@@ -338,7 +344,6 @@ export interface FileRoutesByFullPath {
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
   '/curation': typeof CurationRoute
-  '/events': typeof EventsRoute
   '/exhibitions': typeof ExhibitionsRoute
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
@@ -349,11 +354,13 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
+  '/events/$slug': typeof EventsSlugRoute
   '/shop/$slug': typeof ShopSlugRoute
   '/vendor': typeof VendorShellRouteWithChildren
   '/vendor/login': typeof VendorLoginRoute
   '/vendor/pending': typeof VendorPendingRoute
   '/checkout/': typeof CheckoutIndexRoute
+  '/events/': typeof EventsIndexRoute
   '/shop/': typeof ShopIndexRoute
   '/admin/artists': typeof AdminShellArtistsRoute
   '/admin/categories': typeof AdminShellCategoriesRoute
@@ -392,7 +399,6 @@ export interface FileRoutesByTo {
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
   '/curation': typeof CurationRoute
-  '/events': typeof EventsRoute
   '/exhibitions': typeof ExhibitionsRoute
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
@@ -402,10 +408,12 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
+  '/events/$slug': typeof EventsSlugRoute
   '/shop/$slug': typeof ShopSlugRoute
   '/vendor/login': typeof VendorLoginRoute
   '/vendor/pending': typeof VendorPendingRoute
   '/checkout': typeof CheckoutIndexRoute
+  '/events': typeof EventsIndexRoute
   '/shop': typeof ShopIndexRoute
   '/admin/artists': typeof AdminShellArtistsRoute
   '/admin/categories': typeof AdminShellCategoriesRoute
@@ -445,7 +453,6 @@ export interface FileRoutesById {
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
   '/curation': typeof CurationRoute
-  '/events': typeof EventsRoute
   '/exhibitions': typeof ExhibitionsRoute
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
@@ -456,11 +463,13 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/pending': typeof AdminPendingRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
+  '/events/$slug': typeof EventsSlugRoute
   '/shop/$slug': typeof ShopSlugRoute
   '/vendor/_shell': typeof VendorShellRouteWithChildren
   '/vendor/login': typeof VendorLoginRoute
   '/vendor/pending': typeof VendorPendingRoute
   '/checkout/': typeof CheckoutIndexRoute
+  '/events/': typeof EventsIndexRoute
   '/shop/': typeof ShopIndexRoute
   '/admin/_shell/artists': typeof AdminShellArtistsRoute
   '/admin/_shell/categories': typeof AdminShellCategoriesRoute
@@ -501,7 +510,6 @@ export interface FileRouteTypes {
     | '/contact'
     | '/curated'
     | '/curation'
-    | '/events'
     | '/exhibitions'
     | '/journeys'
     | '/news'
@@ -512,11 +520,13 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/pending'
     | '/checkout/complete'
+    | '/events/$slug'
     | '/shop/$slug'
     | '/vendor'
     | '/vendor/login'
     | '/vendor/pending'
     | '/checkout/'
+    | '/events/'
     | '/shop/'
     | '/admin/artists'
     | '/admin/categories'
@@ -555,7 +565,6 @@ export interface FileRouteTypes {
     | '/contact'
     | '/curated'
     | '/curation'
-    | '/events'
     | '/exhibitions'
     | '/journeys'
     | '/news'
@@ -565,10 +574,12 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/pending'
     | '/checkout/complete'
+    | '/events/$slug'
     | '/shop/$slug'
     | '/vendor/login'
     | '/vendor/pending'
     | '/checkout'
+    | '/events'
     | '/shop'
     | '/admin/artists'
     | '/admin/categories'
@@ -607,7 +618,6 @@ export interface FileRouteTypes {
     | '/contact'
     | '/curated'
     | '/curation'
-    | '/events'
     | '/exhibitions'
     | '/journeys'
     | '/news'
@@ -618,11 +628,13 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/pending'
     | '/checkout/complete'
+    | '/events/$slug'
     | '/shop/$slug'
     | '/vendor/_shell'
     | '/vendor/login'
     | '/vendor/pending'
     | '/checkout/'
+    | '/events/'
     | '/shop/'
     | '/admin/_shell/artists'
     | '/admin/_shell/categories'
@@ -662,7 +674,6 @@ export interface RootRouteChildren {
   ContactRoute: typeof ContactRoute
   CuratedRoute: typeof CuratedRoute
   CurationRoute: typeof CurationRoute
-  EventsRoute: typeof EventsRoute
   ExhibitionsRoute: typeof ExhibitionsRoute
   JourneysRoute: typeof JourneysRoute
   NewsRoute: typeof NewsRoute
@@ -673,11 +684,13 @@ export interface RootRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminPendingRoute: typeof AdminPendingRoute
   CheckoutCompleteRoute: typeof CheckoutCompleteRoute
+  EventsSlugRoute: typeof EventsSlugRoute
   ShopSlugRoute: typeof ShopSlugRoute
   VendorShellRoute: typeof VendorShellRouteWithChildren
   VendorLoginRoute: typeof VendorLoginRoute
   VendorPendingRoute: typeof VendorPendingRoute
   CheckoutIndexRoute: typeof CheckoutIndexRoute
+  EventsIndexRoute: typeof EventsIndexRoute
   ShopIndexRoute: typeof ShopIndexRoute
 }
 
@@ -723,13 +736,6 @@ declare module '@tanstack/react-router' {
       path: '/exhibitions'
       fullPath: '/exhibitions'
       preLoaderRoute: typeof ExhibitionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/events': {
-      id: '/events'
-      path: '/events'
-      fullPath: '/events'
-      preLoaderRoute: typeof EventsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/curation': {
@@ -781,6 +787,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShopIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/events/': {
+      id: '/events/'
+      path: '/events'
+      fullPath: '/events/'
+      preLoaderRoute: typeof EventsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/checkout/': {
       id: '/checkout/'
       path: '/checkout'
@@ -814,6 +827,13 @@ declare module '@tanstack/react-router' {
       path: '/shop/$slug'
       fullPath: '/shop/$slug'
       preLoaderRoute: typeof ShopSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/events/$slug': {
+      id: '/events/$slug'
+      path: '/events/$slug'
+      fullPath: '/events/$slug'
+      preLoaderRoute: typeof EventsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/checkout/complete': {
@@ -1145,7 +1165,6 @@ const rootRouteChildren: RootRouteChildren = {
   ContactRoute: ContactRoute,
   CuratedRoute: CuratedRoute,
   CurationRoute: CurationRoute,
-  EventsRoute: EventsRoute,
   ExhibitionsRoute: ExhibitionsRoute,
   JourneysRoute: JourneysRoute,
   NewsRoute: NewsRoute,
@@ -1156,11 +1175,13 @@ const rootRouteChildren: RootRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminPendingRoute: AdminPendingRoute,
   CheckoutCompleteRoute: CheckoutCompleteRoute,
+  EventsSlugRoute: EventsSlugRoute,
   ShopSlugRoute: ShopSlugRoute,
   VendorShellRoute: VendorShellRouteWithChildren,
   VendorLoginRoute: VendorLoginRoute,
   VendorPendingRoute: VendorPendingRoute,
   CheckoutIndexRoute: CheckoutIndexRoute,
+  EventsIndexRoute: EventsIndexRoute,
   ShopIndexRoute: ShopIndexRoute,
 }
 export const routeTree = rootRouteImport

@@ -526,6 +526,65 @@ export async function fetchActiveProductBySlug(slug: string): Promise<ShopProduc
   }
 }
 
+/**
+ * The purchasable product a CMS event is sold through, or null when there is
+ * none. Used by /events/$slug for two things at once:
+ *
+ *   1. **場次。** public.event_sessions 掛在 products.id 上（0020），不是掛在
+ *      events.id 上。所以活動詳情頁要列出場次，唯一的路徑就是先找到這件商品。
+ *   2. **報名按鈕的目的地。** registration_type = 'internal' 的活動要導到
+ *      /shop/<product.slug>；接不到商品就代表站內報名還沒開，頁面顯示狀態而不是
+ *      導去一個會 404 的網址。
+ *
+ * 連結走 0004 就定義好的 (source_type, source_id)，也是唯一存在的連結：
+ * products_source_idx 正是為這個查詢建的索引。source_type / source_id **沒有**
+ * 進 COLUMNS —— 這裡只拿它們當條件，不需要選出來，COLUMNS 維持「前台需要的欄位，
+ * 不多一欄」。
+ *
+ * 用 limit(1) 而不是 maybeSingle()：同一場活動被建成兩件上架商品是資料錯誤，
+ * 但那應該讓後台去修，不該讓公開的活動頁整頁掛掉。取排序上的第一件（與 /shop
+ * 列表的排序同一套），至少是穩定且可預測的那一件。
+ *
+ * `unavailable: true` 的意思一如本檔其他函式：**問不到**，不是「沒有」。呼叫端要
+ * 據此顯示「暫時無法載入」，而不是「報名尚未開放」——後者是一句它還不知道真假的話。
+ */
+export async function fetchActiveProductForEvent(eventId: string): Promise<ShopProductResult> {
+  if (!eventId) return { product: null, unavailable: false };
+
+  const db = supabase;
+  if (!db) {
+    logFailure(`products/source:event/${eventId}`, "Supabase is not configured");
+    return { product: null, unavailable: true };
+  }
+  try {
+    const { data, error } = await db
+      .from("products")
+      .select(COLUMNS)
+      .eq("status", "active")
+      .eq("source_type", "event")
+      .eq("source_id", eventId)
+      .order("sort_order", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(1);
+
+    if (error || !Array.isArray(data)) {
+      logFailure(`products/source:event/${eventId}`, error?.message ?? "unexpected response shape");
+      return { product: null, unavailable: true };
+    }
+    if (data.length === 0) return { product: null, unavailable: false };
+
+    const product = toProduct(data[0] as unknown as Row);
+    if (product) await Promise.all([attachAvailability([product]), attachSessions([product])]);
+    return { product, unavailable: false };
+  } catch (err) {
+    logFailure(
+      `products/source:event/${eventId}`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return { product: null, unavailable: true };
+  }
+}
+
 /** NT$1,280 — the site shows whole dollars everywhere. */
 export function formatPrice(twd: number): string {
   return `NT$${twd.toLocaleString("en-US")}`;

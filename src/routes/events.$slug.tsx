@@ -1,0 +1,263 @@
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
+import { PageShell } from "@/components/PageShell";
+import { SessionList } from "@/components/shop/SessionPicker";
+import { useT } from "@/i18n/LanguageContext";
+import type { Localized } from "@/i18n/types";
+import { useDocumentMeta } from "@/i18n/useDocumentMeta";
+import { fetchEventBySlug, fetchEventCategories } from "@/lib/cms";
+import { fetchActiveProductForEvent } from "@/lib/shop";
+import { useSiteContent } from "@/lib/site-content";
+
+/**
+ * 活動詳情頁。
+ *
+ * ── 這一頁在補的洞 ─────────────────────────────────────────────────────────
+ * /events 從第一天起就是一個列表，每一則點下去是開一個**外部**連結。也就是說
+ * 店家辦一場講座，這個站上沒有任何一頁在講那場講座是什麼。這一頁就是那一頁。
+ *
+ * ── 網址為什麼是 events.id ─────────────────────────────────────────────────
+ * public.events 沒有 slug 欄位。理由與回填計畫寫在 src/lib/cms.ts#fetchEventBySlug
+ * 的檔頭 —— 重點是**今天發出去的網址在補上 slug 欄位之後仍然有效**，所以路由參數
+ * 從一開始就叫 $slug，不叫 $id。
+ *
+ * ── 沒有封面圖是刻意的 ─────────────────────────────────────────────────────
+ * events 沒有 image_key。imageFor(key, fallback) 永遠會回一張圖，所以隨手帶一個
+ * 不存在的 key 進去，得到的不是「沒有封面」而是一個假的灰框佔位 —— 每一場活動
+ * 都長一樣的那張。寧可沒有。
+ *
+ * ── 三種讀取結果是三件事 ───────────────────────────────────────────────────
+ *   查無此活動（或未發布）  → notFound()，真的 404
+ *   讀取失敗                → 頁殼 + 「暫時無法載入」，**絕對不是 404**
+ *   活動在、但沒有場次      → 完整渲染 + 空狀態文案，不是整塊消失
+ *
+ * PAGE 是頂層靜態常數、每一句都是 zh/en/ja 字面值：scripts/check-meta.mjs 靠靜態
+ * 解析這個物件稽核三語，所以不可以改成算出來的值。
+ */
+const PAGE = {
+  metaTitle: {
+    zh: "活動｜小時光書店 Interval Books",
+    en: "Event｜Interval Books",
+    ja: "イベント｜小時光書店 Interval Books",
+  },
+  metaDescription: {
+    zh: "小時光書店的一場活動：時間、場次與報名方式。",
+    en: "An event at Interval Books — when it happens, which sittings are open, and how to join.",
+    ja: "小時光書店の催しについて。日程、開催回、お申し込み方法をご案内します。",
+  },
+  back: { zh: "回到活動", en: "Back to events", ja: "イベント一覧へ" },
+  aboutThis: { zh: "關於這場活動", en: "About this event", ja: "この催しについて" },
+  registration: { zh: "報名", en: "Registration", ja: "お申し込み" },
+  toRegistration: { zh: "前往報名", en: "Register", ja: "申し込む" },
+  notOpen: {
+    zh: "報名尚未開放。開放之後會在這裡放上報名連結。",
+    en: "Registration is not open yet. The link will appear here once it is.",
+    ja: "お申し込みはまだ開始していません。開始後、こちらにご案内を掲載します。",
+  },
+  unavailable: {
+    zh: "活動資料暫時無法載入，請稍後再試。",
+    en: "This event is temporarily unavailable. Please try again shortly.",
+    ja: "イベント情報を読み込めませんでした。しばらくしてからお試しください。",
+  },
+  registrationUnavailable: {
+    zh: "報名資訊暫時無法載入，請稍後再試。",
+    en: "Registration details are temporarily unavailable. Please try again shortly.",
+    ja: "申し込み情報を読み込めませんでした。しばらくしてからお試しください。",
+  },
+};
+
+/**
+ * 活動自己的三語文案優先，活動還不知道是什麼的時候（讀取失敗）退回頁面層的常數
+ * —— 同時也讓 scripts/check-meta.mjs 有一個靜態解得出來的物件字面值可以稽核。
+ * 與 src/routes/shop.$slug.tsx 的 metaOr() 同一支。
+ */
+function metaOr(value: Localized | undefined, fallback: Localized): Localized {
+  return value ?? fallback;
+}
+
+export const Route = createFileRoute("/events/$slug")({
+  loader: async ({ params }) => {
+    const [{ event, unavailable }, categories] = await Promise.all([
+      fetchEventBySlug(params.slug),
+      fetchEventCategories(),
+    ]);
+    // 這一行是這一頁最容易做錯的地方：只有「真的查不到」才 404。讀取失敗時
+    // unavailable 為 true，於是這裡**不**丟 notFound()，改由元件渲染頁殼 ——
+    // 不能因為資料庫眨一下眼，就告訴搜尋引擎這場活動不存在。
+    if (!event && !unavailable) throw notFound();
+
+    // 場次（0020 的 event_sessions）掛的是 products.id，不是 events.id，所以要先
+    // 找到這場活動賣出去的那件商品。刻意等 event 回來再用 event.id 問，而不是拿
+    // params.slug 直接問：今天 slug === id，補上 events.slug 之後就不再相等，
+    // 那時這一行會安靜地查錯東西。
+    const booking = event
+      ? await fetchActiveProductForEvent(event.id)
+      : { product: null, unavailable: false };
+
+    return { event, unavailable, categories, booking };
+  },
+  head: ({ loaderData }) => {
+    const event = loaderData?.event ?? null;
+    const title = metaOr(event?.title, PAGE.metaTitle);
+    const description = metaOr(event?.summary, PAGE.metaDescription);
+    return {
+      meta: [
+        { title: title.zh },
+        { name: "description", content: description.zh },
+        { property: "og:title", content: title.zh },
+        { property: "og:description", content: description.zh },
+      ],
+    };
+  },
+  component: EventDetail,
+});
+
+/** 報名按鈕的四種樣子。四種都要有畫面，沒有一種是「什麼都不畫」。 */
+type RegistrationCta =
+  | { kind: "external"; href: string }
+  | { kind: "internal"; productSlug: string }
+  | { kind: "closed" }
+  | { kind: "unavailable" };
+
+/**
+ * 目的地照 events.registration_type 決定 —— 這是 0001 就存在、五期以來沒有任何
+ * 路由讀過的兩個欄位之一（另一個是 payment_enabled，這一期仍然沒有人讀）。
+ *
+ * ⚠️ 這一頁**不**自己做一個結帳入口。結帳是一條真管線（cartInputFor → cart →
+ *    checkout → 座位預留 → 金流 → 發票），而它的數量上限取的是**選中那一場**的
+ *    剩餘（見 src/routes/shop.$slug.tsx 對 remainingForSession 的用法）。第二個
+ *    入口就是第二份那段邏輯，兩份遲早會長歪成「活動頁讓你買 5 個位子、那一場只
+ *    剩 1 個」。所以這裡只負責把人帶到唯一的那個入口。
+ */
+function registrationCta(
+  registrationType: "external" | "internal",
+  externalUrl: string,
+  booking: { product: { slug: string } | null; unavailable: boolean },
+): RegistrationCta {
+  if (registrationType === "internal") {
+    if (booking.product) return { kind: "internal", productSlug: booking.product.slug };
+    // 「問不到」不等於「沒有」。讀取失敗時說「報名尚未開放」是一句它還不知道
+    // 真假的話，所以分成兩種狀態。
+    return booking.unavailable ? { kind: "unavailable" } : { kind: "closed" };
+  }
+  const href = externalUrl.trim();
+  return href ? { kind: "external", href } : { kind: "closed" };
+}
+
+function EventDetail() {
+  const t = useT();
+  const { event, unavailable, categories, booking } = Route.useLoaderData();
+  const { ui } = useSiteContent();
+
+  useDocumentMeta({
+    title: metaOr(event?.title, PAGE.metaTitle),
+    description: metaOr(event?.summary, PAGE.metaDescription),
+    ogTitle: metaOr(event?.title, PAGE.metaTitle),
+    ogDescription: metaOr(event?.summary, PAGE.metaDescription),
+  });
+
+  if (!event) {
+    // 這裡只會是 unavailable === true：查無此活動已經在 loader 變成 404 了。
+    // 留著這個分支不是防禦性寫法，是這一頁的第二種結果本來就長這樣。
+    return (
+      <PageShell>
+        <section className="container-editorial py-32">
+          <p className="border border-border p-8 text-sm text-muted-foreground">
+            {t(PAGE.unavailable)}
+          </p>
+          <div className="mt-8">
+            <BackLink label={t(PAGE.back)} />
+          </div>
+        </section>
+      </PageShell>
+    );
+  }
+
+  // 分類標籤查不到就退回 category 本身 —— events.category 的 id 就是中文字面值
+  // （見 0001 的 event_categories 註解），所以退回去印出來仍然是讀得懂的字。
+  const categoryLabel: Localized = categories.find((c) => c.id === event.category)?.label ?? {
+    zh: event.category,
+    en: event.category,
+    ja: event.category,
+  };
+
+  const cta = registrationCta(event.registrationType, event.externalUrl, booking);
+
+  return (
+    <PageShell>
+      <section className="container-editorial pt-12 md:pt-16">
+        <BackLink label={t(PAGE.back)} />
+      </section>
+
+      <section className="container-editorial pb-12 pt-8">
+        <p className="eyebrow text-2xl">{t(categoryLabel)}</p>
+        <h1 className="display mt-4 text-4xl md:text-6xl leading-tight max-w-4xl">
+          {t(event.title)}
+        </h1>
+        <p className="mt-6 text-sm tracking-widest text-muted-foreground">{event.date}</p>
+        <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground">
+          {t(event.summary)}
+        </p>
+        <div className="rule mt-10" />
+      </section>
+
+      {/* 引言。events.description 從 0001 就在資料裡，而 0001 自己的欄位註解寫著
+          "not rendered by any route yet" —— 五期之後，它終於有工作了。
+          whitespace-pre-line：這一欄是後台的多行輸入，換行是作者排的。 */}
+      <section className="container-editorial pb-16">
+        <div className="max-w-3xl">
+          <p className="eyebrow text-2xl">{t(PAGE.aboutThis)}</p>
+          <p className="mt-6 whitespace-pre-line text-base leading-relaxed text-foreground/80">
+            {t(event.description)}
+          </p>
+        </div>
+      </section>
+
+      <section className="container-editorial pb-32">
+        <div className="grid gap-12 border-t border-border pt-12 md:grid-cols-2 md:gap-16">
+          <SessionList sessions={booking.product?.sessions ?? []} />
+
+          <div>
+            <p className="eyebrow text-2xl">{t(PAGE.registration)}</p>
+            <div className="mt-6">
+              {cta.kind === "external" ? (
+                <a
+                  href={cta.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
+                >
+                  {t(ui.buttons.toEvent)}
+                </a>
+              ) : cta.kind === "internal" ? (
+                <Link
+                  to="/shop/$slug"
+                  params={{ slug: cta.productSlug }}
+                  className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
+                >
+                  {t(PAGE.toRegistration)}
+                </Link>
+              ) : (
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {cta.kind === "unavailable" ? t(PAGE.registrationUnavailable) : t(PAGE.notOpen)}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+    </PageShell>
+  );
+}
+
+function BackLink({ label }: { label: string }) {
+  return (
+    <Link
+      to="/events"
+      className="inline-flex items-center gap-2 text-xs tracking-widest text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      {label}
+    </Link>
+  );
+}
