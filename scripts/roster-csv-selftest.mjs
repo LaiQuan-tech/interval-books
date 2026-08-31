@@ -162,7 +162,9 @@ const migrations = existsSync(MIG_DIR)
 //       src/server/notify.ts 也在它的掃描範圍裡（notify-selftest [13] 再守一次）。
 //
 //    0022 自己的內容由 scripts/notify-selftest.mjs 驗。
-check("migrations 共 23 支", migrations.length, 23);
+// 0024_blackcat_payment.sql（黑貓 PAY 線上刷卡：orders.payment_url /
+// payments.gateway_trans_id / payment_alerts()）是這一期加的。
+check("migrations 共 24 支", migrations.length, 24);
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
 check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。

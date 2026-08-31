@@ -141,7 +141,10 @@ check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), t
 // 沒有，alter table 也只打在自己新建的那兩張表上。下面的斷言全部原樣成立。
 // 0022 自己的內容由 notify-selftest 驗。
 check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_")), true);
-check("沒有多出 0024（0023 是最後一號）", migFiles.some((f) => f.startsWith("0024_")), false);
+// 0024 是黑貓 PAY 線上刷卡加的（見 supabase/migrations/0024_blackcat_payment.sql）。
+// 它沒有碰進銷存的任何一張表，所以這一支測試的其他斷言原樣成立。
+check("0024 在（黑貓 PAY 金流欄位）", migFiles.some((f) => f.startsWith("0024_")), true);
+check("沒有多出 0025（0024 是最後一號）", migFiles.some((f) => f.startsWith("0025_")), false);
 
 const sql = read(MIG_0017);
 const exec = strip(sql);

@@ -62,14 +62,25 @@ export type PlaceOrderResult =
  *
  * A boolean, deliberately — the browser is told *that* online payment works,
  * never anything about the credentials that make it work. Read at request time
- * rather than baked into the bundle so that adding the PayUni keys to Vercel
+ * rather than baked into the bundle so that adding the gateway keys to Vercel
  * turns card payment on with a redeploy of nothing.
+ *
+ * 兩個金流任一個設定完成就顯示刷卡。實務上是黑貓 PAY（統一客樂得 COCS）——
+ * 這家店的商店帳號就是它，PayUni 只是它的收單銀行。PayUni 直連那條路留著但沒有
+ * 憑證，所以 payuniConfigured() 會是 false。
+ *
+ * ⚠️ 兩個都沒設定時回 false，結帳頁就**不顯示刷卡選項**（退回「不經金流、由店家
+ *    另行安排付款」）。那是刻意的降級：缺憑證的部署要長成「沒有這個選項」，
+ *    而不是「選了之後結帳失敗」。
  */
 export const fetchPaymentOptions = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ cardAvailable: boolean }> => {
     try {
-      const { payuniConfigured } = await import("@/server/payuni");
-      return { cardAvailable: payuniConfigured() };
+      const [{ blackcatConfigured }, { payuniConfigured }] = await Promise.all([
+        import("@/server/blackcat"),
+        import("@/server/payuni"),
+      ]);
+      return { cardAvailable: blackcatConfigured() || payuniConfigured() };
     } catch (err) {
       console.error("[checkout] fetchPaymentOptions failed", err);
       return { cardAvailable: false };
@@ -118,7 +129,7 @@ export type RetryPaymentResult =
   | { ok: false; code: CheckoutErrorCode };
 
 /**
- * Hands the shopper a fresh PayUni form for an order they created but never
+ * Hands the shopper a fresh gateway hand-off for an order they created but never
  * paid for — the "card declined, try again" path.
  *
  * WHY THIS EXISTS AT ALL

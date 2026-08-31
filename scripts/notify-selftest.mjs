@@ -135,7 +135,9 @@ const migrations = existsSync(MIG_DIR)
       .filter((f) => f.endsWith(".sql"))
       .sort()
   : [];
-check("migrations 共 23 支", migrations.length, 23);
+// 0024_blackcat_payment.sql（黑貓 PAY 線上刷卡：orders.payment_url /
+// payments.gateway_trans_id / payment_alerts()）是這一期加的。
+check("migrations 共 24 支", migrations.length, 24);
 check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -598,7 +600,17 @@ console.log("\n[15] src/server.ts");
 
 const serverTs = readFile(join(ROOT, "src/server.ts"));
 const serverCode = stripTs(serverTs);
+// ⚠️ 這張表是**刻意的絆線**：src/server.ts 檔頭 L21-24 的規矩是「要再加路徑前，
+//    先確認它真的不能用 createServerFn 表達」。加了路徑就一定會讓這裡紅一次，
+//    然後有人必須回來把新路徑寫進這張表 —— 那一刻就是那個確認發生的時候。
+//
+//    這一期加了兩條，都是黑貓 PAY（統一客樂得 COCS）的外部入口：
+//      BLACKCAT_APN_PATH     金流商的伺服器送 application/json POST
+//      BLACKCAT_RETURN_PATH  客人的瀏覽器被 302 過來，帶一串 query string
+//    兩者都不是瀏覽器發起的 RPC，createServerFn 表達不了。
 const paths = [
+  "BLACKCAT_APN_PATH",
+  "BLACKCAT_RETURN_PATH",
   "PAYUNI_WEBHOOK_PATH",
   "INVOICE_TASK_PATH",
   "PURGE_SCANS_TASK_PATH",
@@ -607,8 +619,13 @@ const paths = [
 for (const p of paths) {
   checkTrue(`${p} 有被攔`, new RegExp(`pathname === ${p}`).test(serverCode));
 }
-check("路徑表恰好四條", (serverCode.match(/pathname === [A-Z_]+/g) ?? []).length, 4);
-checkTrue("每條路徑都用 dynamic import（service_role 不在模組載入時被拉進來）", (serverCode.match(/await import\("@\/server\//g) ?? []).length === 4);
+check("路徑表恰好六條（多一條就要回來寫進上面那張表）", (serverCode.match(/pathname === [A-Z_]+/g) ?? []).length, paths.length);
+// 比對的是「路徑條數」而不是一個寫死的數字：這樣下次加路徑時，這一條會跟著
+// 上面那張表一起走，紅的只會是「表沒更新」那一條，不會多紅一條不相干的。
+checkTrue(
+  "每條路徑都用 dynamic import（service_role 不在模組載入時被拉進來）",
+  (serverCode.match(/await import\("@\/server\//g) ?? []).length === paths.length,
+);
 // 檔頭那張表要說明為什麼它不能用 createServerFn 表達（src/server.ts L21-24 的規矩）。
 checkTrue("檔頭說明了 NOTIFY_TASK_PATH 為什麼不能用 createServerFn", /NOTIFY_TASK_PATH[\s\S]{0,600}createServerFn/.test(serverTs));
 

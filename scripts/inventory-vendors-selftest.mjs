@@ -160,7 +160,10 @@ check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), t
 // 全部原樣成立。notify-selftest [2] 用兩條 grep 守著「0022 沒有出現
 // pii_access_log 與 pii_log_access 這兩個字」。
 check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_")), true);
-check("沒有多出 0024（0023 是最後一號）", migFiles.some((f) => f.startsWith("0024_")), false);
+// 0024 是黑貓 PAY 線上刷卡加的（見 supabase/migrations/0024_blackcat_payment.sql）。
+// 它沒有碰進銷存的任何一張表，所以這一支測試的其他斷言原樣成立。
+check("0024 在（黑貓 PAY 金流欄位）", migFiles.some((f) => f.startsWith("0024_")), true);
+check("沒有多出 0025（0024 是最後一號）", migFiles.some((f) => f.startsWith("0025_")), false);
 
 // ── 0021 真的回來重讀 §1 了，而且它動了那兩條 CHECK ──────────────────────
 //

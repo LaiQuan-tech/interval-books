@@ -31,7 +31,7 @@
  *   5. reserve_session_seat() per booking line                   (undo: delete)
  *  6a. reserve_inventory_stock() for inventory-backed lines      (undo: delete)
  *  6b. atomic_deduct_stock() for every catalog-stock line        (no undo needed)
- *   7. record the payment intent and build the PayUni form       (no writes to undo)
+ *   7. record the payment intent and build the gateway hand-off (see below)
  *
  * Deleting the orders row cascades to order_items, order_addresses and invoices
  * (all three declare `on delete cascade`), so undoing 2–4b is a single delete.
@@ -87,10 +87,22 @@
  * payload is trying to talk its way past.
  *
  * Step 7 is outside that scheme on purpose: it happens after the order is
- * durable, and its only write (the payments row) is an audit record. If it
- * fails, the order still exists and the shopper can pay again from the
- * confirmation page — which is strictly better than deleting an order whose
- * stock has already been deducted.
+ * durable, and its only writes (the payments audit row and orders.payment_url)
+ * are records, not state. If it fails, the order still exists and the shopper
+ * can pay again from the confirmation page — which is strictly better than
+ * deleting an order whose stock has already been deducted.
+ *
+ * ⚠️ STEP 7 CHANGED SHAPE：它以前是「記錄付款意圖並組出 PayUni 表單」，現在是
+ *    「記錄付款意圖並向**黑貓 PAY（統一客樂得 COCS）**建單，取回線上刷卡網址」。
+ *    這家店的商店帳號是黑貓 PAY，PayUni 只是它的收單銀行（acquirer_type），
+ *    見 src/server/blackcat.ts 的檔頭。PayUni 直連那條路整支保留成 fallback
+ *    （buildPayuniHandoff），一行沒改。
+ *
+ *    這個改變讓 step 7 從「純本地計算」變成「一次對外的網路呼叫」，所以它現在
+ *    **會慢、會逾時、會失敗**。位置沒有跟著改，理由與原本完全相同、而且更重要了：
+ *    它在訂單 durable 之後，失敗只是拿不到付款網址 —— 訂單與庫存都還在，客人可以
+ *    從確認頁再按一次。把它往前挪到訂單建立之前，才會變成「黑貓慢一秒 = 客人的
+ *    庫存與座位全部白扣一次」。
  *
  * Net effect: a failed checkout leaves **no** orders row, hence no order_items
  * and no order_addresses, and leaves stock and seats where they were.
@@ -546,8 +558,94 @@ async function deleteOrder(orderId: string): Promise<void> {
 // createOrder
 // -----------------------------------------------------------------------------
 
+/** 兩支 hand-off builder 共用的最小訂單形狀。 */
+type PayableOrder = {
+  id: string;
+  order_no: string;
+  public_token: string;
+  total: number;
+};
+
+/**
+ * 建立黑貓 PAY（統一客樂得 COCS）的付款交接 —— **這是實際在跑的那一條**。
+ *
+ * 與 PayUni 那一支最大的不同：這裡會**真的對外打一次 API**（CocsOrderAppend，
+ * 規格 V1.28.2 P40），訂單在伺服器端就建出來了，回來的是一個線上刷卡網址。
+ * PayUni 是純本地組表單，交易要等瀏覽器 POST 才存在。
+ *
+ * ⚠️ success_url 必須在**建單當下**就把 public_token 組進去（blackcatReturnUrl）。
+ *    金流商導回時只會帶它自己的參數，token 沒有先組進去，確認頁就沒有東西可以
+ *    把訂單找回來。
+ *
+ * ⚠️ apn_url 也在這裡帶上，而且帶的是含 ?k=<BLACKCAT_WEBHOOK_SECRET> 的那一版 ——
+ *    那是 APN handler 的第一道閘門（見 blackcat-webhook.ts）。
+ *
+ * ⚠️ 付款網址寫進 orders.payment_url（0024）。用意是「重新付款」不必再跟黑貓建
+ *    第二次單，以及後台看得到這張訂單當初被送去哪裡。寫失敗只 log 不中斷 ——
+ *    客人手上已經有網址了，少一筆稽核不值得讓結帳失敗。
+ *
+ * ⚠️ recordPaymentIntent 在建單**之前**呼叫。順序是刻意的：payments 的唯一索引
+ *    (gateway, gateway_tx_id) 是「一個訂單一個金流一筆交易」的資料庫保證，先寫
+ *    才能讓「建單成功但我們沒記到」這個對不上帳的情況不存在。它自己吞掉 23505。
+ *
+ * 未設定完成時回 null 而不是 throw：沒有憑證的部署必須降級成「不經金流」
+ * （訂單留著、由店家另行安排付款），絕不可以降級成「結帳失敗」。
+ */
+async function buildBlackcatHandoff(order: PayableOrder): Promise<PaymentHandoff | null> {
+  const { blackcatApnUrl, blackcatConfigured, blackcatReturnUrl, createCocsOrder } =
+    await import("@/server/blackcat");
+  if (!blackcatConfigured()) return null;
+
+  const apnUrl = blackcatApnUrl();
+  if (!apnUrl) {
+    // blackcatConfigured() 已經包含這個檢查，走到這裡代表兩者不同步了。
+    console.error("[checkout] 黑貓 PAY 的 APN 網址組不出來，退回其他金流");
+    return null;
+  }
+
+  try {
+    const { recordPaymentIntent } = await import("@/server/repos/payments");
+    await recordPaymentIntent(order, "blackcat");
+
+    const created = await createCocsOrder({
+      orderNo: order.order_no,
+      amount: order.total,
+      detail: `小時光書店訂單 ${order.order_no}`,
+      apnUrl,
+      successUrl: blackcatReturnUrl(order.public_token),
+    });
+    if (!created.ok) {
+      // ⚠️ 只印對方給的錯誤訊息，不印整包回應 —— 金流回應含卡號後四碼與授權碼。
+      console.error(`[checkout] 黑貓 PAY 建單失敗 order=${order.order_no}: ${created.reason}`);
+      return null;
+    }
+
+    const { error } = await supabaseAdmin()
+      .from("orders")
+      .update({ payment_url: created.url })
+      .eq("id", order.id);
+    // ⚠️ 只印訊息，**不可以**把 Supabase 的 error 物件整包丟進去 —— 它會把
+    //    被拒絕的那一列原樣回吐，而 orders 那一列滿是客人的個資。
+    //    scripts/event-registration-selftest.mjs [12] 會掃這個檔案抓這種寫法。
+    if (error) {
+      console.error(`[checkout] payment_url 寫入失敗 order=${order.order_no}: ${error.message}`);
+    }
+
+    return { kind: "redirect", url: created.url };
+  } catch (err) {
+    console.error(
+      `[checkout] buildBlackcatHandoff failed order=${order.order_no}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
 /**
  * Builds the PayUni hand-off for an order that still needs paying.
+ *
+ * ⚠️ **這條路現在是 fallback，不是主線。** 這家店的商店帳號是黑貓 PAY（COCS），
+ *    PayUni 只是它的收單銀行；PayUni 直連 UPP 沒有憑證，payuniConfigured() 會是
+ *    false，所以實務上這一支會直接回 null。整支保留不動是為了哪天真的開直連。
  *
  * Shared by createOrder (first attempt) and the "pay again" path, so the two
  * cannot drift: both send the same MerTradeNo (= order_no) and the same
@@ -582,7 +680,7 @@ async function buildPayuniHandoff(order: {
       returnUrl: payuniReturnUrl(order.public_token),
     });
     const { recordPaymentIntent } = await import("@/server/repos/payments");
-    await recordPaymentIntent(order);
+    await recordPaymentIntent(order, "payuni");
     return { kind: "form", action, fields };
   } catch (err) {
     console.error(
@@ -593,7 +691,28 @@ async function buildPayuniHandoff(order: {
 }
 
 /**
- * Re-issues the gateway form for an order that was created but never paid.
+ * 刷卡交接的**唯一入口**。三個呼叫端（首次結帳、idempotency 重播、重新付款）
+ * 都走這裡，所以「哪一個金流在跑」這件事只在這一個地方決定。
+ *
+ * 順序就是優先序：**黑貓 PAY 優先**（這家店實際簽的帳號），退回 PayUni 直連
+ * （留著但沒有憑證），兩者都沒有就回 null —— 那是「不經金流」的既有降級路徑，
+ * 訂單成立、庫存扣好、由店家另行安排付款，與這家店在有金流之前的行為一致。
+ *
+ * ⚠️ 不要在呼叫端各自判斷金流。三個呼叫端各判一次，就是三個會慢慢長歪的地方。
+ */
+async function buildCardHandoff(order: PayableOrder): Promise<PaymentHandoff | null> {
+  const blackcat = await buildBlackcatHandoff(order);
+  if (blackcat) return blackcat;
+
+  const payuni = await buildPayuniHandoff(order);
+  if (payuni) return payuni;
+
+  console.warn(`[checkout] 沒有可用的金流 order=${order.order_no}，退回「不經金流」流程`);
+  return null;
+}
+
+/**
+ * Re-issues the gateway hand-off for an order that was created but never paid.
  *
  * Keyed on public_token for the same reason the confirmation read is: order_no
  * is sequential and guessable, and this returns a live payment form.
@@ -626,7 +745,7 @@ export async function reissuePayment(token: string): Promise<PaymentHandoff | nu
   // shipped order must never be handed a live payment form.
   if (order.status !== "pending" || order.payment_status === "paid") return null;
 
-  return buildPayuniHandoff(order);
+  return buildCardHandoff(order);
 }
 
 /**
@@ -932,7 +1051,7 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
   // ---- step 7: payment hand-off ---------------------------------------------
   // After the order is durable, never before: if this throws we still want the
   // order to exist so the shopper can retry payment rather than lose the lot.
-  const payment = wantsCard ? await buildPayuniHandoff(order) : null;
+  const payment = wantsCard ? await buildCardHandoff(order) : null;
 
   return {
     orderNo: order.order_no,
@@ -970,8 +1089,7 @@ async function findByIdempotencyKey(key: string): Promise<PlacedOrder | null> {
   };
 
   const stillOwed = row.status === "pending" && row.payment_status !== "paid";
-  const payment =
-    row.payment_method === "card" && stillOwed ? await buildPayuniHandoff(row) : null;
+  const payment = row.payment_method === "card" && stillOwed ? await buildCardHandoff(row) : null;
 
   return {
     orderNo: row.order_no,

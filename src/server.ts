@@ -21,8 +21,17 @@
  *     載入時就被拉進來。
  *   * 要再加路徑時，先確認它真的不能用 createServerFn 表達。
  *
- * 目前掛在這裡的四條，理由各自不同：
+ * 目前掛在這裡的六條，理由各自不同：
+ *   BLACKCAT_APN_PATH      黑貓 PAY（統一客樂得 COCS）的 APN 主動通知。**這是這家店
+ *                          實際在跑的那條刷卡路線。** 金流商的伺服器對我們指定的網址送
+ *                          application/json POST，同樣打不到框架的 RPC 協定。
+ *   BLACKCAT_RETURN_PATH   黑貓刷完卡之後的瀏覽器導回。呼叫者是**客人的瀏覽器**，
+ *                          被 302 過來帶一串 query string —— 它連我們的 JS 都還沒載入，
+ *                          更不可能照 createServerFn 的序列化格式打。
+ *                          ⚠️ 這一條**不碰任何付款狀態**，只負責把人送到確認頁；
+ *                             錢的真相只來自上面那條 APN。見 blackcat-webhook.ts。
  *   PAYUNI_WEBHOOK_PATH    外部金流商送 form-urlencoded POST，打不到框架的 RPC 協定。
+ *                          （PayUni 直連 UPP 這條路留著但沒有憑證，見 blackcat.ts 檔頭。）
  *   INVOICE_TASK_PATH      外部排程（Vercel Cron / Railway worker）要有地方定時打，
  *                          用來補開失敗的發票。同樣不是瀏覽器發起的請求。
  *   PURGE_SCANS_TASK_PATH  進貨單掃描圖的保留期限（0019 §9.2）。一樣是排程要打的，
@@ -37,6 +46,7 @@
  *                          createServerFn 的共同原因。
  */
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
+import { BLACKCAT_APN_PATH, BLACKCAT_RETURN_PATH } from "@/server/blackcat";
 import { PAYUNI_WEBHOOK_PATH } from "@/server/payuni";
 import {
   INVOICE_TASK_PATH,
@@ -53,6 +63,16 @@ export default {
       pathname = new URL(request.url).pathname;
     } catch {
       pathname = "";
+    }
+
+    if (pathname === BLACKCAT_APN_PATH) {
+      const { handleBlackcatApn } = await import("@/server/blackcat-webhook");
+      return handleBlackcatApn(request);
+    }
+
+    if (pathname === BLACKCAT_RETURN_PATH) {
+      const { handleBlackcatReturn } = await import("@/server/blackcat-webhook");
+      return handleBlackcatReturn(request);
     }
 
     if (pathname === PAYUNI_WEBHOOK_PATH) {

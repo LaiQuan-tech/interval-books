@@ -33,6 +33,19 @@
  *   4. **Money is compared, never assumed.** The amount the gateway says it
  *      collected is checked against orders.total before anything is marked
  *      paid, and a mismatch is a loud, recorded refusal — not a silent accept.
+ *
+ * TWO GATEWAYS SHARE THIS FILE, AND `gateway` IS NEVER ALLOWED TO DEFAULT SILENTLY
+ * -------------------------------------------------------------------------------
+ * 黑貓 PAY（統一客樂得 COCS，src/server/blackcat.ts）是這家店**實際在跑**的那條
+ * 刷卡路線；PayUni 直連 UPP 留著但沒有憑證。兩者共用 public.payments 與
+ * public.webhook_events —— 那是 0005 刻意的設計：webhook_events 的鍵是
+ * `unique (gateway, event_key)`，payments 的唯一索引是 `(gateway, gateway_tx_id)`，
+ * 所以同一個 order_no 在兩個 gateway 底下是兩列，不會互相蓋掉。
+ *
+ * 下面每一支函式因此都收一個 `gateway` 參數。它有預設值 "payuni" **只是為了讓
+ * 既有呼叫端一行都不用改**（那條路的行為必須逐字元不變），新的呼叫端一律明寫。
+ * ⚠️ 傳錯 gateway 的後果是「去重鎖鎖到別人的鍵」——重送不會被擋，或真通知被誤判
+ *    成重複。這個參數沒有「差不多就好」的空間。
  */
 import "@tanstack/react-start/server-only";
 import { supabaseAdmin } from "@/server/supabase-admin";
@@ -97,22 +110,26 @@ export async function findOrderByPublicToken(token: string): Promise<PaymentOrde
 // -----------------------------------------------------------------------------
 
 /**
- * Records that we are about to send this order to PayUni.
+ * Records that we are about to send this order to a gateway.
  *
- * gateway_tx_id is set to order_no — the same string we send as MerTradeNo —
- * so the unique index payments_gateway_tx_idx makes "one live PayUni
- * transaction per order" a database fact rather than a convention. A retry of
- * the same order therefore hits 23505 and is treated as "already recorded",
- * which is correct: the shopper is being sent to the same trade number again.
+ * gateway_tx_id is set to order_no — the same string we send as PayUni's
+ * MerTradeNo and as 黑貓 PAY 的 cust_order_no — so the unique index
+ * payments_gateway_tx_idx makes "one live transaction per order per gateway" a
+ * database fact rather than a convention. A retry of the same order therefore
+ * hits 23505 and is treated as "already recorded", which is correct: the
+ * shopper is being sent to the same trade number again.
  */
-export async function recordPaymentIntent(order: {
-  id: string;
-  order_no: string;
-  total: number;
-}): Promise<void> {
+export async function recordPaymentIntent(
+  order: {
+    id: string;
+    order_no: string;
+    total: number;
+  },
+  gateway: string = "payuni",
+): Promise<void> {
   const { error } = await supabaseAdmin().from("payments").insert({
     order_id: order.id,
-    gateway: "payuni",
+    gateway,
     gateway_tx_id: order.order_no,
     status: "pending",
     amount: order.total,
@@ -127,13 +144,14 @@ export async function recordPaymentIntent(order: {
 async function updatePaymentRow(
   orderNo: string,
   patch: Record<string, unknown>,
+  gateway: string = "payuni",
 ): Promise<void> {
   const { error } = await supabaseAdmin()
     .from("payments")
     .update(patch)
-    .eq("gateway", "payuni")
+    .eq("gateway", gateway)
     .eq("gateway_tx_id", orderNo);
-  if (error) console.error("[payments] updatePaymentRow failed", orderNo, error);
+  if (error) console.error("[payments] updatePaymentRow failed", gateway, orderNo, error);
 }
 
 // -----------------------------------------------------------------------------
@@ -153,13 +171,17 @@ export type ClaimResult = "claimed" | "duplicate" | "error";
 export async function claimWebhookEvent(
   eventKey: string,
   payload: Record<string, unknown>,
+  gateway: string = "payuni",
 ): Promise<ClaimResult> {
   const { error } = await supabaseAdmin()
     .from("webhook_events")
-    .insert({ gateway: "payuni", event_key: eventKey, payload });
+    .insert({ gateway, event_key: eventKey, payload });
   if (!error) return "claimed";
   if (error.code === UNIQUE_VIOLATION) return "duplicate";
-  console.error("[payments] claimWebhookEvent failed", eventKey, error);
+  // ⚠️ "error" 與 "duplicate" **一定要分開回**。快樂手那一版把兩者壓成同一個
+  //    false，於是資料庫抖動一秒 = 那則通知被當成重複、靜默 ack、永遠不再處理。
+  //    呼叫端看到 "error" 必須回 5xx 逼上游重送。
+  console.error("[payments] claimWebhookEvent failed", gateway, eventKey, error);
   return "error";
 }
 
@@ -172,26 +194,30 @@ export async function claimWebhookEvent(
  * succeed — an amount mismatch — keeps its claim on purpose: retrying it
  * would just re-log the same alert forever.
  */
-export async function releaseWebhookClaim(eventKey: string): Promise<void> {
+export async function releaseWebhookClaim(
+  eventKey: string,
+  gateway: string = "payuni",
+): Promise<void> {
   const { error } = await supabaseAdmin()
     .from("webhook_events")
     .delete()
-    .eq("gateway", "payuni")
+    .eq("gateway", gateway)
     .eq("event_key", eventKey);
-  if (error) console.error("[payments] releaseWebhookClaim failed", eventKey, error);
+  if (error) console.error("[payments] releaseWebhookClaim failed", gateway, eventKey, error);
 }
 
 /** Records an event we refused to act on, for later reconciliation. */
 export async function annotateWebhookEvent(
   eventKey: string,
   payload: Record<string, unknown>,
+  gateway: string = "payuni",
 ): Promise<void> {
   const { error } = await supabaseAdmin()
     .from("webhook_events")
     .update({ payload })
-    .eq("gateway", "payuni")
+    .eq("gateway", gateway)
     .eq("event_key", eventKey);
-  if (error) console.error("[payments] annotateWebhookEvent failed", eventKey, error);
+  if (error) console.error("[payments] annotateWebhookEvent failed", gateway, eventKey, error);
 }
 
 /**
@@ -207,6 +233,26 @@ export function eventKeyFor(notify: Record<string, string>): string {
   const tradeNo = notify.TradeNo ?? "-";
   const status = notify.TradeStatus ?? "-";
   return `${orderNo}:${tradeNo}:${status}`;
+}
+
+/**
+ * The dedupe key for one 黑貓 PAY (COCS) APN notification.
+ *
+ * 同一個原則、不同的欄位名：(契客訂單編號, 黑貓的交易識別碼, 狀態碼)。
+ * 規格 P87 說同一個狀態碼最多重送 3 次，重送時這三個欄位一字不變。
+ *
+ * ⚠️ **`nonce` 絕對不可以進來。** 規格 P89 明寫它是「不會重覆的時間+亂數組合」，
+ *    每一次重送都不一樣 —— 把它放進鍵裡，每一次重送都會長得像新事件，去重就
+ *    完全失效（而 checksum 是拿 nonce 去算的，所以它很容易被順手抄進來）。
+ *
+ * ⚠️ `amount` 也不進來：金額不是事件身分的一部分，而且拿通知自稱的金額當鍵，
+ *    等於讓偽造者改一個數字就繞過去重。
+ */
+export function eventKeyForBlackcat(body: Record<string, unknown>): string {
+  const orderNo = String(body.order_no ?? "-") || "-";
+  const transId = String(body.trans_id ?? "-") || "-";
+  const status = String(body.status ?? "-") || "-";
+  return `${orderNo}:${transId}:${status}`;
 }
 
 // -----------------------------------------------------------------------------
@@ -237,9 +283,16 @@ export type MarkPaidResult =
  */
 export async function markOrderPaid(
   order: PaymentOrderRow,
-  detail: { tradeNo?: string; amount: number; raw: Record<string, unknown> },
+  detail: {
+    tradeNo?: string;
+    amount: number;
+    raw: Record<string, unknown>;
+    /** 哪一個金流。決定要更新 payments 的哪一列，以及 log 的前綴。 */
+    gateway?: string;
+  },
 ): Promise<MarkPaidResult> {
   const db = supabaseAdmin();
+  const gateway = detail.gateway ?? "payuni";
   const { data, error } = await db
     .from("orders")
     .update({
@@ -259,12 +312,17 @@ export async function markOrderPaid(
   }
 
   if (Array.isArray(data) && data.length > 0) {
-    await updatePaymentRow(order.order_no, {
-      status: "paid",
-      amount: detail.amount,
-      paid_at: new Date().toISOString(),
-      raw_response: { ...detail.raw, tradeNo: detail.tradeNo ?? null },
-    });
+    await updatePaymentRow(
+      order.order_no,
+      {
+        status: "paid",
+        amount: detail.amount,
+        paid_at: new Date().toISOString(),
+        gateway_trans_id: detail.tradeNo ?? null,
+        raw_response: { ...detail.raw, tradeNo: detail.tradeNo ?? null },
+      },
+      gateway,
+    );
     return { ok: true, changed: true };
   }
 
@@ -277,20 +335,25 @@ export async function markOrderPaid(
   }
   if (fresh.status === "cancelled") {
     console.error(
-      `[payuni] PAID AFTER CANCEL order=${order.order_no} amount=${detail.amount} — 款項已收但訂單已取消（庫存可能已回收），需人工對帳`,
+      `[${gateway}] PAID AFTER CANCEL order=${order.order_no} amount=${detail.amount} — 款項已收但訂單已取消（庫存可能已回收），需人工對帳`,
     );
-    await updatePaymentRow(order.order_no, {
-      status: "paid",
-      amount: detail.amount,
-      paid_at: new Date().toISOString(),
-      raw_response: { ...detail.raw, reconcile: "paid_after_cancel" },
-    });
+    await updatePaymentRow(
+      order.order_no,
+      {
+        status: "paid",
+        amount: detail.amount,
+        paid_at: new Date().toISOString(),
+        gateway_trans_id: detail.tradeNo ?? null,
+        raw_response: { ...detail.raw, reconcile: "paid_after_cancel" },
+      },
+      gateway,
+    );
     return { ok: false, reason: "paid_after_cancel" };
   }
   // Some other state moved underneath us (manual admin action, a second
   // gateway). Leave it alone and say so.
   console.error(
-    `[payuni] STALE PAID CALLBACK order=${order.order_no} status=${fresh.status} payment_status=${fresh.payment_status}`,
+    `[${gateway}] STALE PAID CALLBACK order=${order.order_no} status=${fresh.status} payment_status=${fresh.payment_status}`,
   );
   return { ok: false, reason: "stale" };
 }
@@ -307,13 +370,14 @@ export type MarkFailedResult = "changed" | "ignored_terminal" | "db_error";
  */
 export async function markPaymentFailed(
   order: PaymentOrderRow,
-  detail: { reason: string; raw: Record<string, unknown> },
+  detail: { reason: string; raw: Record<string, unknown>; gateway?: string },
 ): Promise<MarkFailedResult> {
+  const gateway = detail.gateway ?? "payuni";
   // A late failure about an order that has already moved on is exactly the
   // Realreal bug. Short-circuit before writing anything.
   if (order.payment_status === "paid" || TERMINAL_STATUSES.has(order.status)) {
     console.warn(
-      `[payuni] 忽略遲到的失敗通知 order=${order.order_no} status=${order.status} payment_status=${order.payment_status}`,
+      `[${gateway}] 忽略遲到的失敗通知 order=${order.order_no} status=${order.status} payment_status=${order.payment_status}`,
     );
     return "ignored_terminal";
   }
@@ -331,13 +395,17 @@ export async function markPaymentFailed(
     return "db_error";
   }
   if (!Array.isArray(data) || data.length === 0) {
-    console.warn(`[payuni] 失敗通知的 CAS 未命中（狀態已變動） order=${order.order_no}`);
+    console.warn(`[${gateway}] 失敗通知的 CAS 未命中（狀態已變動） order=${order.order_no}`);
     return "ignored_terminal";
   }
 
-  await updatePaymentRow(order.order_no, {
-    status: "failed",
-    raw_response: detail.raw,
-  });
+  await updatePaymentRow(
+    order.order_no,
+    {
+      status: "failed",
+      raw_response: detail.raw,
+    },
+    gateway,
+  );
   return "changed";
 }

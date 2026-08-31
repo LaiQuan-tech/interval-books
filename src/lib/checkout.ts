@@ -53,16 +53,33 @@ export type PaymentMethodChoice = (typeof PAYMENT_METHODS)[number];
 /**
  * A gateway hand-off, as the browser must perform it.
  *
- * ⚠️ PayUni has no "create the trade server-side and get a redirect URL" flow —
- * the trade only comes into existence when the *browser* POSTs these fields to
- * `action`. So this is a form to build and submit, not a URL to navigate to.
- * Do not "simplify" it into a redirect; there is nothing to redirect to.
+ * ⚠️ **The two gateways hand off in genuinely different ways, and neither can be
+ * expressed as the other.** This is a union rather than a single shape because
+ * flattening it would break one of them:
+ *
+ *   kind: "form"      PayUni 直連 UPP。它**沒有**「伺服器端建立交易、拿回導向網址」
+ *                     的流程 —— 交易是在*瀏覽器*把 MerID / Version / EncryptInfo /
+ *                     HashInfo POST 過去的那一刻才產生的。所以這裡是一張要組出來
+ *                     然後送出的表單，不是一個可以導過去的網址。想把它「簡化」成
+ *                     redirect 的每一次嘗試，結局都是客人看著 PayUni 的錯誤頁。
+ *
+ *   kind: "redirect"  黑貓 PAY（統一客樂得 COCS）。**這是這家店實際在跑的那條。**
+ *                     伺服器端呼叫 CocsOrderAppend 就把訂單建出來了，回覆裡直接帶
+ *                     一個線上刷卡網址（規格 V1.28.2 P42 的 `url` 欄位）。反過來,
+ *                     把它硬塞成 form 也不行 —— 那個網址是 GET 的，POST 過去沒有意義。
+ *
+ * 兩者共存不是過渡狀態：黑貓是現在在跑的，PayUni 留著是為了哪天真的開直連。
  */
-export type PaymentHandoff = {
-  kind: "form";
-  action: string;
-  fields: Record<string, string>;
-};
+export type PaymentHandoff =
+  | {
+      kind: "form";
+      action: string;
+      fields: Record<string, string>;
+    }
+  | {
+      kind: "redirect";
+      url: string;
+    };
 
 // -----------------------------------------------------------------------------
 // Shipping
