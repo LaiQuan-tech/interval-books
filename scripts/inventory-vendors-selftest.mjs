@@ -147,7 +147,20 @@ for (let n = 1; n <= 18; n += 1) {
 // 的新 reason）留到 0021，那一期要回來重讀 §1 那幾條。
 check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")), true);
 check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
-check("沒有多出 0022（0021 是最後一號）", migFiles.some((f) => f.startsWith("0022_")), false);
+// 0022（交易信 outbox 與付款通知）把人叫回來重讀 §1 第二次。答案是：**它完全
+// 沒有碰 pii_access_log。** 這是刻意的決定，寫在 0022 檔頭 §0.5 —— 寄信需要地址，
+// 但「系統為了寄信而使用地址」與「有人在查這個人的資料」不是同一件事（0019 §1.1
+// 的線）。每寄一封提醒信就寫一列 log，三個月後那張表 99% 是機器寫的，
+// 「有沒有人在亂查」這個唯一的用途就沒了。
+//
+// 所以 0022 改用另一個形狀：TypeScript 送進去的是 registration_id，地址由
+// enqueue_registration_emails() 在資料庫裡 join —— 明文一步都沒有離開資料庫，
+// 也就沒有「誰查閱了」這件事需要記。下面每一條關於 pii_access_log、
+// inv_vendor_sensitive()、staff_permissions 與那個不可竄改 trigger 的斷言，
+// 全部原樣成立。notify-selftest [2] 用兩條 grep 守著「0022 沒有出現
+// pii_access_log 與 pii_log_access 這兩個字」。
+check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_")), true);
+check("沒有多出 0023（0022 是最後一號）", migFiles.some((f) => f.startsWith("0023_")), false);
 
 // ── 0021 真的回來重讀 §1 了，而且它動了那兩條 CHECK ──────────────────────
 //

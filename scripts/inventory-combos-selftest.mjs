@@ -133,7 +133,16 @@ check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")),
 // 放寬了 pii_access_log 與 staff_permissions 的三條 CHECK，其餘全在 public 的
 // event_* 上。下面的斷言全部原樣成立。0021 自己的內容由 roster-csv-selftest 驗。
 check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
-check("沒有多出 0022（0021 是最後一號）", migFiles.some((f) => f.startsWith("0022_")), false);
+// 0022（交易信 outbox 與付款通知）第三次把人叫回來。逐條重讀過：它只新增
+// public.email_outbox 與 public.email_copy 兩張表、十二支 public.* 的函式，以及
+// 一段往 public.order_post_payment_log 補列的回填。**它一個 drop 都沒有，
+// alter table 只打在自己新建的那兩張表上**（notify-selftest [2] 用 regex 把
+// alter 的目標抓出來比對，守著這件事）。inv 的任何一張表、任何一支函式、
+// sales_product_id_fkey 與 combo_set_items_product_id_fkey 的 ON DELETE 行為全部
+// 沒有被碰到，所以下面關於套餐、二手書、OCR bucket 與清理順序的斷言原樣成立。
+// 0022 自己的內容由 notify-selftest 驗。
+check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_")), true);
+check("沒有多出 0023（0022 是最後一號）", migFiles.some((f) => f.startsWith("0023_")), false);
 
 const sql = read(MIG_0018);
 const exec = strip(sql);

@@ -153,3 +153,89 @@ export async function handlePurgeScansTask(req: Request): Promise<Response> {
   const result = await purgeExpiredOcrScans({ dryRun });
   return json({ ok: true, dryRun, ...result });
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/tasks/notify —— 交易信的排程入口（0022）
+// ---------------------------------------------------------------------------
+/**
+ * 這條路徑存在的理由與 INVOICE_TASK_PATH 一模一樣，只是換一件事：
+ * 付款成功時 webhook 會就地排信並試寄一次（src/server/notify.ts 的
+ * triggerNotifyAfterPayment），但那一次可能失敗 —— Resend 當下掛掉、逾時、
+ * serverless instance 在回應之前被回收。那些信會停在
+ * `email_outbox.status='pending'`，而**沒有任何東西會自己再試一次**。
+ *
+ * 而且有一件事 webhook 根本做不到：**活動前 24 小時的提醒信**沒有任何使用者動作
+ * 會觸發它。那件事只有排程做得到。
+ *
+ * 排程已經接上了：supabase/migrations/0022_email_outbox_notify.sql 用 pg_cron +
+ * pg_net，每 10 分鐘（分鐘 6,16,26,36,46,56）POST 這條路徑一次。密鑰存在
+ * Supabase Vault，不在 cron.job.command 裡 —— 詳見那支 migration 的檔頭。
+ *
+ * ⚠️ 用到的 Vault secret 是 `notify_tasks_endpoint_url`（新的）與 `tasks_secret`
+ *    （沿用 0008 那一筆）。
+ *
+ * ── 四件事，順序是固定的 ──────────────────────────────────────────────────
+ *
+ *   1. notify backlog —— 把「付了錢卻沒排信」的訂單補排進 outbox
+ *   2. 場次提醒       —— 把 24 小時內要開始的場次的提醒信排進 outbox
+ *   3. flush outbox   —— 把 outbox 沖出去（前兩步剛排進來的也在這一批裡）
+ *   4. purge          —— 清掉 30 天前已寄出的信件內文
+ *
+ * 前兩步都是「往 outbox 裡放東西」，第三步才是「把東西送出去」。順序顛倒的話，
+ * 這一輪剛排進來的信要等下一輪（10 分鐘後）才寄得出去 —— 對「活動前 24 小時」
+ * 那封信來說沒差，對「付款成功」那封補寄的信來說就是客人多等 10 分鐘。
+ *
+ * ⚠️ **Phase 4（自助候補）要在第 2 步與第 3 步之間插入候補遞補的 sweep**，理由
+ *    同上：sweep 產生的 offer 信要在同一輪送出去，否則候補的人會晚 10 分鐘才知道
+ *    自己補上了 —— 而 offer 是有時效的。
+ *
+ * ── 安全性 ────────────────────────────────────────────────────────────────
+ * 與上面兩條完全相同：密鑰在 query string（`?k=`），缺密鑰 503、不符 404，
+ * 常數時間比對，連 body 都不解析。這條路徑會**寄出真的信**給真的人，所以它跟
+ * 開發票那條一樣需要擋住掃描式請求。
+ */
+export const NOTIFY_TASK_PATH = "/api/tasks/notify";
+
+export async function handleNotifyTask(req: Request): Promise<Response> {
+  if (req.method !== "POST" && req.method !== "GET") return text("method not allowed", 405);
+
+  const secret = process.env.TASKS_SECRET;
+  if (!secret) return text("service unavailable", 503);
+
+  let url: URL;
+  try {
+    url = new URL(req.url);
+  } catch {
+    return text("bad request", 400);
+  }
+  if (!secretMatches(url.searchParams.get("k"), secret)) return text("not found", 404);
+
+  // service_role 的資料層只在通過密鑰閘門後才載入。
+  const {
+    flushEmailOutbox,
+    purgeEmailBodies,
+    queueOrderNotifications,
+    runNotifyBacklog,
+    runSessionReminders,
+  } = await import("@/server/notify");
+
+  // `?order=<uuid>` 只補排指定的那一張，理由同 INVOICE_TASK_PATH 的同名參數：
+  // 人工排查時要能單獨重跑一張並立刻看到結果，而且它同時是併發測試的入口
+  // （對同一個 order 同時打兩次，正好驗證 claim 真的只放行一個）。
+  const singleOrder = url.searchParams.get("order");
+  if (singleOrder) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(singleOrder)) {
+      return text("bad order id", 400);
+    }
+    const outcome = await queueOrderNotifications(singleOrder);
+    const flushed = await flushEmailOutbox();
+    return json({ ok: true, order: singleOrder, outcome, flushed });
+  }
+
+  const backlog = await runNotifyBacklog(20);
+  const reminders = await runSessionReminders();
+  const flushed = await flushEmailOutbox(20);
+  const purged = await purgeEmailBodies();
+
+  return json({ ok: true, backlog, reminders, flushed, purged });
+}

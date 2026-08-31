@@ -133,7 +133,15 @@ check("0020 在（場次名額）", migFiles.some((f) => f.startsWith("0020_")),
 // inv.inventory_adjustments 與 inv_admin_product_movements —— 下面的斷言全部原樣
 // 成立。0021 自己的內容由 roster-csv-selftest 驗。
 check("0021 在（名單 PII）", migFiles.some((f) => f.startsWith("0021_")), true);
-check("沒有多出 0022（0021 是最後一號）", migFiles.some((f) => f.startsWith("0022_")), false);
+// 0022（交易信 outbox 與付款通知）第四次把人叫回來。逐條重讀過：它新增的是
+// public.email_outbox / public.email_copy 兩張表與十二支 public.* 函式，另外往
+// public.order_post_payment_log 補了一批「這一步關掉了」的列（那是寫**列**不是
+// 改結構）。**inv 的任何一張表、任何一支函式都沒有被碰到**，尤其是
+// inv.inventory_adjustments 與 inv_admin_product_movements；0022 連一個 drop 都
+// 沒有，alter table 也只打在自己新建的那兩張表上。下面的斷言全部原樣成立。
+// 0022 自己的內容由 notify-selftest 驗。
+check("0022 在（交易信 outbox）", migFiles.some((f) => f.startsWith("0022_")), true);
+check("沒有多出 0023（0022 是最後一號）", migFiles.some((f) => f.startsWith("0023_")), false);
 
 const sql = read(MIG_0017);
 const exec = strip(sql);

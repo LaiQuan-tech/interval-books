@@ -123,14 +123,25 @@ check("0020 存在", existsSync(MIG_0020), true);
 const migrations = existsSync(join(ROOT, "supabase/migrations"))
   ? readdirSync(join(ROOT, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort()
   : [];
-// 0021（名單的遮罩 view、明文揭露與 CSV 匯出）加進來時，這兩條會把人叫回來。
+// 0021（名單的遮罩 view、明文揭露與 CSV 匯出）加進來時，這幾條會把人叫回來。
 // 逐條重讀過：0021 **不動** 0020 的任何一張表、任何一支函式，它只是在
 // event_registrations 上面加一個遮罩過的 view 與兩支會留痕的 security definer
 // 函式。所以下面每一條 0020 的斷言原樣成立。0021 自己的內容由
 // scripts/roster-csv-selftest.mjs 驗。
-check("migrations 共 21 支", migrations.length, 21);
+//
+// 0022（交易信 outbox 與付款通知）第二次把人叫回來。逐條重讀過：它**只讀**
+// 0020 建的東西 —— enqueue_registration_emails() join public.event_registrations
+// 取信箱、sessions_due_for_reminder() 讀 public.event_sessions。它沒有重新定義
+// reserve_session_seat / release_session_seat / expire_unpaid_orders 任何一支
+// （notify-selftest [2] 逐支 grep 守著），也沒有動 order_items.session_id 或
+// 那兩張表的 grant。**「佔了 N 個位子」與「有 N 位參加者」是同一句 SQL 的兩個
+// 面向**這個不變量因此原封不動：0022 一行 insert / delete 都沒有打在
+// event_registrations 上，它只把地址讀出來寫進 email_outbox。
+// 所以下面每一條 0020 的斷言原樣成立。0022 自己的內容由 notify-selftest 驗。
+check("migrations 共 22 支", migrations.length, 22);
 check("0020 仍在原位", migrations[19], "0020_event_sessions_registrations.sql");
-check("編號連續且 0021 是最後一支", migrations[20], "0021_roster_pii.sql");
+check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
+check("編號連續且 0022 是最後一支", migrations[21], "0022_email_outbox_notify.sql");
 for (const f of ["0004_commerce_products.sql", "0006_order_expiry.sql", "0011_inventory_single_source.sql", "0019_vendors_pii_portal.sql"]) {
   check(`${f} 仍在`, migrations.includes(f), true);
 }

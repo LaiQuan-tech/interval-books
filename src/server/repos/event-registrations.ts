@@ -167,27 +167,33 @@ export async function listSessionRoster(sessionId: string): Promise<Registration
 }
 
 /**
- * 簽到表：這一場**會來的人**。
+ * 簽到表的那一句查詢。**整個檔案只有這裡過濾 on_roster。**
  *
- * ⚠️ **目前零呼叫端 —— 這一支是為 Phase 3 的提醒信預留的。** 畫面走
- *    listSessionRoster()（它要看得到未付款的列），CSV 走 SQL 的
- *    export_event_roster()（它自己 `where v.on_roster`）。三邊共用的是 view 上
- *    那個 on_roster 欄位，不是這支函式。
+ * 兩個公開入口（依場次、依訂單）共用它，所以「誰在簽到表上」在 TypeScript 這一側
+ * 也只寫了一次 —— 條件本身仍然只定義在 0021 §3 的 view 裡（`payment_status =
+ * 'paid'`），這裡連那個字面值都沒有。
  *
- *    快樂手 apps/web/app/admin/sessions/queries.ts:117-125 的原話：
- *    「apps/worker/src/jobs/workshop-reminders.ts 寄開課提醒用的是同一個條件，
- *      兩邊一致才不會發生『有人收到提醒卻不在簽到表上』。」
- *    那句話在那邊是註解，在這裡是結構 —— 條件寫在 0021 §3 的 view 裡，
- *    這個檔案只是 `.eq("on_roster", true)`。
+ * 快樂手 apps/web/app/admin/sessions/queries.ts:117-125 的原話：
+ * 「apps/worker/src/jobs/workshop-reminders.ts 寄開課提醒用的是同一個條件，
+ *   兩邊一致才不會發生『有人收到提醒卻不在簽到表上』。」
+ * 那句話在那邊是註解，在這裡是結構。
  *
  * 回的仍然是**遮罩過的**列：知道「有誰」不需要看到聯絡方式。要明文就走
  * exportEventRoster()，而那會留下一筆紀錄。
+ *
+ * ⚠️ Phase 3 的信**不需要**明文 —— 排信只送 registration_id 進去，地址由
+ *    0022 §7 的 enqueue_registration_emails() 在資料庫裡 join。所以「寄信」這件事
+ *    完全不必經過那兩個會寫 pii_access_log 的出口，而那是對的：系統為了寄信而
+ *    使用地址，與「有人在查這個人的資料」不是同一件事（0019 §1.1 的線）。
  */
-export async function loadPaidRoster(sessionId: string): Promise<RegistrationRosterRow[]> {
+async function queryPaidRoster(
+  column: "session_id" | "order_id",
+  value: string,
+): Promise<RegistrationRosterRow[]> {
   const { data, error } = await supabaseAdmin()
     .from("admin_event_roster")
     .select(ROSTER_COLUMNS)
-    .eq("session_id", sessionId)
+    .eq(column, value)
     .eq("on_roster", true)
     .order("created_at", { ascending: true })
     .order("seat_no", { ascending: true });
@@ -197,6 +203,31 @@ export async function loadPaidRoster(sessionId: string): Promise<RegistrationRos
     throw new Error(`[repo/event-registrations] paid roster 失敗：${error.code}`);
   }
   return (data ?? []) as unknown as RegistrationRosterRow[];
+}
+
+/**
+ * 簽到表：這一場**會來的人**。活動前 24 小時的提醒信用這一支決定寄給誰
+ * （src/server/notify.ts 的 runSessionReminders）。
+ *
+ * 畫面走 listSessionRoster()（它要看得到未付款的列），CSV 走 SQL 的
+ * export_event_roster()（它自己 `where v.on_roster`）。三邊共用的是 view 上那個
+ * on_roster 欄位。
+ */
+export async function loadPaidRoster(sessionId: string): Promise<RegistrationRosterRow[]> {
+  return queryPaidRoster("session_id", sessionId);
+}
+
+/**
+ * 同一張簽到表，換一把鑰匙：**這一張訂單**上會來的人。
+ *
+ * 付款成功的當下要寄「報名成功」給每一位參加者，而那時候手上的是 order_id 不是
+ * session_id（一張訂單可以買到兩個不同場次的位子）。用 session 去查會撈到別人的
+ * 報名，所以需要這一把。
+ *
+ * 它與 loadPaidRoster() 是同一句 SQL 的兩個入口，不是第二份條件。
+ */
+export async function loadPaidRosterByOrder(orderId: string): Promise<RegistrationRosterRow[]> {
+  return queryPaidRoster("order_id", orderId);
 }
 
 /**

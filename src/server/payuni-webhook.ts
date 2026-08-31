@@ -22,10 +22,19 @@
  *      事件搶不到 insert，直接 ack 不做任何事（不會重複加值、重複開發票）。
  *   4. 金額比對 —— 收到的金額與 orders.total 不符一律不標 paid，記錄並告警。
  *
- * ── 付款之後（開發票）──────────────────────────────────────────────────
- * 標記 paid 成功之後會就地開一次電子發票（src/server/invoice-issuer.ts）。那一步的
- * 失敗**絕不**改變回給 PayUni 的答案 —— 開發票掛掉卻回 5xx，換來的是同一則通知被
- * 無止盡重送。失敗留在 invoices / order_post_payment_log，由 /api/tasks/invoices 補。
+ * ── 付款之後的三件事（順序有意義，不要重排）──────────────────────────
+ *   1. commitInventoryForOrder()      貨 —— 庫存保留轉成真正的銷售（0011）
+ *   2. triggerInvoiceAfterPayment()   憑證 —— 電子發票（0007）
+ *   3. triggerNotifyAfterPayment()    信 —— 付款成功與報名成功通知（0022）
+ *
+ * 判準是「失敗的可補救程度」，最不可補救的先做：庫存沒扣會讓下一個客人買到同一本
+ * 已經賣掉的書（不可逆，傷的是別人）；發票沒開是法遵；信沒寄有 outbox 的八次重試
+ * 與每 10 分鐘的排程，是三件裡最補得回來的。
+ *
+ * 三步的失敗都**絕不**改變回給 PayUni 的答案 —— 任何一步掛掉卻回 5xx，換來的是
+ * 同一則通知被無止盡重送。失敗分別留在 stock_oversold_alerts / invoices /
+ * email_outbox 與 order_post_payment_log，由 /api/tasks/invoices 與
+ * /api/tasks/notify 兩支排程補。
  *
  * ── ack 格式（尚待憑證實測）──────────────────────────────────────────────
  * 官方文件查不到「要回什麼給 PayUni 才算收到」。目前一律回 HTTP 200 純文字 "OK"。
@@ -257,6 +266,39 @@ export async function handlePayuniWebhook(req: Request): Promise<Response> {
     if (!invoice.ok) {
       console.warn(
         `[payuni] order=${orderNo} 已標記付款成功,但發票尚未開出(${invoice.reason})——已列入補開清單`,
+      );
+    }
+
+    // ---------- 付款確認之後（3）：寄信（0022）----------
+    // ⚠️ **順序：貨 → 憑證 → 信。這三行的先後是有理由的，不要重排。**
+    //
+    // 判準是「失敗的可補救程度」，最不可補救的先做：
+    //
+    //   commitInventoryForOrder()      庫存沒扣，**下一個客人**就會買到同一本已經
+    //                                  賣掉的書。不可逆，而且傷的是別人。
+    //   triggerInvoiceAfterPayment()   台灣電商付了錢就要開發票，那是法遵；而且
+    //                                  Amego 的開立有時效與重試上限。
+    //   triggerNotifyAfterPayment()    信沒寄出去有 email_outbox 的八次重試、有每
+    //                                  10 分鐘的排程（0022 §14），後台也看得到
+    //                                  「有 N 封寄不出去」。三件事裡最有辦法事後補
+    //                                  的那一件，所以排最後。
+    //
+    // 反過來把寄信排第一，代價是：Resend 慢的那 8 秒裡，庫存還沒扣、發票還沒開，
+    // 而 webhook 的時間預算是有限的。
+    //
+    // ⚠️ 這一步的失敗**不可以**影響回給 PayUni 的答案,理由與上面兩段完全相同:
+    // 回 5xx 換來的是同一則通知被無止盡重送。triggerNotifyAfterPayment 自己有
+    // Promise.race 逾時保護且從不 throw,所以這裡不需要 try。
+    //
+    // ⚠️ 信**刻意不帶發票號碼**（0022 §0.3）：發票那一步會逾時，等它就等於讓
+    //    Amego 慢的時候信也不寄。上面那個 `invoice` 變數在這裡不被讀取是刻意的。
+    // （變數叫 notifyOutcome 而不是 notify：上面那個 `notify` 是 PayUni 解密後的
+    //   通知內容，這一整支 handler 都在讀它。）
+    const { triggerNotifyAfterPayment } = await import("@/server/notify");
+    const notifyOutcome = await triggerNotifyAfterPayment(order.id);
+    if (!notifyOutcome.ok) {
+      console.warn(
+        `[payuni] order=${orderNo} 已標記付款成功,但通知信尚未排出(${notifyOutcome.reason})——已列入補寄清單`,
       );
     }
 

@@ -145,8 +145,26 @@ const migrations = existsSync(MIG_DIR)
       .filter((f) => f.endsWith(".sql"))
       .sort()
   : [];
-check("migrations 共 21 支", migrations.length, 21);
-check("0021 是最後一支", migrations[20], "0021_roster_pii.sql");
+// ⚠️ 0022（交易信 outbox 與付款通知）加進來時，這兩條把人叫回來了。逐條重讀過，
+//    0021 的三個核心不變量在 0022 之後仍然成立：
+//
+//    1. **遮罩仍然做在 SQL。** 0022 沒有重新定義 admin_event_roster，也沒有加
+//       第三支會回傳明文的函式。它取信箱的那一句在 enqueue_registration_emails()
+//       的 insert…select 裡，值直接落進 email_outbox.to_email —— 明文一步都沒有
+//       離開資料庫，所以「回傳明文的出口只有兩個」原樣成立。
+//    2. **pii_access_log 一個字都沒被碰。** 那是刻意的（0022 §0.5）：寄信不是
+//       「有人在查資料」，每寄一封就寫一列會讓那張表失去唯一的用途。所以 §2 的
+//       每一條 CHECK 斷言、§5/§6 的「先寫 log 再組值」全部不受影響。
+//    3. **on_roster 仍然是唯一的名單定義。** 0022 的 enqueue_registration_emails()
+//       自己 `join public.admin_event_roster ... where v.on_roster`，沒有第二份
+//       `payment_status = 'paid'`。下面 [7] 那條「整個 src/ 裡碰名單的檔案都不准
+//       出現 "paid" 字面值」的掃描因此照樣有效，而且 0022 期新增的
+//       src/server/notify.ts 也在它的掃描範圍裡（notify-selftest [13] 再守一次）。
+//
+//    0022 自己的內容由 scripts/notify-selftest.mjs 驗。
+check("migrations 共 22 支", migrations.length, 22);
+check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
+check("0022 是最後一支", migrations[21], "0022_email_outbox_notify.sql");
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {
   const prefix = String(n).padStart(4, "0");
