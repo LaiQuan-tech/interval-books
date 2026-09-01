@@ -173,6 +173,35 @@ function jsxAttrString(node, attrName) {
   return null;
 }
 
+/**
+ * 取一個 JSX 屬性的**已解析**字串：字面字串，或
+ * `EVENT_BLOCK_COPY.<kind>.<欄位>` 這種指向產線文案表的成員存取。
+ *
+ * ── 為什麼要有這一支 ────────────────────────────────────────────────────────
+ * D4 之後 §5／§8／§9 的段落標題**刻意不是字面字串** —— 三種區塊的名字只有一個家
+ * （src/lib/admin/event-block-copy.ts），組裝器再抄一份的下場是段落改名之後 sticky bar
+ * 還在講舊名字。但「每一段都有講得出口而且互不重複的標題」這條斷言不可以因此變鬆。
+ *
+ * 所以這裡**去產線那張表把值拿出來**（EVENT_BLOCK_COPY 是這支自檢真的 import 進來的
+ * 那一份，不是複製品）。結果是斷言變強了：它同時證明了「標題存在且唯一」與「區塊的
+ * 標題來自唯一的那張表」。解不出來就回 null，該紅照樣紅。
+ */
+function jsxAttrResolvedString(node, attrName, copyTable) {
+  const literal = jsxAttrString(node, attrName);
+  if (literal !== null) return literal;
+  const a = jsxAttr(node, attrName);
+  const expr = a?.value?.type === "JSXExpressionContainer" ? a.value.expression : null;
+  if (expr?.type !== "MemberExpression") return null;
+  // EVENT_BLOCK_COPY.<kind>.<prop>
+  const outer = expr.object;
+  if (outer?.type !== "MemberExpression") return null;
+  if (outer.object?.type !== "Identifier" || outer.object.name !== "EVENT_BLOCK_COPY") return null;
+  const kind = outer.property?.name;
+  const prop = expr.property?.name;
+  const value = copyTable?.[kind]?.[prop];
+  return typeof value === "string" ? value : null;
+}
+
 console.log("═══ 活動頁組裝器自檢（D3 / 後台 UI）═══");
 
 // =============================================================================
@@ -235,11 +264,13 @@ const errMod = await import(pathToFileURL(FORM_ERRORS_PATH).href);
 const vocab = await import(pathToFileURL(join(ROOT, "src/lib/event-blocks.ts")).href);
 const listMod = await import(pathToFileURL(join(ROOT, "src/lib/admin/localized-list.ts")).href);
 const schemas = await import(pathToFileURL(join(ROOT, "src/lib/admin/schemas.ts")).href);
+const copyMod = await import(pathToFileURL(join(ROOT, "src/lib/admin/event-block-copy.ts")).href);
+const { EVENT_BLOCK_COPY } = copyMod;
 
 const { isNavItemActive } = navMod;
 const { dirtyBannerText, markDirty, dirtyKeys, hasDirty } = dirtyMod;
 const { collectErrorPaths, invalidToastMessage } = errMod;
-const { EVENT_LIST_FIELDS } = vocab;
+const { EVENT_LIST_FIELDS, EVENT_BLOCK_KINDS } = vocab;
 const { linesToList } = listMod;
 
 // 這三個模組要能被上面那個 await import 直接載起來，所以不可以有 import。
@@ -480,7 +511,10 @@ walkAst(assemblerAst.program, (n) => {
   stepSites.push({
     start: a.start,
     name: jsxName(n),
-    title: jsxAttrString(n, "title"),
+    // 字面字串，或指向產線文案表的 EVENT_BLOCK_COPY.<kind>.sectionTitle（見上面那支
+    // 函式的註解）。兩種都解不出來才是 null，而 null 會讓下面兩條斷言轉紅。
+    title: jsxAttrResolvedString(n, "title", EVENT_BLOCK_COPY),
+    node: n,
   });
 });
 stepSites.sort((x, y) => x.start - y.start);
@@ -498,13 +532,81 @@ checkTrue(
   stepSites.every((s) => typeof s.title === "string" && s.title.length > 0),
 );
 check("11 個標題互不重複", new Set(stepSites.map((s) => s.title)).size, 11);
-// 這一期該是 placeholder 的是 §3 場次與 §5／§8／§9 三種區塊。
+
+/* ── D4：11 段全部是真的，沒有 placeholder 了 ──────────────────────────────
+   D3 那一期這裡驗的是「§3／§5／§8／§9 是 placeholder」。D4 把那四段填成真的，所以
+   這條**不是被放寬，是換成更具體的三條**：
+     (a) 一個 placeholder 都不剩；
+     (b) PlaceholderSection 那個元件本身也不在了（留著一個「誰都能拿來用的空殼」，
+         下一期就會有人再放一段假的進來，而段落清單看起來照樣是 11 段）；
+     (c) §5／§8／§9 各掛一個 EventBlockEditor，kind 剛好是那三種。
+   (c) 比原本那條強：原本只知道「那三段不是真的」，現在知道「那三段是哪三種區塊」。 */
 check(
-  "§3／§5／§8／§9 是 placeholder，其餘七段是真的編輯器",
+  "🔴 沒有任何一段還是 placeholder（11 段全部是真的編輯器或唯讀鏡子）",
   stepSites
     .map((s, i) => (s.name === "PlaceholderSection" ? i + 1 : null))
     .filter((x) => x !== null),
-  [3, 5, 8, 9],
+  [],
+);
+checkFalse(
+  "🔴 PlaceholderSection 這個元件也拿掉了（不留一個「再放一段假的進來」的空殼）",
+  /function PlaceholderSection\b/.test(assemblerSrc),
+);
+
+/** 某一個 <Section> 底下（JSX 子孫）用到的元件名。 */
+function componentsUnder(node, name) {
+  const out = [];
+  walkAst(node.children, (m) => {
+    if (m.type === "JSXElement" && jsxName(m) === name) out.push(m);
+  });
+  return out;
+}
+
+const blockEditorSites = stepSites
+  .map((s, i) => {
+    const hits = componentsUnder(s.node, "EventBlockEditor");
+    return hits.length === 0
+      ? null
+      : { step: i + 1, kinds: hits.map((h) => jsxAttrString(h, "kind")) };
+  })
+  .filter(Boolean);
+check("🔴 §5／§8／§9 各掛一個區塊編輯器，kind 分別是 agenda／info_row／faq", blockEditorSites, [
+  { step: 5, kinds: ["agenda"] },
+  { step: 8, kinds: ["info_row"] },
+  { step: 9, kinds: ["faq"] },
+]);
+check(
+  "🔴 三種 kind 就是 EVENT_BLOCK_KINDS 那三個（不是第二份名單）",
+  blockEditorSites.flatMap((s) => s.kinds).sort(),
+  [...EVENT_BLOCK_KINDS].sort(),
+);
+
+/* ── §3 是唯讀的鏡子 ────────────────────────────────────────────────────────
+   場次的 seats_taken 只由 0020 §7 的三支 RPC 在持有列鎖時維護。組裝器上出現任何一個
+   可以寫回場次的控制項，就是超賣的入口。所以 §3 底下**一個輸入元件都不准有**。
+
+   ⚠️ 先確認 §3 真的有東西（sessions.map 的那一段），否則「§3 沒有輸入框」在 §3 是一
+      塊空白時也是綠的 —— 那種綠燈什麼都沒有在守。 */
+const sessionSection = stepSites[2];
+checkTrue(
+  "第三段就是場次那一段",
+  (sessionSection?.title ?? "").includes("場次"),
+  sessionSection?.title,
+);
+const sessionInputs = [
+  "FormField",
+  "LocalizedField",
+  "LocalizedListField",
+  "Input",
+  "Switch",
+  "Textarea",
+  "EventBlockEditor",
+].flatMap((nm) => componentsUnder(sessionSection.node, nm).map(() => nm));
+check("🔴 §3 底下一個輸入元件都沒有（唯讀鏡子）", sessionInputs, []);
+checkTrue(
+  "（對照組）§3 真的有在畫場次，不是一塊空白",
+  componentsUnder(sessionSection.node, "MirrorNote").length === 1 &&
+    /sessions\.map\(/.test(assemblerSrc),
 );
 
 /**

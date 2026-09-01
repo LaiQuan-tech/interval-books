@@ -16,11 +16,13 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * 段號 1–11 從第一天就連號
  * ═══════════════════════════════════════════════════════════════════════════
- * 這一期只做得完七段（固定欄位那幾段）；場次與三種可重複區塊是後面幾期的事。但段號
- * **現在就排到 11**，中間該是場次的地方就放一段寫著「這一期還沒做」的 placeholder。
+ * D3 那一期只做得完七段（固定欄位那幾段），場次與三種可重複區塊還是 placeholder，
+ * 但段號**從第一天就排到 11**：「第 6 段」這個講法會立刻進到店家與客服的對話裡
+ * （「你到第 6 段看一下」），等後面幾期把場次插進來才重排編號，那些對話全部作廢，
+ * 而且沒有任何東西會提醒任何人。
  *
- * 理由是「第 6 段」這個講法會立刻進到店家與客服的對話裡（「你到第 6 段看一下」）。
- * 等後面幾期把場次插進來才重排編號，那些對話全部作廢，而且沒有任何東西會提醒任何人。
+ * D4 把那四段填成真的（§3 場次、§5 agenda、§8 info_row、§9 faq），**段號一個都沒動** ——
+ * 那正是先佔號要換到的東西。現在 11 段全部是真的，沒有 placeholder 了。
  *
  * 🔴 **段號由 nextStep() 在畫面上那個位置求值，所以輔助 render 一定要是「函式」，
  *    不可以是 `const Foo = (<Section step={nextStep()} …/>)`。** 寫成 const 的那一刻，
@@ -33,13 +35,14 @@
  * ═══════════════════════════════════════════════════════════════════════════
  *  1. 主儲存之後**不可以** bump formKey（見 handleValid 上面那一段）。
  *  2. 巢狀 FormProvider —— 主表單是一個**空的隱藏 <form>**，儲存鈕靠 form= 屬性歸隊；
- *     未來每一個區塊編輯器內部要**再開一層** <Form {...blockForm}>（見 §5 的註解）。
+ *     每一個區塊編輯器內部**再開一層** <Form {...blockForm}>（做在
+ *     src/components/admin/EventBlockEditor.tsx，理由寫在那個檔案的檔頭）。
  *  3. handleSubmit 一定要傳第二個參數 onInvalid（見 handleInvalid）。
  *  4. 段號要在畫面上那個位置求值（見上一段）。
  *  5. ImageField 不可以包在 <FormControl> 裡（見 §1 的圖片欄位）。
  *  6. 髒狀態防護分三層（見 dirty / useBlocker / sticky bar）。
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   createFileRoute,
@@ -53,7 +56,7 @@ import { useForm } from "react-hook-form";
 import type { FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { ArrowLeft, Construction } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -89,8 +92,10 @@ import { LocalizedField } from "@/components/admin/LocalizedField";
 import { LocalizedListField } from "@/components/admin/LocalizedListField";
 import { ImageField } from "@/components/admin/ImageField";
 import { MirrorNote } from "@/components/admin/MirrorNote";
+import { EventBlockEditor, type EventBlockItem } from "@/components/admin/EventBlockEditor";
 import { eventReading } from "@/lib/images";
-import { EVENT_LIST_FIELDS } from "@/lib/event-blocks";
+import { EVENT_BLOCK_KINDS, EVENT_LIST_FIELDS, type EventBlockKind } from "@/lib/event-blocks";
+import { EVENT_BLOCK_COPY } from "@/lib/admin/event-block-copy";
 import { linesToList, listToLines } from "@/lib/admin/localized-list";
 import { collectErrorPaths, invalidToastMessage } from "@/lib/admin/form-errors";
 import {
@@ -113,6 +118,7 @@ import {
   listSessionsForEvent,
   upsertEventWithProduct,
 } from "@/lib/admin/fns/events";
+import { listEventBlocks } from "@/lib/admin/fns/event-blocks";
 import { listEventCategories } from "@/lib/admin/fns/event-categories";
 import { listArtistOptions } from "@/lib/admin/fns/artists";
 import type { Localized } from "@/i18n/types";
@@ -122,6 +128,13 @@ type EventProductRow = Awaited<ReturnType<typeof listEventProducts>>[string];
 type EventCategoryRow = Awaited<ReturnType<typeof listEventCategories>>[number];
 type ArtistOption = Awaited<ReturnType<typeof listArtistOptions>>[number];
 type SessionBrief = Awaited<ReturnType<typeof listSessionsForEvent>>[number];
+type BlockRow = Awaited<ReturnType<typeof listEventBlocks>>[number];
+
+/** §3 的場次狀態。與 /admin/registrations 的 STATUS_LABEL 同一組字。 */
+const SESSION_STATUS_LABEL: Record<string, string> = {
+  open: "開放報名",
+  closed: "未開放",
+};
 
 const EMPTY_LOCALIZED: Localized = { zh: "", en: "", ja: "" };
 const EMPTY_LINES = { zh: "", en: "", ja: "" };
@@ -146,6 +159,16 @@ const NO_SPEAKER = "__none__";
 const NEW_EVENT_ID = "new";
 
 /**
+ * §5／§8／§9 在「還沒建立的活動」上顯示的那一句。
+ *
+ * event_blocks.event_id 是 `references public.events (id)`（0027），所以段落掛不上
+ * 一場還不存在的活動。這裡刻意講清楚「先按新增活動」，而不是畫一個按了會噴外鍵錯誤
+ * 的編輯器。
+ */
+const NEW_EVENT_BLOCK_NOTE =
+  "先按下面的「新增活動」把這場活動建立起來，才能加段落——段落掛在活動的 id 上，而這場活動還沒有 id。";
+
+/**
  * 主表單那個**空的隱藏 <form>** 的 id。
  *
  * 🔴 HTML 的 <form> 不能巢狀。這一頁未來每一個區塊編輯器都要有自己的 <form>（它們
@@ -164,8 +187,22 @@ const CONTENT_FORM_ID = "event-content";
 
 /** 主表單（固定欄位那幾段）在髒狀態登記簿上的 key。 */
 const MAIN_SECTION_KEY = "content";
+
+/** 一種區塊在髒狀態登記簿上的 key。三種各一個，所以 sticky bar 講得出是哪一段。 */
+const blockSectionKey = (kind: EventBlockKind) => `block:${kind}`;
+
+/**
+ * 登記簿的 key → 畫面上講得出口的名字。
+ *
+ * ⚠️ 三種區塊的名字從 EVENT_BLOCK_COPY 來，不是在這裡再打一次「活動流程」「資訊列」
+ *    「常見問答」。抄第二份的下場是段落改名之後 sticky bar 還在講舊名字，而那正是
+ *    使用者唯一會看到的那一句話。
+ */
 const SECTION_LABELS: Record<string, string> = {
   [MAIN_SECTION_KEY]: "活動內容",
+  ...Object.fromEntries(
+    EVENT_BLOCK_KINDS.map((k) => [blockSectionKey(k), EVENT_BLOCK_COPY[k].sectionTitle]),
+  ),
 };
 
 const PRODUCT_STATUS_LABEL: Record<"draft" | "active" | "archived", string> = {
@@ -294,21 +331,26 @@ function toFormValues(
 export const Route = createFileRoute("/admin/_shell/events/$id")({
   loader: async ({ params }) => {
     const isNew = params.id === NEW_EVENT_ID;
-    const [event, categories, artists, products, sessions, events] = await Promise.all([
+    const [event, categories, artists, products, sessions, events, blocks] = await Promise.all([
       isNew ? Promise.resolve(null) : getEventById({ data: { id: params.id } }),
       listEventCategories(),
       listArtistOptions(),
       listEventProducts(),
-      // 「活動地點」那一塊的資料來源。地點不是 events 的欄位，而是最近一場場次的
-      // location —— 所以它在這一頁上是鏡子，不是輸入框。
+      // §3 那一段的資料來源。時間、地點、名額都是場次的屬性，不是活動的 ——
+      // 所以那一段在這一頁上是**唯讀的鏡子**，不是輸入框。
       isNew
         ? Promise.resolve([] as SessionBrief[])
         : listSessionsForEvent({ data: { id: params.id } }),
       // 新增時才要知道「下一個排序號」。編輯既有活動時它自己就有 sort_order。
       isNew ? listEvents() : Promise.resolve([]),
+      // §5／§8／§9 的三種區塊，一次撈完（三種一起回，由畫面自己分組）。
+      // 活動還沒建立時沒有 events.id 可以掛，所以是空的。
+      isNew
+        ? Promise.resolve([] as BlockRow[])
+        : listEventBlocks({ data: { event_id: params.id } }),
     ]);
     if (!isNew && !event) throw notFound();
-    return { event, categories, artists, products, sessions, events, isNew };
+    return { event, categories, artists, products, sessions, events, blocks, isNew };
   },
   head: ({ params }) => ({
     meta: [
@@ -358,36 +400,6 @@ function Section({
 }
 
 /**
- * 這一期還沒做的那幾段。
- *
- * 它存在的唯一理由是**佔住段號**（見檔頭）。它刻意長得像一塊工地，而不是像一個空的
- * 編輯器 —— 「看起來可以編但按了沒反應」比「明講還沒做」糟得多。
- */
-function PlaceholderSection({
-  step,
-  title,
-  description,
-  plan,
-  children,
-}: {
-  step: number;
-  title: string;
-  description: string;
-  plan: string;
-  children?: ReactNode;
-}) {
-  return (
-    <Section step={step} title={title} description={description}>
-      <div className="flex items-start gap-2 rounded-md border border-dashed border-border bg-muted/30 p-3">
-        <Construction className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">{plan}</p>
-      </div>
-      {children}
-    </Section>
-  );
-}
-
-/**
  * 🔴 雷 6 的第三層：離開頁面的守衛。
  *
  * 兩種「離開」要分開處理，因為瀏覽器只讓其中一種可以自訂畫面：
@@ -421,6 +433,7 @@ function AdminEventAssemblerPage() {
     products,
     sessions,
     events,
+    blocks,
     isNew,
   } = Route.useLoaderData();
   const router = useRouter();
@@ -449,6 +462,45 @@ function AdminEventAssemblerPage() {
 
   const pageDirty = hasDirty(dirty);
   const bannerText = dirtyBannerText(dirtyKeys(dirty).map((k) => SECTION_LABELS[k] ?? k));
+
+  /* ── §5／§8／§9：三種區塊 ───────────────────────────────────────────────
+     一次撈回來的 blocks 依 kind 分組。loader 已經照 (kind, sort_order) 排好，
+     所以這裡只要分組，不重排。 */
+  const blocksByKind = useMemo(() => {
+    const out = Object.fromEntries(
+      EVENT_BLOCK_KINDS.map((k) => [k, [] as EventBlockItem[]]),
+    ) as Record<EventBlockKind, EventBlockItem[]>;
+    for (const b of blocks) out[b.kind]?.push(b);
+    return out;
+  }, [blocks]);
+
+  /**
+   * 區塊編輯器把自己的髒狀態往上報。
+   *
+   * ⚠️ 一種 kind 一個**穩定**的 callback（useCallback + 空依賴，setState 用 updater
+   *    形式所以不需要抓 dirty）。每次 render 都給一個新函式的話，編輯器裡那個
+   *    `useEffect(…, [onDirtyChange])` 會每次 render 都重跑。
+   */
+  const handleBlockDirty = useMemo(
+    () =>
+      Object.fromEntries(
+        EVENT_BLOCK_KINDS.map((kind) => [
+          kind,
+          (isDirty: boolean) => setDirty((prev) => markDirty(prev, blockSectionKey(kind), isDirty)),
+        ]),
+      ) as Record<EventBlockKind, (dirty: boolean) => void>,
+    [],
+  );
+
+  /**
+   * 區塊存／刪／排序之後重新載入 loader 的資料。
+   *
+   * 🔴 只有 router.invalidate()，**沒有 setFormKey**（檔頭雷 1）。主表單與三個區塊
+   *    表單都必須活過這一次 —— 使用者可能在 §9 打到一半，而他按的是 §5 的新增。
+   */
+  const refreshBlocks = useCallback(async () => {
+    await router.invalidate();
+  }, [router]);
 
   /**
    * ⚠️ 「新增」存完之後**我們自己要換網址**（/admin/events/new → /admin/events/<id>），
@@ -835,28 +887,73 @@ function AdminEventAssemblerPage() {
           <LocalizedField name="description" label="說明" multiline />
         </Section>
 
-        <PlaceholderSection
+        {/* ══════════════════════════════════════════════════════════════════
+            🔴 §3 是**唯讀的鏡子**，而且必須一直是。
+
+            場次的新增／修改在 /admin/registrations。這一段一個輸入框都沒有，理由不是
+            「還沒做」，是 **seats_taken 只能由持有列鎖的那三支 RPC 維護**（0020 §7）：
+            從別的地方寫回一個幾分鐘前讀到的計數器，就是超賣 —— 兩個後台分頁同時開著、
+            兩個人各按一次儲存，最後一個人寫回去的數字會把中間所有報名吃掉。
+
+            所以這裡只 render，不 useForm、不 FormField、不打任何寫入的 server fn。
+            ══════════════════════════════════════════════════════════════════ */}
+        <Section
           step={nextStep()}
           title="場次（時間與名額）"
-          description="一場活動可以有好幾梯。時間、地點、名額都是場次的屬性，不是活動的。"
-          plan="這一段還沒搬進組裝器。目前場次仍然在「活動報名」頁編輯——段號先佔住，之後把場次編輯器放進來的時候，下面每一段的段號都不會變。"
+          description="一場活動可以有好幾梯。時間、地點、名額都是場次的屬性，不是活動的——所以這一段在這裡只看得到，改要去「活動報名」頁。"
         >
+          {sessions.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+              尚無場次。沒有場次的活動商品，客人點進去一場都選不到。
+            </p>
+          ) : (
+            <ol className="space-y-2">
+              {sessions.map((s) => (
+                <li key={s.id} className="rounded-md border border-border p-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-sm font-medium">{s.title.zh || "（未填場次名稱）"}</p>
+                    <Badge variant="outline">{SESSION_STATUS_LABEL[s.status] ?? s.status}</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {new Date(s.starts_at).toLocaleString("zh-TW", {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                    ・{s.location.zh || "（未填地點）"}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    名額 {s.seats_taken} / {s.capacity}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {sessions.length > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              共 {sessions.length} 場場次，合計 {seatsTaken} / {capacity} 個名額。
+            </p>
+          ) : null}
+
           <MirrorNote
             label="活動地點"
             source="活動報名（場次）"
             to="/admin/registrations"
-            hint="一場活動的兩個梯次可以辦在兩個地方，所以地點沒有「活動層級」的答案——這裡顯示的是最近一場。"
+            hint="一場活動的兩個梯次可以辦在兩個地方，所以地點沒有「活動層級」的答案——上面列的是每一場各自的地點。名額（seats_taken）由報名流程在資料庫裡維護，這一頁**改不動**，那是為了不讓兩個分頁互相覆蓋成超賣。"
           >
             {latestSession ? (
               <span>
                 {latestSession.location.zh || "（未填地點）"}
-                <span className="text-xs">（共 {sessions.length} 場場次）</span>
+                <span className="text-xs">（最近一場，共 {sessions.length} 場場次）</span>
               </span>
             ) : (
-              <span>尚無場次。沒有場次的活動商品，客人點進去一場都選不到。</span>
+              <span>尚無場次。</span>
             )}
           </MirrorNote>
-        </PlaceholderSection>
+        </Section>
 
         <Section
           step={nextStep()}
@@ -1045,18 +1142,33 @@ function AdminEventAssemblerPage() {
           </div>
         </Section>
 
-        {/* 🔴 未來把區塊編輯器放進 §5／§8／§9 的人請讀這一段：
-            每一個區塊編輯器**內部要再開一層 <Form {...blockForm}>**。
-            LocalizedField / LocalizedListField 是從 useFormContext() 拿 control 的，
-            所以放在區塊編輯器裡而不另開一層 FormProvider 的話，它們會綁到**主表單**
-            的 control 上 —— 打在區塊裡的字會寫進活動的欄位，而且不會有任何錯誤訊息。
-            內層 FormProvider 會遮蔽外層，這就是解法。 */}
-        <PlaceholderSection
+        {/* ══════════════════════════════════════════════════════════════════
+            🔴 §5／§8／§9 三段區塊，共用 <EventBlockEditor />（三種 kind 的資料形狀
+               完全相同，理由見 src/lib/admin/event-block-copy.ts 的檔頭）。
+
+            每一個編輯器**內部再開一層 <Form {...blockForm}>**。LocalizedField 是從
+            useFormContext() 拿 control 的，少了那一層它會綁到**主表單**的 control 上
+            —— 打在區塊裡的字會寫進活動的欄位（而且兩邊剛好都有 title/body，所以連型別
+            錯誤都不會有）。做在 EventBlockEditor.tsx，理由與證明寫在那個檔案的檔頭。
+
+            ⚠️ 這裡**不可以**給編輯器一個會隨資料變動的 key（例如 blocks.length 或
+               updated_at）。那等於每次主儲存都把三個區塊表單 remount 一次，使用者
+               正在打的字會安靜地消失 —— 檔頭雷 1 的同一件事。
+            ══════════════════════════════════════════════════════════════════ */}
+        <Section
           step={nextStep()}
-          title="活動流程（agenda 區塊）"
-          description="「19:30 入場、19:40 開場」這一種。一列一個時間點。"
-          plan="這一段還沒做。資料層已經備好（public.event_blocks，kind='agenda'，0027），這一期只先佔住段號。"
-        />
+          title={EVENT_BLOCK_COPY.agenda.sectionTitle}
+          description={EVENT_BLOCK_COPY.agenda.sectionDescription}
+        >
+          <EventBlockEditor
+            eventId={event?.id ?? ""}
+            kind="agenda"
+            rows={blocksByKind.agenda}
+            onDirtyChange={handleBlockDirty.agenda}
+            onChanged={refreshBlocks}
+            disabledReason={isNew ? NEW_EVENT_BLOCK_NOTE : null}
+          />
+        </Section>
 
         <Section
           step={nextStep()}
@@ -1076,19 +1188,35 @@ function AdminEventAssemblerPage() {
           <LocalizedListField name="not_suitable_for" label="不適合對象" optional />
         </Section>
 
-        <PlaceholderSection
+        <Section
           step={nextStep()}
-          title="資訊列（info_row 區塊）"
-          description="標籤／值。交通、攜帶物品、退費規則這一類。"
-          plan="這一段還沒做。資料層已經備好（public.event_blocks，kind='info_row'，0027），這一期只先佔住段號。"
-        />
+          title={EVENT_BLOCK_COPY.info_row.sectionTitle}
+          description={EVENT_BLOCK_COPY.info_row.sectionDescription}
+        >
+          <EventBlockEditor
+            eventId={event?.id ?? ""}
+            kind="info_row"
+            rows={blocksByKind.info_row}
+            onDirtyChange={handleBlockDirty.info_row}
+            onChanged={refreshBlocks}
+            disabledReason={isNew ? NEW_EVENT_BLOCK_NOTE : null}
+          />
+        </Section>
 
-        <PlaceholderSection
+        <Section
           step={nextStep()}
-          title="常見問答（faq 區塊）"
-          description="問／答。"
-          plan="這一段還沒做。資料層已經備好（public.event_blocks，kind='faq'，0027），這一期只先佔住段號。"
-        />
+          title={EVENT_BLOCK_COPY.faq.sectionTitle}
+          description={EVENT_BLOCK_COPY.faq.sectionDescription}
+        >
+          <EventBlockEditor
+            eventId={event?.id ?? ""}
+            kind="faq"
+            rows={blocksByKind.faq}
+            onDirtyChange={handleBlockDirty.faq}
+            onChanged={refreshBlocks}
+            disabledReason={isNew ? NEW_EVENT_BLOCK_NOTE : null}
+          />
+        </Section>
 
         <Section
           step={nextStep()}

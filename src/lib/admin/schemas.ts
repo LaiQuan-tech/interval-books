@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 import { LIST_MAX_ITEMS, LIST_MAX_ITEM_CHARS, splitLines } from "@/lib/admin/localized-list";
+import { EVENT_BLOCK_KINDS } from "@/lib/event-blocks";
 
 export const localizedSchema = z.object({
   zh: z.string().trim().min(1, "請輸入中文內容"),
@@ -328,6 +329,31 @@ export const eventWithProductSchema = eventSchema.extend({
   product: eventProductSchema.nullable().optional(),
 });
 export type EventWithProductFormValues = z.infer<typeof eventWithProductSchema>;
+
+/**
+ * 一列 event_blocks（0027）。三種 kind 共用這一支，因為它們的形狀**完全相同**。
+ *
+ * 🔴 `kind` 的名單來自 EVENT_BLOCK_KINDS，不是在這裡再打一次三個字串 —— 那三個字要
+ *    與 0027 的 `event_blocks_kind_valid` CHECK 逐字相等，而 scripts/event-blocks-selftest.mjs
+ *    對帳的是 EVENT_BLOCK_KINDS 那一份。抄第二份就是抄一份沒有人在對帳的。
+ *
+ * 🔴 **沒有 sort_order。** 排序的唯一入口是 public.admin_reorder_event_blocks()
+ *    （見 src/server/repos/event-blocks.ts 的檔頭）；讓它出現在這支 schema 上，等於
+ *    在「編輯這一列的文字」這條路上開一個改順序的後門，而那個後門會撞上
+ *    unique(event_id, kind, sort_order)。
+ *
+ * title / body 都用 localizedSchema（不是 optional 的那一支）：0027 兩欄都 not null，
+ * 而「把英文清空當作刪掉這一列」在三語下會壞（中文也一起不見）。要刪就刪。
+ */
+export const eventBlockSchema = z.object({
+  /** 有 id ＝ 改既有那一列；沒有 ＝ 新增一列（sort_order 由 repo append）。 */
+  id: z.number().int().nullable().optional(),
+  event_id: z.string().trim().min(1),
+  kind: z.enum(EVENT_BLOCK_KINDS),
+  title: localizedSchema,
+  body: localizedSchema,
+});
+export type EventBlockFormValues = z.infer<typeof eventBlockSchema>;
 
 export const eventCategorySchema = z.object({
   id: z.string().trim().min(1, "請輸入分類代碼"),
