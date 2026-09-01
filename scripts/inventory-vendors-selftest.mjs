@@ -1478,6 +1478,97 @@ if (!TOKEN) {
   );
 }
 
+// =============================================================================
+// [PII] 🔴 「沒按更改就儲存」的閘門
+// =============================================================================
+//
+// 這一段守的是整個廠商後台最貴的一條不變量，而它先前**沒有任何測試在守**
+// （實測：把那個 if 整段拿掉，這支自檢 310 個 case 照樣全綠）。
+//
+// 機制：inv.vendors 的四個識別碼是 PII，view 只送遮罩出來，所以
+// formFromDetail() 刻意讓它們留空 —— 系統讀不回原值。於是「開啟一家已經有
+// 身分證字號的廠商 → 改個電話 → 按儲存」如果沒有被擋下來，送出去的 payload
+// 會拿**空字串**覆蓋掉資料庫裡真正的身分證字號、統編、國外識別碼與居留證號碼。
+// 靜默、不可復原，而且沒有任何一層會報錯。
+//
+// 擋住它的只有 save() 開頭那個 lockedKeys 閘門，而且它**必須在 safeParse
+// 之前**：跑到 schema 驗證那一步就代表 payload 已經組好了。
+console.log("\n[PII] 沒按更改就儲存的閘門");
+
+const vendorFormCode = stripTs(read(join(ROOT, "src/components/inventory/VendorFormDialog.tsx")));
+const saveStart = vendorFormCode.indexOf("async function save()");
+const saveBody = saveStart === -1 ? "" : vendorFormCode.slice(saveStart);
+
+checkTrue("切得出 save() 的本體", saveBody.length > 0);
+
+const gateAt = saveBody.indexOf("lockedKeys.length > 0");
+const parseAt = saveBody.indexOf("safeParse");
+
+checkTrue(
+  "🔴 save() 裡有 lockedKeys 閘門（沒有它，儲存會用空字串覆蓋掉真正的身分證字號）",
+  gateAt !== -1,
+);
+checkTrue("save() 裡有 safeParse（切點正確的前提）", parseAt !== -1);
+checkTrue(
+  "🔴 閘門在 safeParse **之前** —— 跑到驗證那一步代表 payload 已經組好了",
+  gateAt !== -1 && parseAt !== -1 && gateAt < parseAt,
+  `lockedKeys 在 +${gateAt}，safeParse 在 +${parseAt}`,
+);
+// ⚠️ 只看閘門**自己那一個大括號區塊**，用括號配對切出來。
+//    第一版寫成「`lockedKeys.length > 0)` 之後 400 字內找得到 return;」，
+//    結果把 return 拿掉之後它照樣綠 —— 因為它抓到了閘門後面別處的 return。
+//    這個 repo 已經出過好幾次同一種假陽性，這裡是第 N 次，突變測試抓出來的。
+const gateBlock = (() => {
+  const at = saveBody.indexOf("lockedKeys.length > 0");
+  if (at === -1) return "";
+  const open = saveBody.indexOf("{", at);
+  if (open === -1) return "";
+  let depth = 0;
+  for (let i = open; i < saveBody.length; i++) {
+    if (saveBody[i] === "{") depth += 1;
+    else if (saveBody[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return saveBody.slice(open, i + 1);
+    }
+  }
+  return "";
+})();
+checkTrue("切得出閘門自己的區塊", gateBlock.length > 0);
+checkTrue(
+  "🔴 閘門是 early return，不是只跳個 toast 就繼續往下走",
+  /\breturn;/.test(gateBlock),
+  "閘門區塊裡沒有 return; —— 擋不住任何東西",
+);
+checkTrue(
+  "lockedKeys 是由「有遮罩且沒按更改」算出來的，不是寫死的空陣列",
+  /lockedKeys\s*=\s*SENSITIVE_KEYS\.filter\([\s\S]{0,120}?masks\[[\s\S]{0,40}?\]\s*!==\s*null\s*&&\s*!changing\[/.test(
+    vendorFormCode,
+  ),
+);
+// ⚠️ 掃**整批** Vendor 元件，不是只掃 VendorFormDialog。
+//    這一期把 2,353 行的對話框拆成 28 個檔案，遮罩的渲染就搬去了
+//    VendorIdentityField / VendorBankSection。只釘一個檔案的斷言，會在
+//    程式碼搬家的那一刻靜默失去覆蓋 —— 突變測試抓到的正是這一點。
+const vendorComponentFiles = readdirSync(join(ROOT, "src/components/inventory"))
+  .filter((f) => /^Vendor.*\.tsx?$/.test(f))
+  .sort();
+checkTrue(
+  `掃得到整批 Vendor 元件（${vendorComponentFiles.length} 個）`,
+  vendorComponentFiles.length >= 20,
+);
+
+const maskedIntoInput = vendorComponentFiles.filter((f) =>
+  /(value|defaultValue)=\{[^}]*mask/i.test(
+    stripTs(read(join(ROOT, "src/components/inventory", f))),
+  ),
+);
+check(
+  "🔴 整批 Vendor 元件都沒有把遮罩值餵進 input（value= / defaultValue=）",
+  maskedIntoInput.join(",") || "（無）",
+  "（無）",
+  "遮罩值進了 input，按下儲存就會把「A12****789」這種字串寫回資料庫",
+);
+
 // ── 結果 ────────────────────────────────────────────────────────────────────
 
 console.log(`\n${"─".repeat(52)}`);
