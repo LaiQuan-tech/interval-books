@@ -1198,11 +1198,11 @@ for (const [label, src] of [
   // 0025_event_speaker.sql（活動掛講者）與 0026_event_product_link.sql（活動與商品的
   // 真連結）是後來加的。兩支都只碰 public.events / products / event_sessions，
   // 沒有碰 orders / payments / webhook_events，所以這一支的其他斷言原樣成立。
-  check(
-    "migration 編號連續且 0026 是最後一支",
-    nums[nums.length - 1],
-    "0026_event_product_link.sql",
-  );
+  // 0027_event_blocks.sql（活動頁組裝器的資料層）同樣如此：它在 public.events 上加
+  // 七個 jsonb 清單欄位、建 public.event_blocks、加一支 reorder RPC，並用
+  // create or replace 讓 admin_upsert_event_with_session() 多吃那七欄。整支檔案裡
+  // orders / payments / webhook_events 出現 0 次，金流那一半一個字都沒動。
+  check("migration 編號連續且 0027 是最後一支", nums[nums.length - 1], "0027_event_blocks.sql");
 }
 
 {

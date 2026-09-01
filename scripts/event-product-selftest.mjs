@@ -182,7 +182,15 @@ const migrations = readdirSync(MIG_DIR)
 
 const MIG_0026_NAME = "0026_event_product_link.sql";
 checkTrue(`${MIG_0026_NAME} 存在`, migrations.includes(MIG_0026_NAME));
-check("0026 是目前編號最大的一支", migrations[migrations.length - 1], MIG_0026_NAME);
+// 0027 起 0026 不再是最大的一支。「最新的一支是誰」這個斷言搬到
+// scripts/event-blocks-selftest.mjs —— 那一條本來就該由**最新那一期**的自檢守著，
+// 每開一支新 migration 就換一個地方更新。這裡改成守「0026 沒有被改號、也沒有被
+// 別人插隊到 0025 與它之間」，強度與原來那條相當，而且不會因為加了新的一期就過期。
+check(
+  "0026 緊接在 0025 之後（沒有被改號或插隊）",
+  migrations[migrations.indexOf(MIG_0026_NAME) - 1],
+  "0025_event_speaker.sql",
+);
 
 const sql0026raw = readFile(join(MIG_DIR, MIG_0026_NAME));
 const sql0026 = stripSqlComments(sql0026raw);
@@ -203,9 +211,14 @@ const NAMES_ONLY_IN_0026 = [
   "products_event_source_unique_idx",
   "events_slug_key",
 ];
+// ⚠️ 比對範圍是**編號比 0026 小的那幾支**，不是「除了 0026 以外的全部」。這條斷言
+//    的標籤從第一天起就寫著「0001–0025」，而規約禁止的也只有「回頭改已套用的
+//    migration」。0027 用 create or replace 重寫 admin_upsert_event_with_session 是
+//    這個 repo 唯一被認可的加欄位方式（0026 檔尾的 comment 就是這樣寫的），把它算成
+//    違規會逼著下一期的人去放寬這條斷言 —— 而那才是真的失去防守。
 for (const name of NAMES_ONLY_IN_0026) {
   const offenders = migrations
-    .filter((f) => f !== MIG_0026_NAME)
+    .filter((f) => f < MIG_0026_NAME)
     .filter((f) => readFile(join(MIG_DIR, f)).includes(name));
   check(
     `0001–0025 沒有任何一支提到 ${name}（＝沒有回頭改舊 migration）`,

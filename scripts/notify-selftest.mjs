@@ -180,7 +180,13 @@ const migrations = existsSync(MIG_DIR)
 //    欄位形狀或 grant —— sessions_due_for_reminder() 讀的還是同一張表的同一批欄位。
 //    而且它**永遠不寫 seats_taken**（那一欄只由 reserve/release 在持有列鎖時維護），
 //    所以下面每一條斷言原樣成立。0026 自己的內容由 event-product-selftest 驗。
-check("migrations 共 26 支", migrations.length, 26);
+// 0027_event_blocks.sql（活動頁組裝器的資料層）加了 events 的七個 jsonb 清單欄位、
+// public.event_blocks、admin_reorder_event_blocks()，並用 create or replace 讓
+// admin_upsert_event_with_session() 多吃那七欄。它對 event_sessions 的那一段是逐字
+// 照抄 0026 的，email_outbox / order_notify / 那五支 notify 函式在整支檔案裡出現
+// 0 次，event_sessions 的欄位形狀與 grant 也沒動 —— sessions_due_for_reminder() 讀的
+// 還是同一張表的同一批欄位，下面每一條斷言原樣成立。
+check("migrations 共 27 支", migrations.length, 27);
 check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
 
 // ─────────────────────────────────────────────────────────────────────────────

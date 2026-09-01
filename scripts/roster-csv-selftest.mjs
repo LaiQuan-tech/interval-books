@@ -205,7 +205,13 @@ const migrations = existsSync(MIG_DIR)
 // 它沒有碰 admin_event_roster、event_registrations、on_roster 的定義，也沒有在任何
 // 地方寫下第二份 payment_status = 'paid' —— 下面 [7] 那條掃描因此照樣有效。
 // 0026 自己的內容由 event-product-selftest 驗。
-check("migrations 共 26 支", migrations.length, 26);
+// 0027_event_blocks.sql（活動頁組裝器的資料層）是這一期加的。它加 events 的七個
+// jsonb 清單欄位、public.event_blocks、admin_reorder_event_blocks()，並用
+// create or replace 讓 admin_upsert_event_with_session() 多吃那七欄。整支檔案裡
+// admin_event_roster / event_registrations / on_roster / payment_status 各出現 0 次，
+// 也沒有在任何地方寫下第二份 payment_status = 'paid' —— 下面 [7] 那條掃描因此照樣有效。
+// 0027 自己的內容由 event-blocks-selftest 驗。
+check("migrations 共 27 支", migrations.length, 27);
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
 check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。

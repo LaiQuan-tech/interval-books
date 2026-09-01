@@ -191,7 +191,14 @@ const migrations = existsSync(join(ROOT, "supabase/migrations"))
 //    所以「佔了 N 個位子」與「有 N 位參加者」是同一句 SQL 的兩個面向這個不變量
 //    原封不動，下面每一條 0020 的斷言原樣成立。0026 自己的內容由
 //    event-product-selftest 驗（含一條「RPC 的 update 不准出現 seats_taken」）。
-check("migrations 共 26 支", migrations.length, 26);
+// 0027_event_blocks.sql（活動頁組裝器的資料層）是這一期加的。它在 public.events 上加
+// 七個 jsonb 清單欄位、建 public.event_blocks（掛 events.id，不掛 products）、加一支
+// admin_reorder_event_blocks()，並用 create or replace 讓
+// admin_upsert_event_with_session() 多吃那七欄。**它對 event_sessions 那一段是逐字
+// 照抄 0026 的**（沒有多寫一欄、沒有少寫一欄），所以上面那段不變量原封不動：
+// 它一樣不寫 seats_taken，一樣不寫 event_registrations 一列，reserve_session_seat /
+// release_session_seat / expire_unpaid_orders 三支一個字都沒改。
+check("migrations 共 27 支", migrations.length, 27);
 check("0020 仍在原位", migrations[19], "0020_event_sessions_registrations.sql");
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
 check("0023 仍在原位", migrations[22], "0023_fix_cron_guard.sql");

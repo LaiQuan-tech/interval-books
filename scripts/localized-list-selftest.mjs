@@ -673,10 +673,23 @@ console.log("\n[8] migration 編號");
 const { readdirSync } = await import("node:fs");
 const migrations = readdirSync(join(ROOT, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
 const highest = migrations.map((f) => Number(f.slice(0, 4))).sort((a, b) => b - a)[0];
+// 0027_event_blocks.sql 的答案是**有，而且這一支就是為了三語清單而開的** —— 它是
+// D2 這一層的資料層另一半（D1）：在 public.events 上加那七個清單欄位
+// （highlights / suitable_for / not_suitable_for / takeaways / outline / includes /
+// notes），全部是 jsonb {"zh":[…],"en":[…],"ja":[…]}，並新開
+// public.is_localized_list() 去守那個形狀。
+//
+// 🔴 關鍵是它**沒有改變這一支在驗的那個形狀**，只是把它寫進資料庫：
+//    · 三個 key 仍然是 zh / en / ja，值仍然是 string[]（送出端 localizedListSchema
+//      產出的那個形狀原樣進 DB，不需要任何轉換）。
+//    · 40 / 200 / 2000 三個數字一個都沒有進 SQL —— 那是**刻意**的分工（資料庫管
+//      形狀、zod 管內容，見 schemas.ts 檔頭與 0027 檔頭），所以下面對帳那三個
+//      數字的斷言仍然只有 TS 這一個家。
+//    · 0001 的 is_localized() 一個字都沒動（0027 是新開一支，不是改嚴舊的）。
 check(
-  "migration 最高編號是 0026（新增 migration 的人要回來確認沒動到三語清單）",
+  "migration 最高編號是 0027（新增 migration 的人要回來確認沒動到三語清單）",
   highest,
-  26,
+  27,
   `實際檔案：${migrations.slice(-3).join(", ")}`,
 );
 
