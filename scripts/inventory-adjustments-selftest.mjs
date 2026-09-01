@@ -578,19 +578,44 @@ const FRONT = [
 // 元件檔的清單用掃的（元件會拆會併），但三個 route 與標籤檔是寫死的：
 // 檔案被刪掉的話上面那個迴圈會直接紅，斷言不會變成空的。
 const COMP_DIR = join(ROOT, "src/components/inventory");
-const compFiles = existsSync(COMP_DIR)
-  ? readdirSync(COMP_DIR)
-      .filter((f) => /^(Purchase|Adjustment|StockCount|BatchStockCount|VendorSelect)/.test(f))
-      .map((f) => `src/components/inventory/${f}`)
-  : [];
+const compAll = existsSync(COMP_DIR) ? readdirSync(COMP_DIR) : [];
+const compFiles = compAll
+  .filter((f) => /^(Purchase|Adjustment|StockCount|BatchStockCount|VendorSelect)/.test(f))
+  .map((f) => `src/components/inventory/${f}`);
+
+// ⚠️ [10b] 的行數上限掃得比 [10] 廣：整批 Vendor* 都要進來。
+//
+//    為什麼要分兩份清單，而不是把上面那個前綴直接放寬？因為 [10] 的內容不變量對廠商
+//    那批**不成立**：VendorSubmissionQueue 底下的「核准並上架」是在填官網商品，那是
+//    真的三語（VendorLocalizedField），會直接撞上「LocalizedField 沒有出現（進銷存是
+//    單語 text）」那一條。那條斷言對進貨／異動／盤點是對的，不該為了讓廠商檔進來就
+//    把它放寬 —— 所以放寬的是行數那一條，[10] 的掃描範圍一個字都沒動。
+//
+//    這條線當初要防的是「5,500 行拆小之後又慢慢長回來」，而最該被防的那個檔案
+//    （VendorFormDialog，2,353 行）當時剛好落在前綴外面，站在網子外。
+const cappedFiles = compAll
+  .filter((f) => /^(Purchase|Adjustment|StockCount|BatchStockCount|Vendor)/.test(f))
+  .map((f) => `src/components/inventory/${f}`);
 const HOOKS = [
   "src/lib/admin/usePurchaseActions.ts",
   "src/lib/admin/useAdjustmentActions.ts",
 ].filter((f) => existsSync(join(ROOT, f)));
 
 const ALL_FRONT = [...FRONT, ...compFiles, ...HOOKS];
+/** [10b] 專用：與 ALL_FRONT 同樣的三段，但元件那段換成放寬後的（嚴格是超集）。 */
+const ALL_CAPPED = [...FRONT, ...cappedFiles, ...HOOKS];
 for (const f of FRONT) check(`${f} 存在`, existsSync(join(ROOT, f)), true);
 checkTrue(`元件檔掃到 ${compFiles.length} 個（> 6）`, compFiles.length > 6);
+checkTrue(
+  `行數上限掃到 ${cappedFiles.length} 個，而且是 compFiles 的超集`,
+  cappedFiles.length > compFiles.length && compFiles.every((f) => cappedFiles.includes(f)),
+  "放寬只能加不能減：[10] 掃到的每一個檔案都必須也在 [10b] 裡",
+);
+checkTrue(
+  "VendorFormDialog 真的進了行數那條線",
+  cappedFiles.includes("src/components/inventory/VendorFormDialog.tsx"),
+  "它是當初被漏掉的那個 2,353 行檔案。掉出去就等於這條線白改了",
+);
 
 const codeFront = stripTs(ALL_FRONT.map((f) => read(join(ROOT, f))).join("\n"));
 checkTrue("前端不是空的（> 20000 字）", codeFront.length > 20000, `實際 ${codeFront.length} 字`);
@@ -645,7 +670,7 @@ checkTrue(
 console.log("\n[10b] 每個新檔案都在 300 行以內");
 // 這一期的硬要求：來源 5,500 行拆成一堆 300 行以內的檔案。沒有這一條的話，
 // 下一次「順手加一點」會讓它慢慢長回 1,597 行。
-for (const f of ALL_FRONT) {
+for (const f of ALL_CAPPED) {
   const text = read(join(ROOT, f));
   if (!text) continue;
   // 與 `wc -l` 同一種數法：檔尾那個換行不算一行

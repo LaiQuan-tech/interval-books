@@ -1,15 +1,16 @@
 /**
- * 進貨清單的篩選列。
+ * 進貨清單的篩選列（第一排：搜尋、分類、供應商、商品類型）。
+ *
+ * 第二排（狀態、日期、排序、每頁筆數、清除）在 PurchaseStatusFilters —— 這個檔案原本
+ * 剛好 300 行，是自檢那條上限的零餘裕位置，再加一個條件就會越線。
  *
  * ⚠️ 每一個值都會被送到 server fn，篩選、排序與分頁全部在資料庫端做。來源是把整張
  *    purchases 撈回瀏覽器再 Array.filter + differenceInDays，所以它連分頁都沒有。
  *
- * ⚠️ 「效期狀態」在資料庫端只能用固定的 30 天上界撈（PostgREST 沒辦法拿一個欄位去
- *    比另一個欄位），真正 per-row 的 expiry_alert_days 判斷在表格那一層。文案因此
- *    寫「即將到期」而不是「N 天內到期」—— 每一列的門檻本來就不一樣。
+ * ⚠️ page 歸零這件事在 set() 裡做一次就好 —— 兩排共用同一個 set，所以第二排改條件
+ *    也一樣會回到第一頁。
  */
-import { Search, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -24,11 +25,11 @@ import {
   INV_PRODUCT_TYPE_LABELS,
   type PurchaseFilterValues,
 } from "@/lib/admin/schemas";
+import { PurchaseStatusFilters } from "@/components/inventory/PurchaseStatusFilters";
 import type { VendorOption } from "@/components/inventory/VendorSelect";
 
 /** Radix Select 不接受空字串當 value，所以「全部」用這個哨兵值。 */
 const ALL = "__all__";
-const PAGE_SIZES = [25, 50, 100, 200];
 type Props = {
   value: PurchaseFilterValues;
   onChange: (next: PurchaseFilterValues) => void;
@@ -51,17 +52,6 @@ export function PurchaseFilterBar({
   function set(patch: Partial<PurchaseFilterValues>) {
     onChange({ ...value, ...patch, page: 0 });
   }
-
-  const hasFilters =
-    value.keyword !== null ||
-    value.categoryId !== null ||
-    value.vendorId !== null ||
-    value.productType !== null ||
-    value.approvalStatus !== "all" ||
-    value.expiryStatus !== "all" ||
-    value.stockStatus !== "all" ||
-    value.dateFrom !== null ||
-    value.dateTo !== null;
 
   return (
     <div className="space-y-3 rounded-md border border-border p-4">
@@ -154,147 +144,13 @@ export function PurchaseFilterBar({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs">審核狀態</Label>
-          <Select
-            value={value.approvalStatus}
-            disabled={disabled}
-            onValueChange={(v) =>
-              set({ approvalStatus: v as PurchaseFilterValues["approvalStatus"] })
-            }
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部狀態</SelectItem>
-              <SelectItem value="pending">待審核</SelectItem>
-              <SelectItem value="approved">已審核</SelectItem>
-              <SelectItem value="rejected">已退回</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">效期狀態</Label>
-          <Select
-            value={value.expiryStatus}
-            disabled={disabled}
-            onValueChange={(v) => set({ expiryStatus: v as PurchaseFilterValues["expiryStatus"] })}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部效期</SelectItem>
-              <SelectItem value="expiring">需關注（含已過期）</SelectItem>
-              <SelectItem value="expired">已過期</SelectItem>
-              <SelectItem value="warning">即將到期</SelectItem>
-              <SelectItem value="no_expiry">未設效期</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">庫存狀態</Label>
-          <Select
-            value={value.stockStatus}
-            disabled={disabled}
-            onValueChange={(v) => set({ stockStatus: v as PurchaseFilterValues["stockStatus"] })}
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="in_stock">還有剩餘</SelectItem>
-              <SelectItem value="used_up">已用完</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="purchase-from" className="text-xs">
-            進貨日期起
-          </Label>
-          <Input
-            id="purchase-from"
-            type="date"
-            className="w-40"
-            value={value.dateFrom ?? ""}
-            disabled={disabled}
-            onChange={(e) => set({ dateFrom: e.target.value || null })}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="purchase-to" className="text-xs">
-            進貨日期迄
-          </Label>
-          <Input
-            id="purchase-to"
-            type="date"
-            className="w-40"
-            value={value.dateTo ?? ""}
-            disabled={disabled}
-            onChange={(e) => set({ dateTo: e.target.value || null })}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">排序</Label>
-          <Select
-            value={value.sort}
-            disabled={disabled}
-            onValueChange={(v) => set({ sort: v as PurchaseFilterValues["sort"] })}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="purchase_date_desc">進貨日期新→舊</SelectItem>
-              <SelectItem value="purchase_date_asc">進貨日期舊→新</SelectItem>
-              <SelectItem value="created_at">最新建立</SelectItem>
-              <SelectItem value="quantity_desc">數量由多到少</SelectItem>
-              <SelectItem value="remaining_asc">剩餘由少到多</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs">每頁筆數</Label>
-          <Select
-            value={String(value.pageSize)}
-            disabled={disabled}
-            onValueChange={(v) => set({ pageSize: Number(v) })}
-          >
-            <SelectTrigger className="w-24">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZES.map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {hasFilters ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5"
-            disabled={disabled}
-            onClick={() => onChange({ ...defaults, sort: value.sort, pageSize: value.pageSize })}
-          >
-            <X className="h-3.5 w-3.5" />
-            清除篩選
-          </Button>
-        ) : null}
-      </div>
+      <PurchaseStatusFilters
+        value={value}
+        defaults={defaults}
+        disabled={disabled}
+        onChange={onChange}
+        onPatch={set}
+      />
     </div>
   );
 }
