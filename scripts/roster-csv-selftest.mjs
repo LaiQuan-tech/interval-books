@@ -46,6 +46,12 @@ import { execFile } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
+import {
+  assertLedgerMatchesDisk,
+  assertLedgerDeclarationsHonest,
+  assertMigrationDependencies,
+  readMigrationFiles,
+} from "./lib/migration-ledger.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -173,11 +179,12 @@ console.log("\n[1] migration 檔案盤點");
 
 check("0021 存在", existsSync(MIG_0021), true);
 
-const migrations = existsSync(MIG_DIR)
-  ? readdirSync(MIG_DIR)
-      .filter((f) => f.endsWith(".sql"))
-      .sort()
-  : [];
+// ⚠️ 這裡曾經是 `existsSync(MIG_DIR) ? readdirSync(…) : []`。那是「讀不到就回空字串」
+//    的陣列版：MIG_DIR 一打錯，migrations 就是 []，底下每一條「掃全部 migration，
+//    有違規就紅」的斷言都跑 0 次迴圈、靜默通過。readMigrationFiles() 讀不到目錄、
+//    或掃不到任何 .sql，一律丟例外。（同 run-selftests.mjs 的「守門 4」，只是那一條
+//    掃的是 readFileSync，掃不到 readdirSync 的這一版。）
+const migrations = readMigrationFiles(MIG_DIR);
 // ⚠️ 0022（交易信 outbox 與付款通知）加進來時，這兩條把人叫回來了。逐條重讀過，
 //    0021 的三個核心不變量在 0022 之後仍然成立：
 //
@@ -211,9 +218,44 @@ const migrations = existsSync(MIG_DIR)
 // admin_event_roster / event_registrations / on_roster / payment_status 各出現 0 次，
 // 也沒有在任何地方寫下第二份 payment_status = 'paid' —— 下面 [7] 那條掃描因此照樣有效。
 // 0027 自己的內容由 event-blocks-selftest 驗。
-check("migrations 共 27 支", migrations.length, 27);
+// ── 從這一期起，逐支點名搬到共用帳本 ─────────────────────────────────────
+// 上面那幾段散文是 0022–0027 進來時逐條重讀的結論，保留下來當紀錄。但**新的
+// migration 不要再往上面加一段散文** —— 註解沒有任何東西在驗。改成到
+// scripts/lib/migration-ledger.mjs 的 MIGRATION_LEDGER 補一列，寫下它動了哪些
+// 區域；少標會被 assertLedgerDeclarationsHonest() 拿 SQL 打臉，標對了會由
+// assertMigrationDependencies() 自動把這支自檢叫回來。
+//
+// 這裡原本是 `check("migrations 共 27 支", migrations.length, 27)`。
+// assertLedgerMatchesDisk() 取代它，而且比它強：比對完整的有序檔名清單，
+// 不只是數量。
+assertLedgerMatchesDisk(check, MIG_DIR);
+assertLedgerDeclarationsHonest(check, MIG_DIR);
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
-check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
+// 🔴 這一條原本的標籤寫著「0023 是最後一支」，但它斷言的是
+//    `migrations[22] === "0023_fix_cron_guard.sql"` —— 也就是「0023 在第 23 個
+//    位置」。0024 進來之後 0023 還是在第 23 個位置，所以這條**不會轉紅**，而
+//    測試輸出會印出綠色的「✓ 0023 是最後一支」，此時真正的最後一支是 0027。
+//    斷言本身是好的，壞的是標籤。「最新的一支是誰」由 event-blocks-selftest [1]
+//    守著；「編號連續」由上面的 assertLedgerMatchesDisk() 守著。
+check("0023 仍在第 23 個位置（沒有被改號或插隊）", migrations[22], "0023_fix_cron_guard.sql");
+// ── 這支自檢依賴哪幾個區域，以及它審到哪一支 ─────────────────────────────
+// 這支守的是 0021 的三個核心不變量：遮罩做在 SQL（roster_pii）、pii_access_log
+// 是唯一的明文留痕（roster_pii）、on_roster 是唯一的名單定義
+// （roster_pii + event_registrations）。它也依賴 event_registrations 那張表的
+// 形狀，以及 admin_event_roster 讀的 event_sessions 欄位（session_seats）。
+assertMigrationDependencies(check, MIG_DIR, {
+  suite: "roster-csv-selftest",
+  dependsOn: [
+    "roster_pii",
+    "event_registrations",
+    "session_seats",
+    "orders_payments",
+    "order_expiry",
+    "inventory",
+    "admin_auth",
+  ],
+  reviewedThrough: "0027_event_blocks.sql",
+});
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {
   const prefix = String(n).padStart(4, "0");

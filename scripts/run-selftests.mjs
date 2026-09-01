@@ -30,6 +30,7 @@ import { parse as parseJs } from "@babel/parser";
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SCRIPTS_DIR, "..");
+const LIB_DIR = join(SCRIPTS_DIR, "lib");
 
 /**
  * 名字裡有 test 但**刻意**不進這個 runner 的檔案。
@@ -147,17 +148,42 @@ function walk(node, visit) {
 }
 
 console.log("\n── 守門 4：read 讀不到檔案時會靜默回空字串嗎 ──────");
+
+// scripts/lib/ 底下的共用模組（目前是 migration-ledger.mjs）也在掃描範圍裡。
+// 它們不叫 *-selftest.mjs，所以本來不會被上面的 discovered 收進來 —— 但自檢會
+// import 它們，它們裡面的 read 一樣會流進斷言。共用模組**更**該被掃：一處靜默
+// 回空字串會同時廢掉每一支引用它的自檢，而不是只廢掉一支。
+let libFiles;
+try {
+  libFiles = readdirSync(LIB_DIR)
+    .filter((f) => f.endsWith(".mjs"))
+    .sort();
+} catch (err) {
+  hardFail = true;
+  libFiles = [];
+  console.log(red(`✗ 讀不到 scripts/lib/：${err.message} —— 自檢 import 的共用模組沒被掃到。`));
+}
+if (libFiles.length === 0 && !hardFail) {
+  hardFail = true;
+  console.log(red("✗ scripts/lib/ 底下一個 .mjs 都沒有 —— 共用模組被刪了，或掃描路徑壞了。"));
+}
+
+const scanTargets = [
+  ...discovered.map((f) => ({ label: `scripts/${f}`, abs: join(SCRIPTS_DIR, f) })),
+  ...libFiles.map((f) => ({ label: `scripts/lib/${f}`, abs: join(LIB_DIR, f) })),
+];
+
 const silentReads = [];
-for (const f of discovered) {
+for (const { label: f, abs } of scanTargets) {
   let ast;
   try {
-    ast = parseJs(readFileSync(join(SCRIPTS_DIR, f), "utf8"), {
+    ast = parseJs(readFileSync(abs, "utf8"), {
       sourceType: "module",
       plugins: ["topLevelAwait"],
     });
   } catch (err) {
     hardFail = true;
-    console.log(red(`✗ scripts/${f} 解析失敗，無法檢查：${err.message}`));
+    console.log(red(`✗ ${f} 解析失敗，無法檢查：${err.message}`));
     continue;
   }
   walk(ast.program, (n) => {
@@ -188,7 +214,7 @@ const flagged = silentReads.filter((s) => !READ_FALLBACK_ALLOWLIST.has(`${s.file
 if (flagged.length > 0) {
   hardFail = true;
   console.log(red(`✗ 有 ${flagged.length} 處「讀不到檔案就回空字串」的 read：`));
-  for (const s of flagged) console.log(red(`    scripts/${s.file}:${s.line} —— ${s.why}`));
+  for (const s of flagged) console.log(red(`    ${s.file}:${s.line} —— ${s.why}`));
   console.log(
     red(
       '  → 這會讓 `check("…沒有 X", src.includes("X"), false)` 在路徑打錯時靜默通過。\n' +
@@ -196,7 +222,12 @@ if (flagged.length > 0) {
     ),
   );
 } else {
-  console.log(green(`✓ ${discovered.length} 支自檢，沒有任何一處 read 會靜默回空字串`));
+  console.log(
+    green(
+      `✓ ${discovered.length} 支自檢 + ${libFiles.length} 個共用模組，` +
+        "沒有任何一處 read 會靜默回空字串",
+    ),
+  );
 }
 
 // ── 執行 ─────────────────────────────────────────────────────────────────

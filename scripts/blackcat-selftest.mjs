@@ -45,6 +45,12 @@ import { registerHooks } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import {
+  assertLedgerMatchesDisk,
+  assertLedgerDeclarationsHonest,
+  assertMigrationDependencies,
+  readMigrationFiles,
+} from "./lib/migration-ledger.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1192,9 +1198,7 @@ for (const [label, src] of [
     "0024 寫下了日後要改 payment_method CHECK 的確切 SQL",
     mig.includes("drop constraint orders_payment_method_check"),
   );
-  const nums = readdirSync(MIG_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
+  const nums = readMigrationFiles(MIG_DIR);
   // 0025_event_speaker.sql（活動掛講者）與 0026_event_product_link.sql（活動與商品的
   // 真連結）是後來加的。兩支都只碰 public.events / products / event_sessions，
   // 沒有碰 orders / payments / webhook_events，所以這一支的其他斷言原樣成立。
@@ -1202,7 +1206,38 @@ for (const [label, src] of [
   // 七個 jsonb 清單欄位、建 public.event_blocks、加一支 reorder RPC，並用
   // create or replace 讓 admin_upsert_event_with_session() 多吃那七欄。整支檔案裡
   // orders / payments / webhook_events 出現 0 次，金流那一半一個字都沒動。
-  check("migration 編號連續且 0027 是最後一支", nums[nums.length - 1], "0027_event_blocks.sql");
+  // ── 從這一期起，逐支點名搬到共用帳本 ───────────────────────────────────
+  // 上面那幾段散文是 0025–0027 進來時逐條重讀的結論，保留下來當紀錄。但新的
+  // migration 不要再往上面加一段散文 —— 註解沒有任何東西在驗。改成到
+  // scripts/lib/migration-ledger.mjs 的 MIGRATION_LEDGER 補一列。
+  assertLedgerMatchesDisk(check, MIG_DIR);
+  assertLedgerDeclarationsHonest(check, MIG_DIR);
+  // 🔴 這一條原本是 `check("migration 編號連續且 0027 是最後一支",
+  //    nums[nums.length - 1], "0027_event_blocks.sql")`。標籤撒了半個謊：
+  //    「0027 是最後一支」是真的，「編號連續」則從來沒被檢查過 —— 有人插一支
+  //    0027a 或跳號到 0029，這條照樣是綠的，而輸出印著「✓ migration 編號連續」。
+  //
+  //    兩半都換掉了，而且是往上換：
+  //    · 「編號連續」→ 上面的 assertLedgerMatchesDisk() 真的在檢查（它比對完整的
+  //      有序清單，抓得到插隊、跳號、重號、改名）。
+  //    · 「0027 是最後一支」→ **這一條在這裡是多餘的第二份**。「最新的一支是誰」
+  //      這個快照本來就該由**最新那一期**的自檢守著，每開一支新 migration 就換一
+  //      個地方更新（見 event-product-selftest [1] 的註解，現在是
+  //      event-blocks-selftest [1]）。放一份在金流自檢裡，只是讓每一支跟金流無關
+  //      的 migration 都要來這裡改一次數字 —— 那正是這一期在拆的機械性重複。
+  //
+  //    換成這一支**自己**真正在乎的那條：0024 沒有被改號或插隊。它跟上面那堆
+  //    「0024 的 SQL 長什麼樣」的斷言是同一個主題，而且不會隨著別人開新 migration
+  //    而失效。
+  check("0024 仍在第 24 個位置（沒有被改號或插隊）", nums[23], "0024_blackcat_payment.sql");
+  // 這支自檢的金流那一半（orders / payments / webhook_events / SHA 釘樁）只在乎
+  // orders_payments 這一個區域。帳本裡只要出現一支排在 reviewedThrough 之後、
+  // 又動到它的 migration，這條就轉紅並指名是哪一支。
+  assertMigrationDependencies(check, MIG_DIR, {
+    suite: "blackcat-selftest",
+    dependsOn: ["orders_payments"],
+    reviewedThrough: "0027_event_blocks.sql",
+  });
 }
 
 {

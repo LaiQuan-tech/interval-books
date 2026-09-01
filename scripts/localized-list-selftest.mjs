@@ -35,6 +35,11 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { registerHooks } from "node:module";
+import {
+  assertLedgerMatchesDisk,
+  assertLedgerDeclarationsHonest,
+  assertMigrationDependencies,
+} from "./lib/migration-ledger.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SELF = "scripts/localized-list-selftest.mjs";
@@ -670,9 +675,6 @@ console.log("\n[8] migration 編號");
 // admin_upsert_event_with_session()。那支函式**原樣搬運**三語 jsonb（title /
 // summary / description / 場次的 title / location），沒有拆開、沒有重組、也沒有
 // 碰任何一個 *_list 欄位。
-const { readdirSync } = await import("node:fs");
-const migrations = readdirSync(join(ROOT, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
-const highest = migrations.map((f) => Number(f.slice(0, 4))).sort((a, b) => b - a)[0];
 // 0027_event_blocks.sql 的答案是**有，而且這一支就是為了三語清單而開的** —— 它是
 // D2 這一層的資料層另一半（D1）：在 public.events 上加那七個清單欄位
 // （highlights / suitable_for / not_suitable_for / takeaways / outline / includes /
@@ -686,12 +688,28 @@ const highest = migrations.map((f) => Number(f.slice(0, 4))).sort((a, b) => b - 
 //      形狀、zod 管內容，見 schemas.ts 檔頭與 0027 檔頭），所以下面對帳那三個
 //      數字的斷言仍然只有 TS 這一個家。
 //    · 0001 的 is_localized() 一個字都沒動（0027 是新開一支，不是改嚴舊的）。
-check(
-  "migration 最高編號是 0027（新增 migration 的人要回來確認沒動到三語清單）",
-  highest,
-  27,
-  `實際檔案：${migrations.slice(-3).join(", ")}`,
-);
+// ── 這條提醒從「最高編號快照」換成帳本依賴 ───────────────────────────────
+// 原本是 `check("migration 最高編號是 0027（…要回來確認沒動到三語清單）", highest, 27)`。
+// 那條的標籤是誠實的，但它的**觸發條件**跟它問的問題對不上：它問「你有沒有動到
+// 三語清單」，卻對**每一支**新 migration 都轉紅，不管那支碰的是發票、POS 還是
+// 廠商主檔。於是絕大多數時候作者被叫回來、看了、把 27 改成 28 —— 沒有產生任何
+// 資訊。問題問對了，鬧鐘裝錯了地方。
+//
+// 換成宣告依賴：這一支在乎的是三語 jsonb 的形狀守衛（localized_list：
+// is_localized / is_localized_list）與 public.events 上那七個清單欄位
+// （events_shape）。帳本裡只要出現一支排在 0027 之後、又動到這兩區的 migration，
+// 這裡就轉紅，並且**指名是哪一支動到哪一區** —— 比原來那條「最高編號變了」更
+// 接近作者真正需要回答的問題。動到別的地方的 migration 不再叫這一支回來。
+//
+// 上面那幾段 0026 / 0027 的逐條重讀保留下來當紀錄；新的 migration 不要再往上面
+// 加散文，改成到 scripts/lib/migration-ledger.mjs 的 MIGRATION_LEDGER 補一列。
+assertLedgerMatchesDisk(check, join(ROOT, "supabase/migrations"));
+assertLedgerDeclarationsHonest(check, join(ROOT, "supabase/migrations"));
+assertMigrationDependencies(check, join(ROOT, "supabase/migrations"), {
+  suite: "localized-list-selftest",
+  dependsOn: ["localized_list", "events_shape"],
+  reviewedThrough: "0027_event_blocks.sql",
+});
 
 // -----------------------------------------------------------------------------
 // 收尾

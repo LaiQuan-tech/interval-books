@@ -45,6 +45,12 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import {
+  assertLedgerMatchesDisk,
+  assertLedgerDeclarationsHonest,
+  assertMigrationDependencies,
+  readMigrationFiles,
+} from "./lib/migration-ledger.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -153,11 +159,13 @@ function functionBody(sql, signature) {
 console.log("\n[1] migration 檔案盤點");
 check("0020 存在", existsSync(MIG_0020), true);
 // 這一期不准動到既有的 0001–0019，所以它們也必須都還在。
-const migrations = existsSync(join(ROOT, "supabase/migrations"))
-  ? readdirSync(join(ROOT, "supabase/migrations"))
-      .filter((f) => f.endsWith(".sql"))
-      .sort()
-  : [];
+// ⚠️ 這裡曾經是 `existsSync(…) ? readdirSync(…) : []`。那是「讀不到就回空字串」
+//    的陣列版：路徑一打錯，migrations 就是 []，底下 [尾] 那個「掃全部 migration
+//    去實跑 SQL」的迴圈就跑 0 次、靜默通過。readMigrationFiles() 讀不到目錄、
+//    或掃不到任何 .sql，一律丟例外。（同 run-selftests.mjs 的「守門 4」，只是
+//    那一條掃的是 readFileSync，掃不到 readdirSync 的這一版。）
+const MIG_DIR = join(ROOT, "supabase/migrations");
+const migrations = readMigrationFiles(MIG_DIR);
 // 0021（名單的遮罩 view、明文揭露與 CSV 匯出）加進來時，這幾條會把人叫回來。
 // 逐條重讀過：0021 **不動** 0020 的任何一張表、任何一支函式，它只是在
 // event_registrations 上面加一個遮罩過的 view 與兩支會留痕的 security definer
@@ -198,12 +206,49 @@ const migrations = existsSync(join(ROOT, "supabase/migrations"))
 // 照抄 0026 的**（沒有多寫一欄、沒有少寫一欄），所以上面那段不變量原封不動：
 // 它一樣不寫 seats_taken，一樣不寫 event_registrations 一列，reserve_session_seat /
 // release_session_seat / expire_unpaid_orders 三支一個字都沒改。
-check("migrations 共 27 支", migrations.length, 27);
+// ── 從這一期起，逐支點名搬到共用帳本 ─────────────────────────────────────
+// 上面那幾段散文是 0021–0027 進來時逐條重讀的結論，保留下來當紀錄（0026 那一段
+// 尤其值得留：它是第一支真的會寫 event_sessions 的 migration）。但**新的
+// migration 不要再往上面加一段散文** —— 註解沒有任何東西在驗。改成到
+// scripts/lib/migration-ledger.mjs 的 MIGRATION_LEDGER 補一列，寫下它動了哪些
+// 區域；少標會被 assertLedgerDeclarationsHonest() 拿 SQL 打臉，標對了會由
+// assertMigrationDependencies() 自動把這支自檢叫回來。
+//
+// 這裡原本是 `check("migrations 共 27 支", migrations.length, 27)`。
+// assertLedgerMatchesDisk() 取代它，而且比它強：比對完整的有序檔名清單，
+// 不只是數量。
+assertLedgerMatchesDisk(check, MIG_DIR);
+assertLedgerDeclarationsHonest(check, MIG_DIR);
 check("0020 仍在原位", migrations[19], "0020_event_sessions_registrations.sql");
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
 check("0023 仍在原位", migrations[22], "0023_fix_cron_guard.sql");
 check("0024 仍在原位", migrations[23], "0024_blackcat_payment.sql");
-check("編號連續且 0025 是最後一支", migrations[24], "0025_event_speaker.sql");
+// 🔴 這一條原本的標籤寫著「編號連續且 0025 是最後一支」，但它斷言的是
+//    `migrations[24] === "0025_event_speaker.sql"` —— 只是「0025 在第 25 個
+//    位置」。它既沒有檢查編號連續，0026 進來之後 0025 也還是在第 25 個位置，
+//    所以這條**不會轉紅**，而測試輸出會印出綠色的「✓ 編號連續且 0025 是最後
+//    一支」，此時真正的最後一支是 0027。標籤一次撒了兩個謊。
+//    斷言本身是好的，而且與上面四條同一個形狀，所以標籤改成跟它們一致。
+//    「編號連續」現在由上面的 assertLedgerMatchesDisk() 真的檢查；
+//    「最新的一支是誰」由 event-blocks-selftest [1] 守著。
+check("0025 仍在原位", migrations[24], "0025_event_speaker.sql");
+// ── 這支自檢依賴哪幾個區域，以及它審到哪一支 ─────────────────────────────
+// 這支守的核心不變量是「佔了 N 個位子」與「有 N 位參加者」是同一句 SQL 的兩個
+// 面向 —— 那橫跨 session_seats（event_sessions.seats_taken 與 reserve/release）、
+// event_registrations（逐位參加者）、order_expiry（expire_unpaid_orders 會回補
+// 名額）與 products_availability（0011 的可售量 view）。
+assertMigrationDependencies(check, MIG_DIR, {
+  suite: "event-registration-selftest",
+  dependsOn: [
+    "session_seats",
+    "event_registrations",
+    "order_expiry",
+    "products_availability",
+    "orders_payments",
+    "cron_jobs",
+  ],
+  reviewedThrough: "0027_event_blocks.sql",
+});
 for (const f of [
   "0004_commerce_products.sql",
   "0006_order_expiry.sql",

@@ -51,6 +51,12 @@ import { execFile } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import {
+  assertLedgerMatchesDisk,
+  assertLedgerDeclarationsHonest,
+  assertMigrationDependencies,
+  readMigrationFiles,
+} from "./lib/migration-ledger.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -163,11 +169,13 @@ console.log("═══ 交易信 outbox 與付款通知自檢（0022）═══
 console.log("\n[1] migration 檔案盤點");
 check("0022 存在", existsSync(MIG_0022), true);
 
-const migrations = existsSync(MIG_DIR)
-  ? readdirSync(MIG_DIR)
-      .filter((f) => f.endsWith(".sql"))
-      .sort()
-  : [];
+// ⚠️ 這裡曾經是 `existsSync(MIG_DIR) ? readdirSync(…) : []`。那是「讀不到就回空字串」
+//    的陣列版，而且更難看出來：MIG_DIR 一打錯（或目錄被搬走），migrations 就是 []，
+//    底下那條「掃全部 migration，出現 to_regproc('…(' 就紅」的守衛跑 0 次迴圈、
+//    offenders 是空的、斷言**靜默通過**，從此永遠是綠的。run-selftests.mjs 的
+//    「守門 4」只掃 readFileSync，掃不到 readdirSync 的這一版。
+//    readMigrationFiles() 讀不到目錄、或掃不到任何 .sql，一律丟例外。
+const migrations = readMigrationFiles(MIG_DIR);
 // 0024_blackcat_payment.sql（黑貓 PAY 線上刷卡：orders.payment_url /
 // payments.gateway_trans_id / payment_alerts()）是這一期加的。
 // 0025_event_speaker.sql（活動掛講者：public.events.speaker_id -> public.artists.id）
@@ -186,8 +194,45 @@ const migrations = existsSync(MIG_DIR)
 // 照抄 0026 的，email_outbox / order_notify / 那五支 notify 函式在整支檔案裡出現
 // 0 次，event_sessions 的欄位形狀與 grant 也沒動 —— sessions_due_for_reminder() 讀的
 // 還是同一張表的同一批欄位，下面每一條斷言原樣成立。
-check("migrations 共 27 支", migrations.length, 27);
-check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
+// ── 從這一期起，逐支點名搬到共用帳本 ─────────────────────────────────────
+// 上面那幾段散文是 0024–0027 進來時逐條重讀的結論，保留下來當紀錄。但**新的
+// migration 不要再往上面加一段散文** —— 註解沒有任何東西在驗，複製上一期的也
+// 看不出來。改成到 scripts/lib/migration-ledger.mjs 的 MIGRATION_LEDGER 補一列，
+// 寫下它動了哪些區域；少標會被 assertLedgerDeclarationsHonest() 拿 SQL 打臉，
+// 標對了會由 assertMigrationDependencies() 自動把這支自檢叫回來。
+//
+// 這裡原本是 `check("migrations 共 27 支", migrations.length, 27)` —— 一個手寫的
+// 總數，加一支就要在三支自檢裡各改一次。assertLedgerMatchesDisk() 取代它，而且
+// **比它強**：比對的是完整的有序檔名清單（少一支、多一支、改名、跳號、重號、
+// 順序不對全都抓得到），不只是數量。
+assertLedgerMatchesDisk(check, MIG_DIR);
+assertLedgerDeclarationsHonest(check, MIG_DIR);
+// 🔴 這一條原本的標籤寫著「0023 是最後一支」，但它斷言的是
+//    `migrations[22] === "0023_fix_cron_guard.sql"` —— 也就是「0023 在第 23 個
+//    位置」。0024 進來之後 0023 還是在第 23 個位置，所以這條**不會轉紅**，而
+//    測試輸出會印出綠色的「✓ 0023 是最後一支」，此時真正的最後一支是 0027。
+//    斷言本身是好的（它守著「沒有人回頭改編號、插隊」），壞的是標籤。
+//    「最新的一支是誰」由 event-blocks-selftest [1] 守著（那條本來就該由最新
+//    那一期的自檢守）；「編號連續」由上面的 assertLedgerMatchesDisk() 守著。
+check("0023 仍在第 23 個位置（沒有被改號或插隊）", migrations[22], "0023_fix_cron_guard.sql");
+// ── 這支自檢依賴哪幾個區域，以及它審到哪一支 ─────────────────────────────
+// 這支守的是 0022 的 outbox 與那五支 notify 函式（email_outbox），加上它們讀的
+// event_sessions 欄位（session_seats）、付款成功後的那一段（orders_payments），
+// 以及 0023 修的排程（cron_jobs）。帳本裡只要出現一支排在 reviewedThrough 之後、
+// 又動到這四個區域任何一個的 migration，這條就轉紅並指名是哪一支動到哪一區。
+assertMigrationDependencies(check, MIG_DIR, {
+  suite: "notify-selftest",
+  dependsOn: [
+    "email_outbox",
+    "session_seats",
+    "orders_payments",
+    "order_expiry",
+    "event_registrations",
+    "roster_pii",
+    "cron_jobs",
+  ],
+  reviewedThrough: "0027_event_blocks.sql",
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // to_regproc() 不吃簽名 —— 帶括號就永遠回 null，而且不報錯。
