@@ -62,6 +62,7 @@ import { Route as AdminShellCollaborationsRouteImport } from './routes/admin/_sh
 import { Route as AdminShellCategoriesRouteImport } from './routes/admin/_shell.categories'
 import { Route as AdminShellArtistsRouteImport } from './routes/admin/_shell.artists'
 import { Route as AdminShellPagesSlugRouteImport } from './routes/admin/_shell.pages.$slug'
+import { Route as AdminShellEventsIdRouteImport } from './routes/admin/_shell.events.$id'
 
 const VisitRoute = VisitRouteImport.update({
   id: '/visit',
@@ -336,6 +337,11 @@ const AdminShellPagesSlugRoute = AdminShellPagesSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => AdminShellPagesRoute,
 } as any)
+const AdminShellEventsIdRoute = AdminShellEventsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AdminShellEventsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -366,7 +372,7 @@ export interface FileRoutesByFullPath {
   '/admin/categories': typeof AdminShellCategoriesRoute
   '/admin/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/curated': typeof AdminShellCuratedRoute
-  '/admin/events': typeof AdminShellEventsRoute
+  '/admin/events': typeof AdminShellEventsRouteWithChildren
   '/admin/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
   '/admin/inventory-combos': typeof AdminShellInventoryCombosRoute
@@ -390,6 +396,7 @@ export interface FileRoutesByFullPath {
   '/vendor/products': typeof VendorShellProductsRoute
   '/admin/': typeof AdminShellIndexRoute
   '/vendor/': typeof VendorShellIndexRoute
+  '/admin/events/$id': typeof AdminShellEventsIdRoute
   '/admin/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRoutesByTo {
@@ -419,7 +426,7 @@ export interface FileRoutesByTo {
   '/admin/categories': typeof AdminShellCategoriesRoute
   '/admin/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/curated': typeof AdminShellCuratedRoute
-  '/admin/events': typeof AdminShellEventsRoute
+  '/admin/events': typeof AdminShellEventsRouteWithChildren
   '/admin/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
   '/admin/inventory-combos': typeof AdminShellInventoryCombosRoute
@@ -443,6 +450,7 @@ export interface FileRoutesByTo {
   '/vendor/products': typeof VendorShellProductsRoute
   '/admin': typeof AdminShellIndexRoute
   '/vendor': typeof VendorShellIndexRoute
+  '/admin/events/$id': typeof AdminShellEventsIdRoute
   '/admin/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRoutesById {
@@ -475,7 +483,7 @@ export interface FileRoutesById {
   '/admin/_shell/categories': typeof AdminShellCategoriesRoute
   '/admin/_shell/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/_shell/curated': typeof AdminShellCuratedRoute
-  '/admin/_shell/events': typeof AdminShellEventsRoute
+  '/admin/_shell/events': typeof AdminShellEventsRouteWithChildren
   '/admin/_shell/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/_shell/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
   '/admin/_shell/inventory-combos': typeof AdminShellInventoryCombosRoute
@@ -499,6 +507,7 @@ export interface FileRoutesById {
   '/vendor/_shell/products': typeof VendorShellProductsRoute
   '/admin/_shell/': typeof AdminShellIndexRoute
   '/vendor/_shell/': typeof VendorShellIndexRoute
+  '/admin/_shell/events/$id': typeof AdminShellEventsIdRoute
   '/admin/_shell/pages/$slug': typeof AdminShellPagesSlugRoute
 }
 export interface FileRouteTypes {
@@ -556,6 +565,7 @@ export interface FileRouteTypes {
     | '/vendor/products'
     | '/admin/'
     | '/vendor/'
+    | '/admin/events/$id'
     | '/admin/pages/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -609,6 +619,7 @@ export interface FileRouteTypes {
     | '/vendor/products'
     | '/admin'
     | '/vendor'
+    | '/admin/events/$id'
     | '/admin/pages/$slug'
   id:
     | '__root__'
@@ -664,6 +675,7 @@ export interface FileRouteTypes {
     | '/vendor/_shell/products'
     | '/admin/_shell/'
     | '/vendor/_shell/'
+    | '/admin/_shell/events/$id'
     | '/admin/_shell/pages/$slug'
   fileRoutesById: FileRoutesById
 }
@@ -1067,8 +1079,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellPagesSlugRouteImport
       parentRoute: typeof AdminShellPagesRoute
     }
+    '/admin/_shell/events/$id': {
+      id: '/admin/_shell/events/$id'
+      path: '/$id'
+      fullPath: '/admin/events/$id'
+      preLoaderRoute: typeof AdminShellEventsIdRouteImport
+      parentRoute: typeof AdminShellEventsRoute
+    }
   }
 }
+
+interface AdminShellEventsRouteChildren {
+  AdminShellEventsIdRoute: typeof AdminShellEventsIdRoute
+}
+
+const AdminShellEventsRouteChildren: AdminShellEventsRouteChildren = {
+  AdminShellEventsIdRoute: AdminShellEventsIdRoute,
+}
+
+const AdminShellEventsRouteWithChildren =
+  AdminShellEventsRoute._addFileChildren(AdminShellEventsRouteChildren)
 
 interface AdminShellPagesRouteChildren {
   AdminShellPagesSlugRoute: typeof AdminShellPagesSlugRoute
@@ -1087,7 +1117,7 @@ interface AdminShellRouteChildren {
   AdminShellCategoriesRoute: typeof AdminShellCategoriesRoute
   AdminShellCollaborationsRoute: typeof AdminShellCollaborationsRoute
   AdminShellCuratedRoute: typeof AdminShellCuratedRoute
-  AdminShellEventsRoute: typeof AdminShellEventsRoute
+  AdminShellEventsRoute: typeof AdminShellEventsRouteWithChildren
   AdminShellExhibitionsRoute: typeof AdminShellExhibitionsRoute
   AdminShellInventoryAdjustmentsRoute: typeof AdminShellInventoryAdjustmentsRoute
   AdminShellInventoryCombosRoute: typeof AdminShellInventoryCombosRoute
@@ -1116,7 +1146,7 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellCategoriesRoute: AdminShellCategoriesRoute,
   AdminShellCollaborationsRoute: AdminShellCollaborationsRoute,
   AdminShellCuratedRoute: AdminShellCuratedRoute,
-  AdminShellEventsRoute: AdminShellEventsRoute,
+  AdminShellEventsRoute: AdminShellEventsRouteWithChildren,
   AdminShellExhibitionsRoute: AdminShellExhibitionsRoute,
   AdminShellInventoryAdjustmentsRoute: AdminShellInventoryAdjustmentsRoute,
   AdminShellInventoryCombosRoute: AdminShellInventoryCombosRoute,

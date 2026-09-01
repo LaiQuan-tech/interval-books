@@ -45,8 +45,38 @@ export const upsertEventWithProduct = createServerFn({ method: "POST" })
   .inputValidator(eventWithProductSchema)
   .handler(async ({ data }) => {
     const { upsertEventWithProduct } = await import("@/server/repos/events");
-    const { product, ...event } = data;
+    const { EVENT_LIST_FIELDS } = await import("@/lib/event-blocks");
+    const { product, ...rest } = data;
+
+    // 0027 的七個清單欄位在 payload 上是**平的**（highlights、suitable_for…），
+    // 但 repo 要的是一個 lists 物件 —— 那一層是刻意的：repo 的 EventUpsertInput 上，
+    // 「這一欄不動」與「把這一欄清空」是靠 key 在不在來分辨的，攤平在一堆固定欄位
+    // 中間會讓那個區別很容易被下一個人 `?? EMPTY` 掉。
+    //
+    // ⚠️ 名單用 EVENT_LIST_FIELDS，不是在這裡再抄一次七個字串。抄一次就是第二個家。
+    const lists = Object.fromEntries(
+      EVENT_LIST_FIELDS.filter((f) => rest[f] !== undefined).map((f) => [f, rest[f]]),
+    );
+    const event = { ...rest, lists };
     return await upsertEventWithProduct(event, product ?? null);
+  });
+
+/**
+ * 這場活動排了哪幾場場次（最近的在前）。
+ *
+ * 活動頁組裝器用它顯示「活動地點」那一塊 —— 地點不是 events 的欄位，而是
+ * event_sessions.location，所以那一塊在組裝器上是**唯讀的鏡子**。
+ *
+ * ⚠️ 走 adminFnMiddleware（不是 fns/event-sessions.ts 那一支的 staff + roster.read）：
+ *    這裡回的是場次本身（時間、地點、名額），不是任何一位報名者的個資。名單仍然只有
+ *    fns/event-registrations.ts 那幾支拿得到，而那幾支照舊要 event.roster.read。
+ */
+export const listSessionsForEvent = createServerFn({ method: "GET" })
+  .middleware([adminFnMiddleware])
+  .inputValidator(z.object({ id: z.string().trim().min(1) }))
+  .handler(async ({ data }) => {
+    const { listSessionsForEvent } = await import("@/server/repos/events");
+    return await listSessionsForEvent(data.id);
   });
 
 /**

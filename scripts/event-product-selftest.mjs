@@ -394,7 +394,30 @@ checkFalse("同步 update 不動 price", /\bprice\s*=/.test(prodSync));
 checkFalse("同步 update 不動 status", /\bstatus\s*=/.test(prodSync));
 
 // 後台不准自己開一個「商品說明」欄位 —— 那是替這條規則開第二個家。
-const adminEventsSrc = stripTs(readFile("src/routes/admin/_shell.events.tsx"));
+/**
+ * 活動後台的**整個**表面 —— 列表頁與活動頁組裝器的聯集。
+ *
+ * 🔴 **不寫死單一檔案路徑。** D3 把活動表單從 `_shell.events.tsx` 搬到
+ *    `_shell.events.$id.tsx`。寫死前者的版本在那次搬家之後，下面那條
+ *    `checkFalse("後台沒有直接寫 products 表")` 會**靜默轉綠** —— 它讀的檔案裡
+ *    本來就什麼都沒有了，覆蓋消失而畫面是綠的。這正是這個 repo 反覆出過的假陽性。
+ *
+ *    掃出 `src/routes/admin/` 底下所有 `_shell.events*.tsx`，要求至少一個，
+ *    再對它們的聯集斷言。否定斷言因此變**強**（整個表面都不准出現），肯定斷言則
+ *    不再綁在某一支檔名上。
+ */
+const ADMIN_ROUTES_DIR = join(ROOT, "src/routes/admin");
+const adminEventsFiles = readdirSync(ADMIN_ROUTES_DIR)
+  .filter((f) => /^_shell\.events(\..+)?\.tsx$/.test(f))
+  .sort();
+checkTrue(
+  `活動後台至少有一個路由檔（實得 ${adminEventsFiles.length}：${adminEventsFiles.join("、")}）`,
+  adminEventsFiles.length >= 1,
+);
+const adminEventsRaw = adminEventsFiles.map((f) => readFile(join(ADMIN_ROUTES_DIR, f))).join("\n");
+const adminEventsSrc = adminEventsFiles
+  .map((f) => stripTs(readFile(join(ADMIN_ROUTES_DIR, f))))
+  .join("\n");
 for (const forbidden of [
   "product.description",
   "product.summary",
@@ -545,7 +568,7 @@ console.log("\n[11] 後台與前台");
 
 // 後台：slug 欄位在，而且說明文字帶著那句 404 警告。
 checkTrue("後台表單有 slug 欄位", adminEventsSrc.includes('name="slug"'));
-const adminRaw = readFile("src/routes/admin/_shell.events.tsx");
+const adminRaw = adminEventsRaw;
 checkTrue(
   "🔴 後台 slug 欄位的說明寫了「改代稱會讓舊網址 404」",
   adminRaw.includes("404") && adminRaw.includes("已經發出去"),

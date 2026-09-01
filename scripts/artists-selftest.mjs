@@ -432,7 +432,29 @@ checkTrue(
 // =============================================================================
 console.log("\n[6] 活動後台的主講人欄位");
 
-const eventsRouteSrc = stripTs(readFile(join(ROOT, "src/routes/admin/_shell.events.tsx")));
+/**
+ * 活動後台的**整個**表面 —— 列表頁與活動頁組裝器的聯集。
+ *
+ * 🔴 **不寫死單一檔案路徑。** D3 把活動表單從 `_shell.events.tsx` 搬到
+ *    `_shell.events.$id.tsx`；原本寫死前者的版本在那次搬家之後，肯定斷言會紅
+ *    （「找不到 speaker_id 這一欄」），而**否定斷言會靜默轉綠**（「這一頁沒有
+ *    直接寫 products 表」——因為它讀的檔案裡本來就什麼都沒有了）。後者正是這個
+ *    repo 反覆出過的那種假陽性：覆蓋消失了，畫面上是綠的。
+ *
+ *    所以改成掃出 `src/routes/admin/` 底下所有 `_shell.events*.tsx`，要求**至少一個**
+ *    （一個都沒有 = 活動後台不見了，那是要紅的），再對它們的聯集斷言。
+ */
+const ADMIN_DIR = join(ROOT, "src/routes/admin");
+const adminEventsFiles = readdirSync(ADMIN_DIR)
+  .filter((f) => /^_shell\.events(\..+)?\.tsx$/.test(f))
+  .sort();
+checkTrue(
+  `活動後台至少有一個路由檔（實得 ${adminEventsFiles.length}：${adminEventsFiles.join("、")}）`,
+  adminEventsFiles.length >= 1,
+);
+const eventsRouteSrc = adminEventsFiles
+  .map((f) => stripTs(readFile(join(ADMIN_DIR, f))))
+  .join("\n");
 const speakerField = formFieldBlock(eventsRouteSrc, "speaker_id");
 
 checkTrue("活動表單有 speaker_id 這一欄", speakerField.length > 0);

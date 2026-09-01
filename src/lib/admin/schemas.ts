@@ -95,6 +95,100 @@ export const localizedListSchema = z.object({
 
 export type LocalizedListInput = z.infer<typeof localizedListSchema>;
 
+// ---------------------------------------------------------------------------
+// 可以整組留空的三語清單（活動頁的七個清單欄位）
+// ---------------------------------------------------------------------------
+// 上面那一對（localizedLinesFormSchema／localizedListSchema）要求每個語言至少一項，
+// 那是「這個欄位一定要有內容」的欄位用的。活動頁的七個清單欄位不是那樣：
+//
+//   🔴 **空清單的意思是「這一塊關掉」，不是「還沒填」。** 0027 把七欄都設成
+//      not null default 三個空陣列，前台照順序畫、空的就整塊不畫。所以三語全空
+//      必須是**合法的送出值**，而不是一個擋著儲存的錯誤。
+//
+// 只有「填一半」是錯的：中文三行、英日空白，前台會得到一份缺兩個語言的清單。
+// 這條規則與 src/routes/admin/_shell.pages.$slug.tsx 的 optionalLocalizedFormSchema
+// 是同一條，只是那裡守的是單行字串，這裡守的是「一行一項」。
+//
+// ⚠️ **行數對不上不在這裡擋。** 中文 4 行配英文 3 行是一個要人看見、然後自己修的
+//    狀態（LocalizedListField 會跳警告、強制攤開英日區、而且在對齊之前不准收起來），
+//    不是一個把整張表擋在門外的驗證錯誤 —— 擋在門外的話，人連「模型回了什麼」都
+//    看不到就被踢回去了。
+
+/** 三語全空 = 這一塊關掉；只填一半 = 錯。兩者共用的判斷。 */
+function refineOptionalTriple(
+  filled: [boolean, boolean, boolean],
+  ctx: z.RefinementCtx,
+  what: string,
+): void {
+  const count = filled.filter(Boolean).length;
+  if (count === 0 || count === 3) return;
+  const message = `${what}：三種語言要嘛一起填、要嘛一起留空（整組留空＝前台不顯示這一塊）。`;
+  (["zh", "en", "ja"] as const).forEach((lang, i) => {
+    if (!filled[i]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [lang], message });
+  });
+}
+
+/** 表單端：三個 textarea 的原始字串，可以整組留空。 */
+export const optionalLocalizedLinesFormSchema = z
+  .object({ zh: z.string(), en: z.string(), ja: z.string() })
+  .superRefine((val, ctx) => {
+    (["zh", "en", "ja"] as const).forEach((lang) => {
+      const items = splitLines(val[lang]);
+      if (items.length > LIST_MAX_ITEMS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [lang],
+          message: `最多 ${LIST_MAX_ITEMS} 項，目前 ${items.length} 行，請自己刪到 ${LIST_MAX_ITEMS} 行以內`,
+        });
+      }
+      items.forEach((line, i) => {
+        if (line.length > LIST_MAX_ITEM_CHARS) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [lang],
+            message: `第 ${i + 1} 行（共 ${items.length} 行）有 ${line.length} 個字，超過單項上限 ${LIST_MAX_ITEM_CHARS} 字`,
+          });
+        }
+      });
+    });
+    refineOptionalTriple(
+      [splitLines(val.zh).length > 0, splitLines(val.en).length > 0, splitLines(val.ja).length > 0],
+      ctx,
+      "清單欄位",
+    );
+  });
+
+export type OptionalLocalizedLinesFormValues = z.infer<typeof optionalLocalizedLinesFormSchema>;
+
+/** 送出端：三個 string[]，可以整組都是空陣列。 */
+function optionalLocalizedListField(lang: string) {
+  return z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, `${lang}的項目不可以是空的`)
+        .max(LIST_MAX_ITEM_CHARS, `${lang}單項最多 ${LIST_MAX_ITEM_CHARS} 字`),
+    )
+    .max(LIST_MAX_ITEMS, `${lang}最多 ${LIST_MAX_ITEMS} 項`);
+}
+
+export const optionalLocalizedListSchema = z
+  .object({
+    zh: optionalLocalizedListField("中文"),
+    en: optionalLocalizedListField("英文"),
+    ja: optionalLocalizedListField("日文"),
+  })
+  .superRefine((val, ctx) => {
+    refineOptionalTriple(
+      [val.zh.length > 0, val.en.length > 0, val.ja.length > 0],
+      ctx,
+      "清單欄位",
+    );
+  });
+
+export type OptionalLocalizedListInput = z.infer<typeof optionalLocalizedListSchema>;
+
 /**
  * Covers both create and update: `id` absent/empty means "create a new row"
  * (src/server/repos/news.ts generates one). Present means "update that row".
@@ -201,9 +295,36 @@ export const eventProductSchema = z.object({
 export type EventProductFormValues = z.infer<typeof eventProductSchema>;
 
 /**
+ * 活動頁那七個「一行一項」清單欄位（0027）。**順序就是前台由上到下的順序**，唯一的
+ * 名單在 src/lib/event-blocks.ts 的 EVENT_LIST_FIELDS，自檢會拿那一份逐欄回來對帳。
+ *
+ * 🔴 **只掛在 eventWithProductSchema 上，不掛在 eventSchema 上。** 這七欄只有一條寫得
+ *    進資料庫的路：0027 的 admin_upsert_event_with_session()。掛到 eventSchema 上等於
+ *    讓 upsertEvent()（只寫 public.events 的固定欄位，不碰這七欄）也「收得下」它們 ——
+ *    zod 會安靜地把它們留在 payload 裡，repo 安靜地不寫，使用者看到「已儲存」而七欄
+ *    原封不動。那是這個 repo 反覆點名的那種靜默無效。
+ *
+ * 每一欄都 `.optional()`：**沒帶那個 key ＝那一欄不動**（與 SQL 那一側的 coalesce 同一
+ * 條規則），送 `{"zh":[],"en":[],"ja":[]}` 才是「清空這一塊」——那是一個看得見的動作。
+ */
+const eventListFields = {
+  highlights: optionalLocalizedListSchema.optional(),
+  suitable_for: optionalLocalizedListSchema.optional(),
+  not_suitable_for: optionalLocalizedListSchema.optional(),
+  takeaways: optionalLocalizedListSchema.optional(),
+  outline: optionalLocalizedListSchema.optional(),
+  includes: optionalLocalizedListSchema.optional(),
+  notes: optionalLocalizedListSchema.optional(),
+};
+
+/**
  * 活動 + 商品，一次送出。`product` 省略／null = 這一次不動商品那一列。
+ *
+ * 0027 起這條路也吃七個清單欄位 —— 活動頁組裝器的「儲存」是**一支 server fn、一次
+ * RPC、一個交易**，所以固定欄位與七個清單不會出現「前半段寫進去了、後半段沒有」。
  */
 export const eventWithProductSchema = eventSchema.extend({
+  ...eventListFields,
   product: eventProductSchema.nullable().optional(),
 });
 export type EventWithProductFormValues = z.infer<typeof eventWithProductSchema>;

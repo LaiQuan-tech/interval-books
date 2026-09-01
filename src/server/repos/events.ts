@@ -22,10 +22,17 @@
 import "@tanstack/react-start/server-only";
 import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "@/server/supabase-admin";
-import type { Localized } from "@/i18n/types";
+import { EVENT_LIST_FIELDS } from "@/lib/event-blocks";
+import type { Localized, LocalizedList } from "@/i18n/types";
 
+/**
+ * ⚠️ **部署順序（第二次）：0027 要先套上 live DB，才能推這一行。** 底下多出來的七個
+ *    清單欄位是 0027 加的；欄位還不存在時 PostgREST 回 42703，整個活動後台打不開。
+ *    與檔頭那一段（0026 的 slug / image_key）是同一件事，而且同樣**不做降級路徑** ——
+ *    降級會讓「migration 沒套上」變成一個安靜的次等狀態。
+ */
 const COLUMNS =
-  "id, slug, title, summary, description, display_date, iso_date, category, speaker_id, image_key, external_url, registration_type, payment_enabled, is_published, sort_order, created_at, updated_at";
+  "id, slug, title, summary, description, display_date, iso_date, category, speaker_id, image_key, external_url, registration_type, payment_enabled, is_published, sort_order, highlights, suitable_for, not_suitable_for, takeaways, outline, includes, notes, created_at, updated_at";
 
 /** products 的欄位，只取活動後台要顯示的那幾個。 */
 const PRODUCT_COLUMNS = "id, slug, source_id, price, compare_at_price, status, sort_order";
@@ -66,6 +73,20 @@ export type EventRow = {
   payment_enabled: boolean;
   is_published: boolean;
   sort_order: number;
+  /**
+   * 活動頁的七個「一行一項」三語清單（0027）。**順序就是前台由上到下的順序**，
+   * 唯一的名單在 src/lib/event-blocks.ts 的 EVENT_LIST_FIELDS。
+   *
+   * not null default 三個空陣列 —— 空陣列的意思是「前台這一塊不畫」，不是「還沒填」。
+   * 所以這裡不是 `LocalizedList | null`，讀出來永遠是一個物件。
+   */
+  highlights: LocalizedList;
+  suitable_for: LocalizedList;
+  not_suitable_for: LocalizedList;
+  takeaways: LocalizedList;
+  outline: LocalizedList;
+  includes: LocalizedList;
+  notes: LocalizedList;
   created_at: string;
   updated_at: string;
 };
@@ -88,7 +109,19 @@ export type EventUpsertInput = {
   payment_enabled: boolean;
   is_published: boolean;
   sort_order: number;
+  /**
+   * 七個清單欄位（0027）。**省略某一欄 = 那一欄不動**，與 SQL 那一側的
+   * `coalesce(v_ev -> '…', v_prev.…, c_empty_list)` 是同一條規則。要清空就送三個
+   * 空陣列 —— 那是一個看得見的動作，跟「前端漏送一個 key」不是同一件事。
+   *
+   * ⚠️ **只有 upsertEventWithProduct() 寫得了這七欄。** upsertEvent() 只寫
+   *    public.events 的固定欄位，刻意不碰它們（見那一支的檔頭）。
+   */
+  lists?: Partial<Record<EventListField, LocalizedList>>;
 };
+
+/** 0027 的七個清單欄位的欄位名。唯一的名單在 src/lib/event-blocks.ts。 */
+export type EventListField = (typeof EVENT_LIST_FIELDS)[number];
 
 export type ProductStatus = "draft" | "active" | "archived";
 
@@ -103,6 +136,23 @@ export type EventProductRow = {
   sort_order: number;
   /** public.event_sessions 掛在 products.id 上（0020），不是掛在 events.id 上。 */
   session_count: number;
+};
+
+/**
+ * 一場場次，只取活動頁組裝器要顯示的那幾欄。
+ *
+ * ⚠️ 這是**唯讀的鏡子**。場次的新增／修改在報名那一頁（src/routes/admin/_shell.registrations.tsx），
+ *    而 seats_taken 只由 0020 §7 的三支 RPC 在持有列鎖時維護 —— 從別的地方寫回一個
+ *    幾分鐘前讀到的計數器就是超賣。
+ */
+export type EventSessionBrief = {
+  id: string;
+  title: Localized;
+  location: Localized;
+  starts_at: string;
+  capacity: number;
+  seats_taken: number;
+  status: string;
 };
 
 /** 上架／改價時要送給 admin_upsert_event_with_session() 的那一段。 */
@@ -224,6 +274,19 @@ export async function upsertEventWithProduct(
       payment_enabled: input.payment_enabled,
       is_published: input.is_published,
       sort_order: input.sort_order,
+      // 0027 的七個清單欄位。**照 EVENT_LIST_FIELDS 逐欄展開，不是把整個 lists 物件
+      // 攤進去** —— 攤進去的話，呼叫端多送一個不存在的 key 會安靜地跟著飛到 SQL 那邊，
+      // 而那支 RPC 對它不認得的 key 是完全沉默的。
+      //
+      // ⚠️ 沒給值的那幾欄**整個 key 都不放進去**（不是放一個 undefined 讓
+      //    JSON.stringify 順手丟掉）—— SQL 那邊的規則是「payload 沒帶這個 key ＝
+      //    這一欄不動」，那句話要在這裡就是字面上成立的，而不是靠序列化的副作用。
+      ...Object.fromEntries(
+        EVENT_LIST_FIELDS.filter((f) => input.lists?.[f] !== undefined).map((f) => [
+          f,
+          input.lists?.[f],
+        ]),
+      ),
     },
     product: product
       ? {
@@ -289,6 +352,40 @@ export async function countSessionsForEvent(eventId: string): Promise<number> {
 
   if (error) throw new Error(`[repo/events] countSessionsForEvent 失敗：${error.message}`);
   return count ?? 0;
+}
+
+/**
+ * 這場活動目前排了哪幾場場次，**最近一場排在最前面**。
+ *
+ * 活動頁組裝器要用它回答一個問題：「這場活動的地點是哪裡」。地點不是 events 的欄位
+ * （這個 schema 從 0001 起就沒有任何地址欄位），它是 **event_sessions.location** ——
+ * 也就是說一場活動可以有兩個梯次辦在兩個地方，而組裝器上那一塊只是**鏡子**，顯示
+ * 最近一場的地點，要改要去場次那一頁。
+ *
+ * 與 countSessionsForEvent() 同樣是兩跳（場次掛 products.id，不掛 events.id）。
+ * 沒有商品 = 沒有場次，回空陣列，不是錯誤。
+ */
+export async function listSessionsForEvent(eventId: string): Promise<EventSessionBrief[]> {
+  const { data: product, error: productError } = await supabaseAdmin()
+    .from("products")
+    .select("id")
+    .eq("source_type", "event")
+    .eq("source_id", eventId)
+    .maybeSingle();
+
+  if (productError) {
+    throw new Error(`[repo/events] listSessionsForEvent 找商品失敗：${productError.message}`);
+  }
+  if (!product) return [];
+
+  const { data, error } = await supabaseAdmin()
+    .from("event_sessions")
+    .select("id, title, location, starts_at, capacity, seats_taken, status")
+    .eq("product_id", (product as { id: string }).id)
+    .order("starts_at", { ascending: false });
+
+  if (error) throw new Error(`[repo/events] listSessionsForEvent 失敗：${error.message}`);
+  return (data ?? []) as unknown as EventSessionBrief[];
 }
 
 /**
