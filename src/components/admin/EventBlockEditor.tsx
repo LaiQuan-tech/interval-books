@@ -138,6 +138,23 @@ export function EventBlockEditor({
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EventBlockItem | null>(null);
+  /**
+   * 「有沒存的字，但使用者要切去編別的一列」時卡住的那個目標（"new" = 回到新增）。
+   *
+   * 🔴 沒有這一層的話，切換是**無條件 reset** —— 打了一半的字連同 isDirty 一起消失，
+   *    連 sticky bar 那句「有一段沒存」都一起沒了。那正是整頁（雷 1、離開守衛、
+   *    髒狀態登記簿）花那麼大力氣在防的同一件事，只是發生在編輯器**內部**，
+   *    外面那三層一層都罩不到。
+   */
+  const [switchTarget, setSwitchTarget] = useState<EventBlockItem | "new" | null>(null);
+
+  /**
+   * 正在編的那一列。**從 rows 查回來**，不是直接用 editingId ——
+   * 別的管理員把這一列刪掉之後，rows 裡就沒有它了，這時畫面會退回「新增」的樣子，
+   * 而送出時也必須跟著退回新增（下面 handleValid 用的是 editing?.id）。
+   * 兩者不一致的話，畫面寫著「新增這一列」，按下去卻是去 update 一個不存在的 id。
+   */
+  const editing = editingId == null ? null : (rows.find((r) => r.id === editingId) ?? null);
 
   /* 髒狀態往上報（組裝器的 dirty-sections 登記簿收）。編輯中的那一列也算 —— 使用者
      改了字卻沒按「儲存這一列」就離開，那些字一樣會消失。 */
@@ -151,34 +168,54 @@ export function EventBlockEditor({
     return () => onDirtyChange(false);
   }, [onDirtyChange]);
 
-  const startCreate = useCallback(() => {
-    setEditingId(null);
-    blockForm.reset(EMPTY_BLOCK);
-  }, [blockForm]);
-
-  const startEdit = useCallback(
-    (row: EventBlockItem) => {
-      setEditingId(row.id);
+  /** 真的切過去（reset 表單）。只有「確定要丟掉沒存的字」之後才走到這裡。 */
+  const applySwitch = useCallback(
+    (target: EventBlockItem | "new") => {
+      if (target === "new") {
+        setEditingId(null);
+        blockForm.reset(EMPTY_BLOCK);
+        return;
+      }
+      setEditingId(target.id);
       // reset（不是 setValue 三次）：reset 會把 isDirty 一起歸零，於是「剛點開編輯」
       // 不會被算成一段沒存的變更。
-      blockForm.reset({ title: { ...row.title }, body: { ...row.body } });
+      blockForm.reset({ title: { ...target.title }, body: { ...target.body } });
     },
     [blockForm],
+  );
+
+  /**
+   * 使用者按了「編輯」或「取消編輯」。
+   *
+   * 🔴 目前這一份**有沒存的字**就先問一次，不要直接 reset。
+   */
+  const requestSwitch = useCallback(
+    (target: EventBlockItem | "new") => {
+      if (blockForm.formState.isDirty) {
+        setSwitchTarget(target);
+        return;
+      }
+      applySwitch(target);
+    },
+    [applySwitch, blockForm],
   );
 
   async function handleValid(values: BlockFormShape) {
     setSubmitting(true);
     try {
       await upsertEventBlock({
+        // 🔴 送的是 editing?.id，不是 editingId —— 那一列可能已經被別人刪掉了，
+        //    而畫面在那種情況下顯示的就是「新增這一列」。程式做的事必須跟畫面
+        //    說的事一致，否則就是「按下去噴一個看不懂的錯誤」。
         data: {
-          id: editingId,
+          id: editing?.id ?? null,
           event_id: eventId,
           kind,
           title: values.title,
           body: values.body,
         },
       });
-      toast.success(editingId == null ? "已新增一列" : "已更新這一列");
+      toast.success(editing == null ? "已新增一列" : "已更新這一列");
       // 存完回到「新增」狀態：表單清空、isDirty 歸零。這不是 remount，rows 那一側
       // 的資料由 onChanged() 重新載入。
       setEditingId(null);
@@ -207,22 +244,27 @@ export function EventBlockEditor({
 
   async function handleDelete() {
     if (!deleteTarget) return;
-    setBusyId(deleteTarget.id);
+    const target = deleteTarget;
+    setBusyId(target.id);
     try {
-      await removeEventBlock({ data: { id: deleteTarget.id } });
-      // 正在編輯的就是被刪掉的那一列 → 回到新增狀態，否則下一次送出會去 update
-      // 一個已經不存在的 id。
-      if (editingId === deleteTarget.id) {
+      await removeEventBlock({ data: { id: target.id, event_id: eventId } });
+      toast.success("已刪除這一列");
+    } catch (err) {
+      // ⚠️ 這裡的錯誤有兩種，而它們**看起來一樣但意思相反**：DELETE 本身失敗
+      //    （那一列還在），或 DELETE 成功了但補號那一步失敗（那一列已經不見了，
+      //    只是剩下的 sort_order 留了一個洞）。repo 對後者丟的訊息會明講
+      //    「已經刪掉了」，所以這裡原樣顯示，不要蓋成一句「刪除失敗」。
+      toast.error(err instanceof Error ? err.message : "刪除失敗，請稍後再試");
+    } finally {
+      // 🔴 不論成敗都要重新載入。刪成功但補號失敗時，那一列**真的不見了** ——
+      //    這時如果不 refresh，畫面上還留著一列已經不存在的東西。
+      if (editingId === target.id) {
         setEditingId(null);
         blockForm.reset(EMPTY_BLOCK);
       }
       setDeleteTarget(null);
-      toast.success("已刪除這一列");
-      await onChanged();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "刪除失敗，請稍後再試");
-    } finally {
       setBusyId(null);
+      await onChanged();
     }
   }
 
@@ -263,8 +305,6 @@ export function EventBlockEditor({
       </p>
     );
   }
-
-  const editing = editingId == null ? null : (rows.find((r) => r.id === editingId) ?? null);
 
   return (
     <div className="space-y-4">
@@ -323,7 +363,7 @@ export function EventBlockEditor({
                   className="h-7 w-7"
                   aria-label="編輯"
                   disabled={busyId !== null}
-                  onClick={() => startEdit(row)}
+                  onClick={() => requestSwitch(row)}
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -366,7 +406,7 @@ export function EventBlockEditor({
                 variant="ghost"
                 size="sm"
                 className="h-auto gap-1.5 px-2 py-1 text-xs"
-                onClick={startCreate}
+                onClick={() => requestSwitch("new")}
               >
                 <X className="h-3.5 w-3.5" />
                 取消編輯
@@ -390,6 +430,33 @@ export function EventBlockEditor({
           </div>
         </form>
       </Form>
+
+      {/* 🔴 「有沒存的字還要切去編別的一列」的確認。沒有這一關，切換就是一次安靜的
+          資料流失，而且連 sticky bar 都不會再提醒（isDirty 一起被 reset 掉了）。 */}
+      <AlertDialog open={switchTarget !== null} onOpenChange={(o) => !o && setSwitchTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>這一列還有沒儲存的變更</AlertDialogTitle>
+            <AlertDialogDescription>
+              {switchTarget === "new"
+                ? "你正在編輯的內容還沒儲存。取消編輯就會失去這些變更。"
+                : "你正在編輯的內容還沒儲存。切去編別的一列就會失去這些變更。"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>留在這一列</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (switchTarget) applySwitch(switchTarget);
+                setSwitchTarget(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              放棄變更，切過去
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>

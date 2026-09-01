@@ -23,10 +23,16 @@
  * ── 連線段 ────────────────────────────────────────────────────────────────
  * [連線] 需要一個**本機**測試庫（已經套過 0001–0028）：
  *
- *   EVENT_BLOCK_EDITOR_SELFTEST_PG_URL=postgres:///alice_0028_test \
+ *   EVENT_BLOCK_EDITOR_SELFTEST_PG_URL=postgres:///alice_0028_fresh \
  *     node scripts/event-block-editor-selftest.mjs
  *
  * ⚠️ 永遠不碰正式庫。沒設那個變數就整段 skip（會印出來，不會靜悄悄消失）。
+ *
+ * ⚠️ 本機那顆 `alice_0028_test` **只套了一半的 0027**：event_blocks、七個欄位與
+ *    admin_reorder_event_blocks() 都在，但 admin_upsert_event_with_session() 還是
+ *    0027 之前的版本（不吃七個清單欄位）。這一支用不到那支函式所以照樣全綠，但
+ *    event-assembler-selftest 的 [連線] 段接那顆庫會紅。要跑整組請用
+ *    `alice_0028_fresh`。（這件事與 D4 無關，在 D3 的 commit 9423346 上就會紅。）
  *
  * 執行：node scripts/event-block-editor-selftest.mjs（或 npm test）
  */
@@ -339,10 +345,11 @@ console.log("\n[2] 巢狀 FormProvider（行為證明，內建突變測試）");
  * 第二次是第一次的突變測試：如果沒有它，「外層乾淨」在 Probe 根本沒打到字的時候
  * 也是綠的。
  *
- * ⚠️ react-dom/server 不跑 effect，而 react-hook-form 的 `_state.mount` 是在 effect
- *    裡被設成 true 的（沒 mount 的 getValues() 回 defaultValues 而不是現值）。所以
- *    下面手動把它切成 mounted 來模擬「元件已經掛上去了」，而且**先驗證這個模擬是有
- *    效的**（切之前讀不到、切之後讀得到），免得整段其實是在驗一個假的東西。
+ * ⚠️ 這一段**不碰任何 `_` 開頭的內部狀態**。react-dom/server 不跑 effect，早期版本
+ *    因此手動把 control._state.mount 切成 true 去模擬「元件掛上去了」—— 那是不必要的：
+ *    Probe 走 useController 註冊了那個欄位，而 react-hook-form 對**已註冊**的欄位，
+ *    getValues() 讀的就是現值，與 effect 有沒有跑無關。少一個對內部欄位的依賴，就少
+ *    一條「函式庫改版之後這一段安靜地不再驗任何東西」的路。
  */
 const { createElement: h } = await import("react");
 const { renderToStaticMarkup } = await import("react-dom/server");
@@ -367,32 +374,18 @@ function Tree({ nest }) {
   outerForm = rhf.useForm({ defaultValues: { title: { zh: OUTER_TITLE }, slug: "an-event" } });
   innerForm = rhf.useForm({ defaultValues: { title: { zh: "" }, body: { zh: "" } } });
   const probe = h(Probe, null);
-  // 產線上這一層是 <Form {...blockForm}>，而 src/components/ui/form.tsx 的
-  // `const Form = FormProvider` —— 同一個東西。
+  // 產線上這一層寫的是 <Form {...blockForm}>，而那個 Form 就是 FormProvider ——
+  // 這句話**下面有斷言在守**（[3] 的「Form 真的就是 FormProvider」），不是註解自稱。
   return h(rhf.FormProvider, outerForm, nest ? h(rhf.FormProvider, innerForm, probe) : probe);
 }
 
 function runTyping(nest) {
   renderToStaticMarkup(h(Tree, { nest }));
-  const mountable = Boolean(outerForm.control?._state && innerForm.control?._state);
-  const beforeMount = JSON.stringify(outerForm.getValues());
-  outerForm.control._state.mount = true;
-  innerForm.control._state.mount = true;
-  probeField.onChange(TYPED); // ← 使用者打字時跑的就是這一行
-  return {
-    mountable,
-    beforeMount,
-    outer: outerForm.getValues(),
-    inner: innerForm.getValues(),
-  };
+  probeField.onChange(TYPED); // ← 使用者在輸入框裡打字時，跑的就是這一行
+  return { outer: outerForm.getValues(), inner: innerForm.getValues() };
 }
 
 const nested = runTyping(true);
-checkTrue(
-  "先確認這個模擬是有效的（兩個表單都切得到 mounted 狀態）",
-  nested.mountable,
-  "react-hook-form 的 control._state 不見了 —— 下面整段都會變成在驗一個假的東西",
-);
 check("🔴 有內層 FormProvider 時，打的字進的是**區塊**表單", nested.inner.title.zh, TYPED);
 check(
   "🔴 而主表單的 getValues() **完全沒有**區塊的字（驗收條件本人）",
@@ -436,6 +429,64 @@ walkAst(editorAst.program, (n) => {
   if (n.type === "JSXElement" && jsxName(n) === "Form") formProviders.push(n);
 });
 check("🔴 而且真的有一個 <Form>（＝FormProvider）把它擴散出去", formProviders.length, 1);
+
+/* ── 🔴 「<Form> 就是 FormProvider」這件事本身也要有斷言 ─────────────────────
+   整條證據鏈是：[2] 用 rhf.FormProvider 證明巢狀會遮蔽 → [3] 用 AST 證明產線元件
+   把 LocalizedField 包在一個叫 `Form` 的元素底下。**中間那個等號**（Form ===
+   FormProvider）如果只寫在註解裡，那 src/components/ui/form.tsx 把 Form 換成一個
+   不提供 context 的殼之後，這一整套斷言會全部照樣綠 —— 而那正是 D4 全篇在防的那個
+   bug 回來的樣子。（獨立驗收跑過這個突變，確實存活。）
+
+   ⚠️ 那個檔案有 JSX，Node 這一側 import 不進來，所以用 AST。而且**路徑是從編輯器
+      自己的 import 解出來的**，不是寫死 "@/components/ui/form" —— 元件搬家時這條要
+      跟著走，不是靜默失去覆蓋。 */
+let formImportSpec = null;
+walkAst(editorAst.program, (n) => {
+  if (n.type !== "ImportDeclaration") return;
+  const named = n.specifiers.some(
+    (sp) => sp.type === "ImportSpecifier" && sp.imported?.name === "Form",
+  );
+  if (named) formImportSpec = n.source.value;
+});
+checkTrue("區塊編輯器的 Form 是 import 進來的（找得到來源模組）", formImportSpec !== null);
+
+function resolveAlias(spec) {
+  if (!spec?.startsWith("@/")) return null;
+  const base = join(ROOT, "src", spec.slice(2));
+  for (const cand of [`${base}.tsx`, `${base}.ts`, base]) {
+    if (existsSync(cand)) return cand;
+  }
+  return null;
+}
+const formModulePath = resolveAlias(formImportSpec);
+checkTrue(`Form 的來源模組解析得到（${formImportSpec}）`, formModulePath !== null);
+
+if (formModulePath) {
+  const formSrc = readFile(formModulePath);
+  const formAst = parseTsx(formSrc, relative(ROOT, formModulePath));
+  // (a) `const Form = <某個識別字>` —— 那個識別字是誰？
+  let formAliasOf = null;
+  walkAst(formAst.program, (n) => {
+    if (n.type !== "VariableDeclarator") return;
+    if (n.id?.type !== "Identifier" || n.id.name !== "Form") return;
+    if (n.init?.type === "Identifier") formAliasOf = n.init.name;
+  });
+  check("🔴 Form 就是 FormProvider 的別名（不是一個包了一層的殼）", formAliasOf, "FormProvider");
+  // (b) 而那個 FormProvider 真的是 react-hook-form 的那一個。
+  let providerFrom = null;
+  walkAst(formAst.program, (n) => {
+    if (n.type !== "ImportDeclaration") return;
+    const hit = n.specifiers.some(
+      (sp) => sp.type === "ImportSpecifier" && sp.imported?.name === "FormProvider",
+    );
+    if (hit) providerFrom = n.source.value;
+  });
+  check(
+    "🔴 而那個 FormProvider 來自 react-hook-form（＝[2] 段驗的那一個）",
+    providerFrom,
+    "react-hook-form",
+  );
+}
 check(
   "🔴 <Form> 擴散的就是那個 useForm 的結果（不是主表單、不是別的東西）",
   formProviders.flatMap(jsxSpreadNames),
@@ -664,6 +715,95 @@ walkAst(editorAst.program, (n) => {
 });
 check("🔴 每一列的 key 就是 row.id", listKeys, ["id"]);
 
+/* ── 編輯器**內部**也不准安靜丟掉字 ────────────────────────────────────────
+   外面那三層（雷 1 不 remount、離開守衛、髒狀態登記簿）罩的是「離開這一頁」與
+   「主儲存」。但在同一個編輯器裡從 A 列切去 B 列，是一次純粹的 client 狀態變更 ——
+   三層一層都碰不到它。無條件 reset 的話，打了一半的字連同 isDirty 一起消失，
+   連 sticky bar 那句「有一段沒存」都不會再提醒。 */
+function findFn(ast, name) {
+  let hit = null;
+  walkAst(ast.program, (n) => {
+    if (n.type === "FunctionDeclaration" && n.id?.name === name) hit = n;
+    if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.id.name === name) {
+      hit = n.init ?? hit;
+    }
+  });
+  return hit;
+}
+function subtreeHas(node, pred) {
+  let hit = false;
+  walkAst(node, (n) => {
+    if (pred(n)) hit = true;
+  });
+  return hit;
+}
+
+const requestSwitchFn = findFn(editorAst, "requestSwitch");
+checkTrue("（對照組）找得到切換那一支", requestSwitchFn !== null);
+if (requestSwitchFn) {
+  checkTrue(
+    "🔴 切去編別的一列之前會先看目前這一份髒不髒",
+    subtreeHas(
+      requestSwitchFn,
+      (n) => n.type === "MemberExpression" && n.property?.name === "isDirty",
+    ),
+  );
+  checkTrue(
+    "🔴 髒的時候是先停下來問（setSwitchTarget），不是直接 reset",
+    subtreeHas(
+      requestSwitchFn,
+      (n) => n.type === "CallExpression" && n.callee?.name === "setSwitchTarget",
+    ),
+  );
+}
+
+/* 送出的 id 必須跟畫面說的一致。`editingId` 是 state，`editing` 是從 rows 查回來的 ——
+   別人把那一列刪掉之後兩者會分岔，而畫面顯示的是後者。送 editingId 的話會變成
+   「畫面寫著新增這一列，按下去卻去 update 一個不存在的 id」。 */
+const handleValidFn = findFn(editorAst, "handleValid");
+checkTrue("（對照組）找得到送出那一支", handleValidFn !== null);
+if (handleValidFn) {
+  let idValue = null;
+  walkAst(handleValidFn, (n) => {
+    if (n.type !== "CallExpression" || n.callee?.name !== "upsertEventBlock") return;
+    const dataProp = (n.arguments[0]?.properties ?? []).find((p) => p.key?.name === "data");
+    const idProp = (dataProp?.value?.properties ?? []).find((p) => p.key?.name === "id");
+    if (idProp) idValue = idProp.value;
+  });
+  checkTrue("（對照組）找得到送出去的 id", idValue !== null);
+  checkTrue(
+    "🔴 送出的 id 來自 editing（畫面上那一列），不是 editingId（可能已經不存在）",
+    idValue !== null &&
+      subtreeHas(idValue, (n) => n.type === "Identifier" && n.name === "editing") &&
+      !subtreeHas(idValue, (n) => n.type === "Identifier" && n.name === "editingId"),
+  );
+}
+
+/* 刪除**成功但補號失敗**時，那一列已經不見了。這時不 refresh 的話，畫面上會留著一列
+   已經不存在的東西，而使用者剛看到一句錯誤訊息 —— 他會以為東西還在。 */
+const handleDeleteFn = findFn(editorAst, "handleDelete");
+checkTrue("（對照組）找得到刪除那一支", handleDeleteFn !== null);
+if (handleDeleteFn) {
+  let finallyRefreshes = false;
+  walkAst(handleDeleteFn, (n) => {
+    if (n.type !== "TryStatement" || !n.finalizer) return;
+    if (
+      subtreeHas(n.finalizer, (m) => m.type === "CallExpression" && m.callee?.name === "onChanged")
+    ) {
+      finallyRefreshes = true;
+    }
+  });
+  checkTrue(
+    "🔴 刪除不論成敗都會重新載入（刪成功但補號失敗時，那一列是真的不見了）",
+    finallyRefreshes,
+  );
+}
+// repo 那一側：補號失敗的訊息要講清楚「已經刪掉了」，不可以說成「刪除失敗」。
+checkTrue(
+  "🔴 補號失敗時的訊息明講那一列已經刪掉了（不是一句誤導的「刪除失敗」）",
+  /已經刪掉了/.test(removeFn),
+);
+
 // =============================================================================
 // [6] 髒狀態：三段各自報，沒有髒東西時一個字都不出現
 // =============================================================================
@@ -821,6 +961,46 @@ checkTrue(
   "🔴 §3 指得出去哪裡改（MirrorNote 連到 /admin/registrations）",
   /to="\/admin\/registrations"/.test(assemblerSrc),
 );
+
+/* ── 真正能從這一頁寫到 event_sessions 的那條路 ─────────────────────────────
+   上面幾條只掃了組裝器與編輯器兩個檔的原始碼。但這一頁的儲存走的是
+   admin_upsert_event_with_session()，而那支 RPC **有一個 session 分支**（0020／0026）：
+   payload 裡只要多一個 `session` key，這一頁立刻就寫得到場次，而上面那幾條會全部
+   照樣綠。所以真正要釘的是**送進那支 RPC 的 payload 長什麼樣**。
+
+   （獨立驗收追過現況：payload 只有 event / product 兩個 key。這裡把它變成一條斷言，
+   免得下一個人順手加一個 session 進去。） */
+const rpcCallers = [];
+for (const abs of SRC_FILES) {
+  const rel = relative(ROOT, abs);
+  const ast = parseTsx(readFileSync(abs, "utf8"), rel);
+  walkAst(ast.program, (n) => {
+    if (n.type !== "CallExpression" || n.callee?.type !== "MemberExpression") return;
+    if (n.callee.property?.name !== "rpc") return;
+    const a0 = n.arguments[0];
+    if (a0?.type === "StringLiteral" && a0.value === "admin_upsert_event_with_session") {
+      rpcCallers.push(abs);
+    }
+  });
+}
+check("送 admin_upsert_event_with_session 的地方剛好一處", rpcCallers.length, 1);
+if (rpcCallers.length === 1) {
+  const callerRel = relative(ROOT, rpcCallers[0]);
+  const callerAst = parseTsx(readFileSync(rpcCallers[0], "utf8"), callerRel);
+  let payloadKeys = null;
+  walkAst(callerAst.program, (n) => {
+    if (n.type !== "VariableDeclarator") return;
+    if (n.id?.type !== "Identifier" || n.id.name !== "payload") return;
+    if (n.init?.type !== "ObjectExpression") return;
+    payloadKeys = n.init.properties.map((pr) => pr.key?.name ?? "(spread)").sort();
+  });
+  checkTrue(`（對照組）在 ${callerRel} 找得到那個 payload`, payloadKeys !== null);
+  check(
+    "🔴 payload 只有 event 與 product —— 沒有 session（有的話這一頁就寫得到場次名額）",
+    payloadKeys,
+    ["event", "product"],
+  );
+}
 checkTrue(
   "🔴 而且畫面上講出「名額改不動」的理由，不是只寫在註解裡",
   /名額（seats_taken）由報名流程在資料庫裡維護，這一頁\*\*改不動\*\*/.test(assemblerSrc) ||

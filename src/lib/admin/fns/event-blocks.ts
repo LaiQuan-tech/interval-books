@@ -34,10 +34,10 @@ export const upsertEventBlock = createServerFn({ method: "POST" })
  */
 export const removeEventBlock = createServerFn({ method: "POST" })
   .middleware([adminFnMiddleware])
-  .inputValidator(z.object({ id: z.number().int() }))
+  .inputValidator(z.object({ id: z.number().int(), event_id: z.string().trim().min(1) }))
   .handler(async ({ data }) => {
     const { removeEventBlock } = await import("@/server/repos/event-blocks");
-    await removeEventBlock(data.id);
+    await removeEventBlock(data.id, data.event_id);
     return { ok: true };
   });
 

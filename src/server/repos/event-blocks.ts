@@ -105,6 +105,11 @@ export async function upsertEventBlock(input: EventBlockUpsertInput): Promise<Ev
       .from("event_blocks")
       .update({ title: input.title, body: input.body })
       .eq("id", input.id)
+      // ⚠️ 用 (event_id, kind) 一起收斂，不是只信 id。這不是權限問題（這條路
+      //    已經在 adminFnMiddleware 後面了），是「呼叫端送錯 id 時要撞不到東西，
+      //    而不是安靜地改到別場活動的段落」。
+      .eq("event_id", input.event_id)
+      .eq("kind", input.kind)
       .select(COLUMNS)
       .single();
 
@@ -143,13 +148,15 @@ export async function upsertEventBlock(input: EventBlockUpsertInput): Promise<Ev
  *    這個差別正是排序不准搬到 client 的理由；把它寫在這裡，是為了讓下一個想「順手
  *    把重新編號也拆成幾個 UPDATE」的人先讀到。
  */
-export async function removeEventBlock(id: number): Promise<void> {
+export async function removeEventBlock(id: number, eventId: string): Promise<void> {
   // 一個來回同時做到「刪掉」與「知道它屬於哪一組」。先查再刪會多一個來回，而且
   // 中間那一瞬間別人可能已經刪了它。
   const { data, error } = await supabaseAdmin()
     .from("event_blocks")
     .delete()
     .eq("id", id)
+    // 與 update 分支同一條規則：不要只信 id。
+    .eq("event_id", eventId)
     .select("event_id, kind")
     .maybeSingle();
 
@@ -162,7 +169,18 @@ export async function removeEventBlock(id: number): Promise<void> {
   const ids = remaining.filter((b) => b.kind === kind).map((b) => b.id);
   if (ids.length === 0) return;
 
-  await reorderEventBlocks(event_id, kind, ids);
+  try {
+    await reorderEventBlocks(event_id, kind, ids);
+  } catch (err) {
+    /* 🔴 到這裡為止，那一列**已經被刪掉了**。所以這個錯誤訊息絕對不可以說成
+       「刪除失敗」—— 那會讓店家以為東西還在，然後再按一次、再看一次同樣的紅字。
+       這裡把「刪掉了」與「補號沒做完」兩件事分開講，呼叫端原樣顯示。 */
+    throw new Error(
+      "[repo/event-blocks] 這一列已經刪掉了，但補號沒做完：剩下的排序會留一個號碼上的洞" +
+        "（不影響顯示順序，下一次刪除或上下移就會補平）。" +
+        `原始錯誤：${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 /**
