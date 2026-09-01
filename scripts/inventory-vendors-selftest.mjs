@@ -221,10 +221,15 @@ check(
   migFiles.some((f) => f.startsWith("0025_")),
   true,
 );
+// 0026_event_product_link.sql（活動與商品的真連結：events.slug / events.image_key、
+// products 對活動來源的唯一索引、admin_upsert_event_with_session()）是這一期加的。
+// 它只碰 public.events / public.products / public.event_sessions，**inv 的任何一張表、
+// 任何一支函式都沒有被碰到**，也沒有任何 drop。下面的斷言全部原樣成立。
+// 0026 自己的內容由 event-product-selftest 驗。
 check(
-  "沒有多出 0026（0025 是最後一號）",
+  "0026 在（活動與商品的真連結）",
   migFiles.some((f) => f.startsWith("0026_")),
-  false,
+  true,
 );
 
 // ── 0021 真的回來重讀 §1 了，而且它動了那兩條 CHECK ──────────────────────

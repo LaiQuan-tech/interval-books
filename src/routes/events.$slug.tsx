@@ -6,7 +6,7 @@ import { useT } from "@/i18n/LanguageContext";
 import type { Localized } from "@/i18n/types";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { fetchEventBySlug, fetchEventCategories } from "@/lib/cms";
-import { fetchActiveProductForEvent } from "@/lib/shop";
+import { fetchActiveProductForEventSlug } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
 
 /**
@@ -16,15 +16,24 @@ import { useSiteContent } from "@/lib/site-content";
  * /events 從第一天起就是一個列表，每一則點下去是開一個**外部**連結。也就是說
  * 店家辦一場講座，這個站上沒有任何一頁在講那場講座是什麼。這一頁就是那一頁。
  *
- * ── 網址為什麼是 events.id ─────────────────────────────────────────────────
- * public.events 沒有 slug 欄位。理由與回填計畫寫在 src/lib/cms.ts#fetchEventBySlug
- * 的檔頭 —— 重點是**今天發出去的網址在補上 slug 欄位之後仍然有效**，所以路由參數
- * 從一開始就叫 $slug，不叫 $id。
+ * ── 網址現在真的是 events.slug ─────────────────────────────────────────────
+ * 這一頁上線時 public.events 還沒有 slug 欄位，網址吃的是 events.id；路由參數之所以
+ * 從一開始就叫 $slug 而不叫 $id，就是為了這一天。0026 加上 events.slug 並且用
+ * `slug = id` 回填，所以**在那之前發出去的每一個網址仍然指到同一場活動**。
  *
- * ── 沒有封面圖是刻意的 ─────────────────────────────────────────────────────
- * events 沒有 image_key。imageFor(key, fallback) 永遠會回一張圖，所以隨手帶一個
- * 不存在的 key 進去，得到的不是「沒有封面」而是一個假的灰框佔位 —— 每一場活動
- * 都長一樣的那張。寧可沒有。
+ * ⚠️ 反過來說，從 0026 起「在後台改代稱」就等於「讓已經發出去的那個網址 404」——
+ *    因為這一頁對查無此活動是真的回 404（見下面第三段）。那句警告寫在 0026 的檔頭
+ *    與後台 slug 欄位的說明文字上。
+ *
+ * ── 這一頁仍然不畫封面圖 ───────────────────────────────────────────────────
+ * 原本的理由是 events 根本沒有 image_key。0026 加了那一欄，但這一頁的結論沒變：
+ * imageFor(key, fallback) 永遠會回一張圖，所以對「還沒設圖」的活動渲染封面，
+ * 得到的不是「沒有封面」而是一個假的灰框佔位 —— 每一場都長一樣的那張。寧可沒有。
+ *
+ * events.image_key 這一期**不是**一個沒有讀者的欄位（那正是 0020 §1 警告過的事）：
+ * 後台表單寫它，而 0026 的 admin_upsert_event_with_session() 把它投影到
+ * products.image_key，商店那一側是有在畫的。要在這一頁畫封面，是等有一張像樣的
+ * 預設圖之後的另一個決定。
  *
  * ── 三種讀取結果是三件事 ───────────────────────────────────────────────────
  *   查無此活動（或未發布）  → notFound()，真的 404
@@ -87,11 +96,16 @@ export const Route = createFileRoute("/events/$slug")({
     if (!event && !unavailable) throw notFound();
 
     // 場次（0020 的 event_sessions）掛的是 products.id，不是 events.id，所以要先
-    // 找到這場活動賣出去的那件商品。刻意等 event 回來再用 event.id 問，而不是拿
-    // params.slug 直接問：今天 slug === id，補上 events.slug 之後就不再相等，
-    // 那時這一行會安靜地查錯東西。
+    // 找到這場活動賣出去的那件商品。0026 之後這條反查走的是 products.slug
+    // （= event-<events.slug>）這條唯一索引上的真連結，不再是 (source_type,
+    // source_id) 加 limit(1)。
+    //
+    // ⚠️ 刻意等 event 回來再用 **event.slug** 問，不是拿 params.slug 直接問。
+    //    兩者今天一定相等（DB 就是這樣查到這一列的），但拿回傳的那一列當權威，
+    //    這一行就不會因為之後多了一層網址正規化（大小寫、尾斜線、舊網址轉址）而
+    //    安靜地查錯東西。
     const booking = event
-      ? await fetchActiveProductForEvent(event.id)
+      ? await fetchActiveProductForEventSlug(event.slug)
       : { product: null, unavailable: false };
 
     return { event, unavailable, categories, booking };

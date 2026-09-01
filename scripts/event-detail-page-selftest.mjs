@@ -213,13 +213,17 @@ checkFalse("沒有走會吞掉錯誤的 select() helper", /await select\(/.test(
 console.log("\n[4] 不 select 不存在的欄位");
 // 這個 repo 剛因為 select 了一個還沒套上正式庫的欄位（0025 的 speaker_id）
 // 把整個活動後台弄掛 —— PostgREST 對此回 42703，整頁 500。
-const selectMatch = /\.select\("([^"]*)"\)/.exec(bySlugBody);
+// ⚠️ 正則要容忍換行與尾逗號：這個 select 字串加上 slug 之後超過 printWidth=100，
+// prettier 會把它折成 `.select(\n  "…",\n)`。原本寫死 `.select("…")` 的版本會在那
+// 一刻抓不到東西 —— 而抓不到的下場不是紅，是下面整組欄位斷言**一條都不跑**。
+const selectMatch = /\.select\(\s*"([^"]*)"\s*,?\s*\)/.exec(bySlugBody);
 checkTrue("找得到 fetchEventBySlug 的 select 字串", Boolean(selectMatch));
 const selectedCols = (selectMatch?.[1] ?? "")
   .split(",")
   .map((c) => c.trim())
   .filter(Boolean);
-// 正式庫 public.events 的欄位全集（0001 的 14 欄 + 0025 的 speaker_id）。
+// 正式庫 public.events 的欄位全集（0001 的 14 欄 + 0025 的 speaker_id
+// + 0026 的 slug / image_key）。
 const EVENT_COLUMNS = new Set([
   "id",
   "title",
@@ -236,27 +240,33 @@ const EVENT_COLUMNS = new Set([
   "created_at",
   "updated_at",
   "speaker_id",
+  "slug",
+  "image_key",
 ]);
 checkTrue("select 不是空的", selectedCols.length >= 6);
 for (const col of selectedCols) {
   checkTrue(`select 的 "${col}" 是 events 真的有的欄位`, EVENT_COLUMNS.has(col));
 }
-// 這四個是最可能被想當然耳寫進去的：前兩個**根本不存在**，後兩個存在但
-// 0025 還沒套上正式庫 / 這一期沒有人讀。
-for (const ghost of ["slug", "image_key", "speaker_id", "payment_enabled"]) {
+// slug 從 0026 起是**必須**選出來的：詳情頁要拿它去反查商品
+// （products.slug = event-<events.slug>）。少了它，那條反查只能退回 params.slug，
+// 而那正是「網址正規化之後安靜查錯東西」的入口。
+checkTrue("select 有帶到 slug（0026 之後這一頁靠它反查商品）", selectedCols.includes("slug"));
+// 這三個是最可能被想當然耳寫進去的：image_key 與 speaker_id 存在但這一頁不讀，
+// payment_enabled 從 0001 就存在而五期以來沒有任何路由讀它。
+for (const ghost of ["image_key", "speaker_id", "payment_enabled"]) {
   check(`select 沒有帶到 ${ghost}`, selectedCols.includes(ghost), false);
 }
-// 網址吃的是 id，不是一個還不存在的 slug 欄位。
-checkTrue('查詢條件是 .eq("id", slug)', /\.eq\("id", slug\)/.test(bySlugBody));
-checkFalse('沒有寫成 .eq("slug", slug)', /\.eq\("slug", slug\)/.test(bySlugBody));
+// 網址吃的是 events.slug（0026 回填成 id，所以舊網址仍然有效）。
+checkTrue('查詢條件是 .eq("slug", slug)', /\.eq\("slug", slug\)/.test(bySlugBody));
+checkFalse('沒有留著舊的 .eq("id", slug)', /\.eq\("id", slug\)/.test(bySlugBody));
 
 // =============================================================================
 // [5] 沒有封面圖是刻意的
 // =============================================================================
 console.log("\n[5] 不呼叫 imageFor()");
-// events 沒有 image_key，而 imageFor(key, fallback) **永遠**會回一張圖 ——
-// 隨手帶一個不存在的 key 進去，得到的不是「沒有封面」，是每一場活動都長一樣的
-// 灰框佔位。
+// 0026 之後 events **有** image_key 了，但這一頁的結論沒變：imageFor(key, fallback)
+// **永遠**會回一張圖，所以對「還沒設圖」的活動渲染封面，得到的不是「沒有封面」，
+// 是每一場活動都長一樣的灰框佔位。
 checkFalse("路由沒有呼叫 imageFor()", /imageFor\(/.test(detailCode));
 checkFalse("路由連 imageFor 都沒有 import", /from "@\/lib\/images"/.test(detailCode));
 checkFalse("路由沒有 import 任何 @/assets 圖片", /from "@\/assets\//.test(detailCode));
@@ -321,27 +331,40 @@ checkTrue(
   "external_url 是空字串時也不生一個空連結",
   /return href \? \{ kind: "external", href \} : \{ kind: "closed" \};/.test(detailCode),
 );
-// 商品要透過 (source_type, source_id) 找 —— 0004 就定義好、也是唯一存在的連結。
+// 商品反查走 products.slug（= event-<events.slug>）這條真連結。
+//
+// 0026 之前這裡是 (source_type='event', source_id=events.id) 加 `.limit(1)`：能用，
+// 但資料庫不保證一場活動只有一件商品，所以「賣哪一件」取決於排序運氣。0026 給了
+// products.slug 這條唯一索引上的等值查詢，就沒有「取第一件」這回事了。
 checkTrue(
-  "shop.ts 有 fetchActiveProductForEvent",
-  /export async function fetchActiveProductForEvent/.test(shopCode),
+  "shop.ts 有 fetchActiveProductForEventSlug",
+  /export async function fetchActiveProductForEventSlug/.test(shopCode),
 );
-const forEventBody = stripTs(fnBody(readFile("src/lib/shop.ts"), "fetchActiveProductForEvent"));
-checkTrue("切得出 fetchActiveProductForEvent 的本體", forEventBody.length > 300);
-checkTrue('用 source_type = "event" 過濾', /\.eq\("source_type", "event"\)/.test(forEventBody));
-checkTrue("用 source_id 對上 events.id", /\.eq\("source_id", eventId\)/.test(forEventBody));
-checkTrue("只拿上架中的商品", /\.eq\("status", "active"\)/.test(forEventBody));
-// 同一場活動被建成兩件商品是資料錯誤，但不該讓公開頁整頁掛掉。
-checkTrue("重複資料用 limit(1) 而不是 maybeSingle()", /\.limit\(1\)/.test(forEventBody));
-checkFalse("沒有用 maybeSingle()", /maybeSingle\(\)/.test(forEventBody));
-// 用 event.id 問，不是拿 params.slug 直接問 —— 今天兩者相等，補上 events.slug 之後就不是。
+// 它委派給 fetchActiveProductBySlug()，所以真正要驗的查詢形狀在後者身上。
+const bySlugProductBody = stripTs(fnBody(readFile("src/lib/shop.ts"), "fetchActiveProductBySlug"));
+checkTrue("切得出 fetchActiveProductBySlug 的本體", bySlugProductBody.length > 300);
+checkTrue("用 products.slug 等值查詢", /\.eq\("slug", slug\)/.test(bySlugProductBody));
+const forEventSlugBody = stripTs(
+  fnBody(readFile("src/lib/shop.ts"), "fetchActiveProductForEventSlug"),
+);
 checkTrue(
-  "loader 用 event.id 去找商品",
-  /fetchActiveProductForEvent\(event\.id\)/.test(detailCode),
+  "反查走 eventProductSlug()，不是就地拼字串",
+  /fetchActiveProductBySlug\(eventProductSlug\(eventSlug\)\)/.test(forEventSlugBody),
+);
+checkTrue("只拿上架中的商品", /\.eq\("status", "active"\)/.test(bySlugProductBody));
+// products.slug 有唯一索引（0004），所以這裡 maybeSingle() 才是對的形狀 ——
+// limit(1) 的意思是「可能有很多列，取第一列」，那已經不再成立。
+checkTrue("唯一索引上的查詢用 maybeSingle()", /maybeSingle\(\)/.test(bySlugProductBody));
+checkFalse("沒有留著 limit(1)", /\.limit\(1\)/.test(bySlugProductBody));
+// 用回傳那一列的 event.slug 問，不是拿 params.slug 直接問：兩者今天一定相等，但
+// 拿 DB 回傳的那一列當權威，之後多一層網址正規化也不會安靜查錯東西。
+checkTrue(
+  "loader 用 event.slug 去找商品",
+  /fetchActiveProductForEventSlug\(event\.slug\)/.test(detailCode),
 );
 checkFalse(
   "沒有拿 params.slug 直接找商品",
-  /fetchActiveProductForEvent\(params\.slug\)/.test(detailCode),
+  /fetchActiveProductForEventSlug\(params\.slug\)/.test(detailCode),
 );
 
 // =============================================================================
@@ -396,23 +419,35 @@ checkTrue(
 // =============================================================================
 console.log("\n[10] 入口與禁區");
 checkTrue("列表頁連到 /events/$slug", /to="\/events\/\$slug"/.test(indexCode));
-checkTrue("列表頁帶的是 events.id", /params=\{\{ slug: e\.id \}\}/.test(indexCode));
+// 🔴 列表頁必須帶 **e.slug**，不是 e.id。0026 之前兩者永遠相等，所以帶 id 是對的；
+// 0026 之後代稱可以被改掉，那一刻起用 id 連出去的每一條連結都會 404，而且是站內
+// 自己連出去的 404 —— 比外部連結失效更難發現，因為沒有人會回報自家列表頁。
+checkTrue("列表頁帶的是 events.slug（不是 id）", /params=\{\{ slug: e\.slug \}\}/.test(indexCode));
+checkFalse("列表頁沒有留著 slug: e.id", /params=\{\{ slug: e\.id \}\}/.test(indexCode));
 checkTrue("列表頁仍保留外部連結", /href=\{e\.externalUrl\}/.test(indexCode));
 
 const migrations = readdirSync(join(ROOT, "supabase/migrations"))
   .filter((f) => f.endsWith(".sql"))
   .sort();
-// 這一期完全不動資料庫：0024／0025 都還沒能套上正式庫，不要再疊第三支。
-check("migration 仍然是 25 支", migrations.length, 25);
-check("最後一支仍是 0025", migrations[24], "0025_event_speaker.sql");
-// src/server/repos/events.ts 的 speaker fallback 是過渡程式碼，有 artists-selftest
-// 守著，這一期一個字都不准動。
-const repoCode = readFile("src/server/repos/events.ts");
-checkTrue("repos/events.ts 的 speaker fallback 還在", /speakerColumnPresent/.test(repoCode));
-checkTrue(
-  "repos/events.ts 的 COLUMNS_BASE 還在",
-  /const COLUMNS_BASE = COLUMNS\.replace/.test(repoCode),
+// 這兩條原本是「這一期完全不動資料庫」的凍結宣告（0024／0025 當時都還沒套上正式庫）。
+// 0026 這一期就是來動資料庫的，所以凍結解除 —— 但**不是刪掉**，而是換成兩條不會過期的
+// 結構斷言：編號連續（有人同時開兩支 0026 會抓到）、而且沒有人回頭改 0025。
+const migNums = migrations.map((f) => Number(f.slice(0, 4)));
+check(
+  "migration 編號從 0001 起連續、不重複",
+  migNums.join(","),
+  migNums.map((_, i) => i + 1).join(","),
 );
+checkTrue(
+  "0025_event_speaker.sql 還在原位（沒有人回頭改編號）",
+  migrations[24] === "0025_event_speaker.sql",
+);
+// src/server/repos/events.ts 那套「欄位不存在就降級」的過渡程式碼在 0026 這一期
+// 刪掉了（0025 已經套上正式庫）。這兩條反過來守它**不會被複製回來** —— 降級路徑
+// 會把「migration 沒套上」變成一個安靜的次等狀態，而安靜正是上一次沒人發現的原因。
+const repoCode = readFile("src/server/repos/events.ts");
+checkFalse("repos/events.ts 沒有 speaker 降級旗標了", /speakerColumnPresent/.test(repoCode));
+checkFalse("repos/events.ts 沒有 COLUMNS_BASE 了", /COLUMNS_BASE/.test(repoCode));
 
 // -----------------------------------------------------------------------------
 // 收尾

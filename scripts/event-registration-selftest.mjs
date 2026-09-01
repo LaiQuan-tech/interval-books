@@ -179,7 +179,19 @@ const migrations = existsSync(join(ROOT, "supabase/migrations"))
 // 是這一期加的。它只在 public.events 上加一欄與一個索引，沒有碰
 // event_sessions / event_registrations / order_items 任何一張表或任何一支函式，
 // 所以下面每一條 0020 的斷言原樣成立。0025 自己的內容由 artists-selftest 驗。
-check("migrations 共 25 支", migrations.length, 25);
+// 0026_event_product_link.sql（活動與商品的真連結）是這一期加的。
+// ⚠️ 它是這幾期以來**第一支真的會寫 public.event_sessions 的新 migration**
+//    （admin_upsert_event_with_session() 可以建／改一場梯次），所以這裡不能只寫
+//    「沒碰到」就過去。實際的界線是：
+//      · 它寫 title / location / starts_at / ends_at / capacity / status / sort_order，
+//      · **它永遠不寫 seats_taken**，也不寫 event_registrations 一列，
+//      · 它沒有動這兩張表的欄位形狀、CHECK、外鍵或 grant，
+//      · reserve_session_seat / release_session_seat / expire_unpaid_orders 三支
+//        一個字都沒改。
+//    所以「佔了 N 個位子」與「有 N 位參加者」是同一句 SQL 的兩個面向這個不變量
+//    原封不動，下面每一條 0020 的斷言原樣成立。0026 自己的內容由
+//    event-product-selftest 驗（含一條「RPC 的 update 不准出現 seats_taken」）。
+check("migrations 共 26 支", migrations.length, 26);
 check("0020 仍在原位", migrations[19], "0020_event_sessions_registrations.sql");
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
 check("0023 仍在原位", migrations[22], "0023_fix_cron_guard.sql");

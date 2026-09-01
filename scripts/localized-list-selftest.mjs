@@ -653,17 +653,30 @@ checkTrue(
 checkTrue("寫進去的兩個值有 shouldDirty", (fieldSrc.match(/shouldDirty: true/g) ?? []).length >= 4);
 
 // =============================================================================
-// [8] 沒有新 migration（D2 的硬性禁止）
+// [8] 最新的 migration 是哪一支
 // =============================================================================
-console.log("\n[8] 沒有新 migration");
+console.log("\n[8] migration 編號");
 
+// 這裡原本是「D2 這一期不准新增 migration」的凍結宣告（0024／0025 當時都還沒能套上
+// 正式庫，不該再疊第三支）。那個凍結在 0026 這一期解除了。
+//
+// 留下的是同一條斷言的另一半用途：**它是一個提醒**。這一支驗的是三語清單欄位
+// （jsonb {"zh":[…],"en":[…],"ja":[…]}）與它的表單／送出兩段 schema，而任何一支新
+// migration 都可能改到那個 jsonb 的形狀。所以新增 migration 的人一定會在這裡紅一次，
+// 被迫回答「我這一支有沒有動到三語清單」。
+//
+// 0026_event_product_link.sql 的答案是沒有：它加 events.slug / events.image_key
+// （兩個都是純 text，不是 jsonb）、一個唯一索引，以及
+// admin_upsert_event_with_session()。那支函式**原樣搬運**三語 jsonb（title /
+// summary / description / 場次的 title / location），沒有拆開、沒有重組、也沒有
+// 碰任何一個 *_list 欄位。
 const { readdirSync } = await import("node:fs");
 const migrations = readdirSync(join(ROOT, "supabase/migrations")).filter((f) => f.endsWith(".sql"));
 const highest = migrations.map((f) => Number(f.slice(0, 4))).sort((a, b) => b - a)[0];
 check(
-  "migration 最高編號仍是 0025（D2 不准新增第三支還沒套上的）",
+  "migration 最高編號是 0026（新增 migration 的人要回來確認沒動到三語清單）",
   highest,
-  25,
+  26,
   `實際檔案：${migrations.slice(-3).join(", ")}`,
 );
 

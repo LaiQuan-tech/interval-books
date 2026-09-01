@@ -156,7 +156,7 @@ function Events() {
             <div className="mt-8 flex flex-wrap items-center gap-4">
               <Link
                 to="/events/$slug"
-                params={{ slug: e.id }}
+                params={{ slug: e.slug }}
                 className="inline-block border border-foreground px-5 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
               >
                 {t(p.block("detail", DETAIL))}

@@ -173,7 +173,14 @@ const migrations = existsSync(MIG_DIR)
 // 0025_event_speaker.sql（活動掛講者：public.events.speaker_id -> public.artists.id）
 // 是這一期加的。它只在 public.events 上加一欄與一個索引，沒有碰這一支在驗的任何
 // 東西。0025 自己的內容由 artists-selftest 驗。
-check("migrations 共 25 支", migrations.length, 25);
+// 0026_event_product_link.sql（活動與商品的真連結）加了 events.slug / events.image_key、
+// products 對活動來源的唯一索引，以及 admin_upsert_event_with_session()。
+// ⚠️ 它**會寫 public.event_sessions**（建／改一場梯次），但它一個字都沒有碰
+//    email_outbox、order_notify、那五支 notify 函式，也沒有動 event_sessions 的
+//    欄位形狀或 grant —— sessions_due_for_reminder() 讀的還是同一張表的同一批欄位。
+//    而且它**永遠不寫 seats_taken**（那一欄只由 reserve/release 在持有列鎖時維護），
+//    所以下面每一條斷言原樣成立。0026 自己的內容由 event-product-selftest 驗。
+check("migrations 共 26 支", migrations.length, 26);
 check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
 
 // ─────────────────────────────────────────────────────────────────────────────

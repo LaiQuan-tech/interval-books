@@ -195,7 +195,30 @@ const migrations = readdirSync(MIG_DIR)
 
 const MIG_0025_NAME = "0025_event_speaker.sql";
 checkTrue(`${MIG_0025_NAME} 存在`, migrations.includes(MIG_0025_NAME));
-check("0025 是目前編號最大的一支", migrations[migrations.length - 1], MIG_0025_NAME);
+
+/** 檔名前四碼的編號。 */
+const migNumber = (f) => Number(f.slice(0, 4));
+
+/**
+ * 這裡原本是 `check("0025 是目前編號最大的一支", …)`。那是一條**快照**斷言：它只在
+ * 0025 剛好是最新的那一段時間有意義，下一支 migration 一進來就必須有人手動改它，
+ * 而「手動改一條斷言讓它變綠」與「這條斷言其實已經不在守任何東西」在畫面上長得
+ * 一模一樣。
+ *
+ * 換成一條不會隨時間失效的結構斷言：編號從 0001 起連續、不重複。它抓得到兩個真的
+ * 會發生的事故 —— 兩個人同時開了兩支 0026，以及跳號（0027 直接接在 0025 後面，
+ * 中間那支被誰刪了）。
+ *
+ * 「目前最大的一支是哪一個」這條快照沒有被丟掉，它搬到了每一期自己的自檢裡
+ * （現在是 scripts/event-product-selftest.mjs 的 [1]）—— 那裡本來就會隨那一期
+ * 一起更新。
+ */
+const migNumbers = migrations.map(migNumber);
+check(
+  "migration 編號從 0001 起連續、不重複",
+  migNumbers.join(",") || "（無）",
+  migNumbers.map((_, i) => i + 1).join(",") || "（無）",
+);
 
 const sql0025raw = readFile(join(MIG_DIR, MIG_0025_NAME));
 const sql0025 = stripSqlComments(sql0025raw);
@@ -203,11 +226,15 @@ checkTrue("0025 不是空檔", sql0025.trim().length > 0);
 
 /**
  * 「加欄位要開新 migration，不可以回頭改已套用的那幾支」是這個 repo 的規約。
- * 直接驗它：speaker_id 這個字只准出現在 0025 裡。0001–0024 有任何一支提到它，
- * 就代表有人回頭改了舊檔。
+ * 直接驗它：0025 **之前**的每一支都不准提到 speaker_id。有任何一支提到，就代表
+ * 有人回頭改了舊檔。
+ *
+ * ⚠️ 條件是「編號 < 25」，不是「不等於 0025」。後者會把 0026 之後每一支合法提到
+ *    speaker_id 的新 migration 都算成違規（0026 的 upsert 函式就要寫這一欄），
+ *    於是這條斷言會在每一期被「順手改掉」——而它真正要守的是往回改，不是往前寫。
  */
 const oldMigrationsMentioningSpeaker = migrations
-  .filter((f) => f !== MIG_0025_NAME)
+  .filter((f) => migNumber(f) < 25)
   .filter((f) => readFile(join(MIG_DIR, f)).includes("speaker_id"));
 check(
   "0001–0024 沒有任何一支提到 speaker_id（＝沒有回頭改舊 migration）",
@@ -444,54 +471,31 @@ checkTrue(
   "events repo 的 EventRow 有 speaker_id",
   /speaker_id:\s*string\s*\|\s*null/.test(eventsRepoSrc),
 );
-checkTrue(
-  "events repo 把空字串寫回 NULL（空字串不是合法的 artists.id）",
-  /speaker_id\s*=\s*input\.speaker_id\s*&&\s*input\.speaker_id\.trim\(\)\s*\?\s*input\.speaker_id\.trim\(\)\s*:\s*null/.test(
-    eventsRepoSrc,
-  ),
+/**
+ * 空字串 -> NULL。
+ *
+ * ⚠️ 0026 這一期只改了「賦值」與「物件屬性」的差別（`payload.speaker_id = …`
+ *    變成 `speaker_id: …`），因為那一期把 0025 的降級程式碼刪掉之後，payload 從
+ *    「先建好再視情況補欄位」的可變物件變回一個物件字面值。
+ *
+ *    **強度沒有下降。** 欄位名、`input.speaker_id && input.speaker_id.trim()` 這個
+ *    守衛、`.trim()` 之後的值、以及 `: null` 這個 else 分支，四樣一個字都沒少，
+ *    也沒有加進任何 `[\s\S]*` 之類的通配。
+ *
+ *    而且從「有沒有」變成「有幾條」：0026 之後 events repo 有**兩條**寫入路徑
+ *    （upsertEvent 與 upsertEventWithProduct），兩條都會把 speaker_id 送進資料庫，
+ *    所以兩條都要把空字串寫成 NULL。漏掉任何一條，下面的計數就對不上。
+ */
+const emptySpeakerToNull =
+  /speaker_id:\s*input\.speaker_id\s*&&\s*input\.speaker_id\.trim\(\)\s*\?\s*input\.speaker_id\.trim\(\)\s*:\s*null/g;
+check(
+  "events repo 把空字串寫回 NULL（空字串不是合法的 artists.id）—— 兩條寫入路徑都要有",
+  (eventsRepoSrc.match(emptySpeakerToNull) ?? []).length,
+  2,
 );
 checkTrue(
   "eventSchema 有 speaker_id",
   schemaBlock(schemasSrc, "eventSchema").includes("speaker_id"),
-);
-
-// ---- 🔴 0025 還沒套上 live DB 時的降級路徑 ---------------------------------
-// 這一整組是**過渡程式碼的護欄**。0025 套上正式庫、確認 speaker_id 存在之後，
-// events.ts 那五樣與這一整組斷言要一起刪掉——留著半套（刪了程式碼卻留著斷言，
-// 或反過來）比兩樣都在更糟。
-//
-// ⚠️ 用**原始檔**不是 stripTs 過的：要守的東西本身就是註解，stripTs 會把它吃掉。
-const eventsRepoRaw = readFile(join(ROOT, "src/server/repos/events.ts"));
-
-checkTrue(
-  "COLUMNS_BASE 不含 speaker_id（缺欄位時要問的那一串）",
-  /COLUMNS_BASE\s*=\s*COLUMNS\.replace\(\s*["']\s*speaker_id,["']\s*,\s*["']{2}\s*\)/.test(
-    eventsRepoSrc,
-  ),
-);
-checkTrue(
-  "降級旗標預設是 null（= 先當成「有」去問，所以 migration 一落地就自動恢復，不必重新部署）",
-  /let\s+speakerColumnPresent[^=]*=\s*null/.test(eventsRepoSrc),
-);
-checkTrue(
-  "🔴 只有「code 對 **且** 訊息指名 speaker_id」才算缺欄位——fallback 不可以變成吞掉任意錯誤的破口",
-  /error\.code\s*!==\s*["']42703["']\s*&&\s*error\.code\s*!==\s*["']PGRST204["']/.test(
-    eventsRepoSrc,
-  ) && /\(error\.message\s*\?\?\s*["']{2}\)\.includes\(["']speaker_id["']\)/.test(eventsRepoSrc),
-);
-checkTrue(
-  "只在 isMissingSpeakerColumn 為真時重試一次，其餘錯誤原樣往上拋",
-  /if\s*\(isMissingSpeakerColumn\(first\.error\)\)\s*\{[\s\S]{0,160}?return\s+await\s+run\(COLUMNS_BASE\)/.test(
-    eventsRepoSrc,
-  ),
-);
-checkTrue(
-  "缺欄位時 upsert 的 payload 也要拿掉 speaker_id（不然 PostgREST 回 PGRST204）",
-  /if\s*\(cols\s*===\s*COLUMNS_BASE\)\s*\{\s*delete\s+payload\.speaker_id/.test(eventsRepoSrc),
-);
-checkTrue(
-  "檔頭標明這是過渡程式碼並列出要刪的東西（沒有這段，未來沒人知道可以刪）",
-  eventsRepoRaw.includes("過渡程式碼") && eventsRepoRaw.includes("speakerColumnPresent"),
 );
 
 // =============================================================================

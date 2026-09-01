@@ -94,7 +94,7 @@ export function SessionPicker({
  *
  * ── 為什麼不是直接用上面那個 SessionPicker ──────────────────────────────────
  * 活動詳情頁**不結帳**。它的報名按鈕是導到 /shop/<slug>（見 src/routes/events.$slug.tsx
- * 對 fetchActiveProductForEvent 的用法），數量上限、佔位、金流全都發生在那一頁。
+ * 對 fetchActiveProductForEventSlug 的用法），數量上限、佔位、金流全都發生在那一頁。
  * 在這裡放一個選得動的選擇器，等於讓客人選了一場、按下去卻發現什麼都沒帶過去 ——
  * 那個選擇是假的。所以這裡畫的是同一組資訊、但不能點。
  *

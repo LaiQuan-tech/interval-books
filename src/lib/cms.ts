@@ -94,6 +94,14 @@ export type PageContent = {
 
 export type EventEntry = {
   id: string;
+  /**
+   * 網址代稱（0026）。/events/<slug> 就是它。
+   *
+   * ⚠️ 列表頁**必須**用這一欄連過去，不可以用 id。0026 把 slug 回填成 id，所以
+   *    今天兩者相等；一旦有人在後台把代稱改成好看的名字，用 id 連出去的每一條
+   *    連結就會 404。bundled fallback 沒有這一欄，退回成 id（見 FALLBACK_EVENTS）。
+   */
+  slug: string;
   title: Localized;
   summary: Localized;
   description: Localized;
@@ -111,11 +119,10 @@ export type EventRegistrationType = "external" | "internal";
  * One event, as the detail page needs it. Adds the one column the list page
  * has no use for: `registrationType`, which decides where the 報名 button goes.
  *
- * ⚠️ public.events has exactly 14 columns (0001 + 0025's speaker_id) and none of
- *    them is a cover image — there is no `image_key` here and the detail page
- *    therefore ships without a hero image on purpose. Do not reach for
- *    imageFor() with an invented key: it always returns *something*, so the
- *    page would gain a grey placeholder that means nothing.
+ * ⚠️ 0026 之後 public.events **有** image_key 了，但這個型別刻意不帶它：詳情頁
+ *    仍然不畫封面。imageFor() 永遠會回*某一張*圖，所以對還沒設圖的活動渲染封面，
+ *    畫面上多的是一個每場活動都長一樣的灰框佔位，不是「沒有封面」。理由的完整版
+ *    在 src/routes/events.$slug.tsx 的檔頭。
  */
 export type EventDetailEntry = EventEntry & {
   registrationType: EventRegistrationType;
@@ -227,6 +234,8 @@ const EXHIBITION_IMAGE_FALLBACK: Record<string, string> = {
 
 export const FALLBACK_EVENTS: EventEntry[] = staticEvents.map((e) => ({
   id: e.id,
+  // bundled 種子沒有 slug 欄位。退回 id 是對的：0026 就是這樣回填正式庫的。
+  slug: e.id,
   title: e.title,
   summary: e.summary,
   description: e.description,
@@ -553,7 +562,7 @@ export function eyebrowOf(page: PageContent | null, prefix: string, suffix: stri
 export async function fetchEvents(): Promise<EventEntry[]> {
   const rows = await select(
     "events",
-    "id,title,summary,description,display_date,category,external_url,sort_order",
+    "id,slug,title,summary,description,display_date,category,external_url,sort_order",
     { order: "sort_order" },
   );
   if (!rows || !rows.length) return FALLBACK_EVENTS;
@@ -565,6 +574,10 @@ export async function fetchEvents(): Promise<EventEntry[]> {
     if (!title || !summary || !description) continue;
     mapped.push({
       id: str(r.id),
+      // 0026 之後 slug 是 not null，所以 str() 拿到的一定是真的值；|| id 是給
+      // 「migration 還沒套上、這一列還沒有 slug」那一段時間的最後一道防線 ——
+      // 空字串連出去會變成 /events/，那比連到舊網址更糟。
+      slug: str(r.slug) || str(r.id),
       title,
       summary,
       description,
@@ -579,13 +592,17 @@ export async function fetchEvents(): Promise<EventEntry[]> {
 /**
  * One event for /events/$slug.
  *
- * ── 為什麼參數叫 slug，查的卻是 events.id ────────────────────────────────────
- * public.events **沒有 slug 欄位**（0001 建的 14 欄裡沒有，0025 也只加了
- * speaker_id）。`id` 是 text primary key、本來就唯一，所以網址直接吃 id。
+ * ── slug 這一欄在 0026 落地了 ────────────────────────────────────────────────
+ * 這裡原本查的是 events.id，因為 public.events 沒有 slug 欄位。當時寫下的計畫是
+ * 「之後補上 events.slug 時用 `slug = id` 回填，於是今天發出去的網址仍然有效，
+ * 要改的只有 `.eq("id", slug)` → `.eq("slug", slug)`」。
  *
- * 這不是將就，是計畫好的：之後補上 events.slug 時會用 `slug = id` 回填，於是
- * **今天發出去的網址在那之後仍然有效**。路由參數與這支函式一律用 slug 這個詞，
- * 到那一天要改的只有下面那一行 `.eq("id", slug)` → `.eq("slug", slug)`。
+ * supabase/migrations/0026_event_product_link.sql 就是那一支，而且它真的照
+ * `slug = id` 回填。所以這一行現在查 slug，**而在 0026 之前發出去的每一個網址仍然
+ * 指到同一場活動**。
+ *
+ * ⚠️ 從這一刻起，「在後台改代稱」＝「讓已經發出去的那個網址 404」。那句警告寫在
+ *    0026 的檔頭與後台的 slug 欄位說明上。
  *
  * ── 為什麼這一支不走本檔的 select() ──────────────────────────────────────────
  * 本檔的 select() 把每一種失敗都吞成 null，因為站台文案有 in-repo fallback。
@@ -606,11 +623,16 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
   try {
     const { data, error } = await db
       .from("events")
-      // 只有 public.events 真的有的欄位。這個 repo 剛因為 select 了一個不存在的
+      // 只有 public.events 真的有的欄位。這個 repo 曾經因為 select 了一個不存在的
       // 欄位（0025 的 speaker_id 還沒套上正式庫）把整個活動後台弄掛 ——
       // PostgREST 對此回 42703，整頁 500。
-      .select("id,title,summary,description,display_date,category,external_url,registration_type")
-      .eq("id", slug)
+      //
+      // ⚠️ slug 是 0026 加的。**0026 沒有先套上 live DB 就推這個檔，壞的不只是後台，
+      //    連這一頁也會壞**（0025 那次只有後台壞，因為這裡的清單沒有 speaker_id）。
+      .select(
+        "id,slug,title,summary,description,display_date,category,external_url,registration_type",
+      )
+      .eq("slug", slug)
       .maybeSingle();
 
     if (error) {
@@ -630,6 +652,7 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
     return {
       event: {
         id: str(r.id),
+        slug: str(r.slug),
         title,
         summary,
         description,

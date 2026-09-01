@@ -130,6 +130,30 @@ const registrationFields = {
 
 export const eventSchema = z.object({
   ...publishFields,
+  /**
+   * 網址代稱，/events/<slug>（supabase/migrations/0026_event_product_link.sql）。
+   *
+   * ⚠️ 0026 把它回填成 events.id，所以在那之前發出去的每一個網址仍然有效。
+   *    **改這一欄會讓已經發出去的連結 404。** 表單上那一欄的說明文字要寫這句話。
+   *
+   * ⚠️ **不要從 title 產生 slug。** 這個站的標題是中文，常見的 slugify 套上去
+   *    得到的是空字串。新增時留空就沿用 id（見 repo 的 upsertEvent）。
+   */
+  slug: z
+    .union([
+      // 空字串是合法的「沒填」（＝沿用 id），不是驗證失敗。表單那一欄是選填的
+      // <Input>，沒填的時候 react-hook-form 給的就是 ""。
+      z.literal(""),
+      z
+        .string()
+        .trim()
+        .regex(
+          /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
+          "代稱只能用英數字、連字號、底線與點，而且要以英數字開頭",
+        ),
+    ])
+    .optional()
+    .nullable(),
   title: localizedSchema,
   summary: localizedSchema,
   description: localizedSchema,
@@ -146,9 +170,43 @@ export const eventSchema = z.object({
    * 打錯一個字直接吃 Postgres 23503。
    */
   speaker_id: z.string().trim().min(1).optional().nullable(),
+  /**
+   * 封面圖 key（0026）。NULL = 沒設；前台就不畫封面，而不是畫一張每場活動都長
+   * 一樣的假灰框（imageFor() 永遠會回一張圖）。這一欄會被投影到
+   * products.image_key —— 同一張圖不該讓店家上傳兩次。
+   */
+  image_key: z.string().trim().optional().nullable(),
   ...registrationFields,
 });
 export type EventFormValues = z.infer<typeof eventSchema>;
+
+/**
+ * 活動商品那一段。上架、改價、下架都走這裡。
+ *
+ * ⚠️ **沒有 title / summary / description / slug / image_key。** 那五樣是從活動
+ *    投影過去的，規則住在 supabase/migrations/0026 的
+ *    admin_upsert_event_with_session() 裡（其中 products.description 取的是
+ *    events.summary，不是 events.description）。這裡多開一個欄位，就是替那條規則
+ *    開第二個家。
+ *
+ * ⚠️ 也沒有 capacity。名額的唯一真相是 public.event_sessions（0020），
+ *    products.capacity 被 CHECK 強制成 null。
+ */
+export const eventProductSchema = z.object({
+  price: z.number().int("價格必須是整數").min(0, "價格不能是負數"),
+  compare_at_price: z.number().int("原價必須是整數").min(0, "原價不能是負數").nullable().optional(),
+  status: z.enum(["draft", "active", "archived"]),
+  sort_order: z.number().int("排序必須是整數").optional(),
+});
+export type EventProductFormValues = z.infer<typeof eventProductSchema>;
+
+/**
+ * 活動 + 商品，一次送出。`product` 省略／null = 這一次不動商品那一列。
+ */
+export const eventWithProductSchema = eventSchema.extend({
+  product: eventProductSchema.nullable().optional(),
+});
+export type EventWithProductFormValues = z.infer<typeof eventWithProductSchema>;
 
 export const eventCategorySchema = z.object({
   id: z.string().trim().min(1, "請輸入分類代碼"),

@@ -200,7 +200,12 @@ const migrations = existsSync(MIG_DIR)
 // 0025_event_speaker.sql（活動掛講者：public.events.speaker_id -> public.artists.id）
 // 是這一期加的。它只在 public.events 上加一欄與一個索引，沒有碰這一支在驗的任何
 // 東西。0025 自己的內容由 artists-selftest 驗。
-check("migrations 共 25 支", migrations.length, 25);
+// 0026_event_product_link.sql（活動與商品的真連結）是這一期加的。它加 events.slug /
+// events.image_key、products 對活動來源的唯一索引，以及 admin_upsert_event_with_session()。
+// 它沒有碰 admin_event_roster、event_registrations、on_roster 的定義，也沒有在任何
+// 地方寫下第二份 payment_status = 'paid' —— 下面 [7] 那條掃描因此照樣有效。
+// 0026 自己的內容由 event-product-selftest 驗。
+check("migrations 共 26 支", migrations.length, 26);
 check("0021 仍在原位", migrations[20], "0021_roster_pii.sql");
 check("0023 是最後一支", migrations[22], "0023_fix_cron_guard.sql");
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
