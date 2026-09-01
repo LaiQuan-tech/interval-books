@@ -231,7 +231,14 @@ assertMigrationDependencies(check, MIG_DIR, {
     "roster_pii",
     "cron_jobs",
   ],
-  reviewedThrough: "0027_event_blocks.sql",
+  // ── 0028_free_order_settlement.sql 的重讀結論 ─────────────────────────────
+  // 0028 讓 total = 0 的訂單在結帳當下就結清（settle_free_order()：status='processing'
+  // / payment_status='paid' / payment_method='free' / paid_at=now()），並給
+  // invoice_backlog() 加上 total > 0。它**沒有**重寫 expire_unpaid_orders()，也沒有
+  // ALTER 任何一張表 —— 唯一的 DDL 是 orders_payment_method_check 的 drop + add
+  // （多一個允許值 'free'，既有四個原樣保留；那正是 0024 檔頭寫下的規定做法）。
+  // 逐條重讀之後：0022 的 outbox / claim_order_notify / notify_backlog 一個字都沒被 0028 改。免費訂單現在會通過 claim_order_notify 的「真的付過錢」閘門 —— 那是刻意的（報名成功信本來就該寄，見 0028 檔頭），而且它走的是既有路徑，沒有新增狀態組合。原樣成立。
+  reviewedThrough: "0028_free_order_settlement.sql",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

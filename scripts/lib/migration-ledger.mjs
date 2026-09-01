@@ -416,6 +416,19 @@ export const MIGRATION_LEDGER = Object.freeze([
     note: "活動頁組裝器的資料層：events 七個 jsonb 欄位、event_blocks、reorder RPC",
     touches: ["products_availability", "session_seats", "events_shape", "localized_list"],
   },
+  {
+    file: "0028_free_order_settlement.sql",
+    note: "免費訂單（total = 0）在結帳當下就結清：settle_free_order()、payment_method 認 'free'、invoice_backlog 加 total > 0",
+    // ⚠️ order_expiry / event_registrations / session_seats 這三個標籤是**語意上的**，
+    //    不是偵測器逼出來的：0028 一個字都沒有重寫 expire_unpaid_orders()，
+    //    event_registrations 與 event_sessions 也完全沒被 ALTER。但它改掉的正是
+    //    「哪些訂單會被 expire_unpaid_orders() 撈到」——免費訂單從此不再是 pending，
+    //    於是它們的 order_items 不會被刪、event_registrations 不會 cascade 消失、
+    //    座位不會被還回去。守著那三個區域的自檢（event-registration / notify /
+    //    roster-csv）必須為此回來重讀一次，而唯一能叫得動它們的辦法就是在這裡標上。
+    //    這是刻意的多標；帳本的設計說多標是安全的方向，這一列就是那個方向的用途。
+    touches: ["orders_payments", "order_expiry", "event_registrations", "session_seats", "invoice"],
+  },
 ]);
 
 /** 磁碟上的 migration 檔名，排序過。空目錄 = 丟例外（那不是「沒有違規」）。 */

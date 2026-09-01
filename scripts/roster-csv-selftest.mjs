@@ -254,7 +254,14 @@ assertMigrationDependencies(check, MIG_DIR, {
     "inventory",
     "admin_auth",
   ],
-  reviewedThrough: "0027_event_blocks.sql",
+  // ── 0028_free_order_settlement.sql 的重讀結論 ─────────────────────────────
+  // 0028 讓 total = 0 的訂單在結帳當下就結清（settle_free_order()：status='processing'
+  // / payment_status='paid' / payment_method='free' / paid_at=now()），並給
+  // invoice_backlog() 加上 total > 0。它**沒有**重寫 expire_unpaid_orders()，也沒有
+  // ALTER 任何一張表 —— 唯一的 DDL 是 orders_payment_method_check 的 drop + add
+  // （多一個允許值 'free'，既有四個原樣保留；那正是 0024 檔頭寫下的規定做法）。
+  // 逐條重讀之後：0021 §3 的 admin_event_roster 與 on_roster 定義沒被 0028 碰到；免費訂單變成 paid 之後 on_roster 會是 true，那正是「免費報名的人本來就該在簽到表上」。「任何提到 event_registrations 的檔案不可以出現 \"paid\" 字面值」那一條也重新驗過：我改的 src/server/repos/orders.ts 剝掉註解之後不含 event_registrations，所以不在那條規則的掃描範圍內，而且沒有新增任何 \"paid\" 字面值。原樣成立。
+  reviewedThrough: "0028_free_order_settlement.sql",
 });
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {

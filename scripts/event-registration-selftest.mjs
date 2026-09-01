@@ -247,7 +247,14 @@ assertMigrationDependencies(check, MIG_DIR, {
     "orders_payments",
     "cron_jobs",
   ],
-  reviewedThrough: "0027_event_blocks.sql",
+  // ── 0028_free_order_settlement.sql 的重讀結論 ─────────────────────────────
+  // 0028 讓 total = 0 的訂單在結帳當下就結清（settle_free_order()：status='processing'
+  // / payment_status='paid' / payment_method='free' / paid_at=now()），並給
+  // invoice_backlog() 加上 total > 0。它**沒有**重寫 expire_unpaid_orders()，也沒有
+  // ALTER 任何一張表 —— 唯一的 DDL 是 orders_payment_method_check 的 drop + add
+  // （多一個允許值 'free'，既有四個原樣保留；那正是 0024 檔頭寫下的規定做法）。
+  // 逐條重讀之後：位置快照（0020 在第 20、0021 在第 21）不受影響 —— 0028 是往後接的第 28 支。reserve_session_seat 的七步、expire_unpaid_orders 的 RETURNS TABLE 形狀、event_registrations 的零 grant 都沒被 0028 碰到（它一個字都沒改那兩支函式）。原樣成立。
+  reviewedThrough: "0028_free_order_settlement.sql",
 });
 for (const f of [
   "0004_commerce_products.sql",

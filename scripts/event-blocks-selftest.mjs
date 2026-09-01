@@ -57,6 +57,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { registerHooks } from "node:module";
+import {
+  assertLedgerMatchesDisk,
+  assertLedgerDeclarationsHonest,
+  assertMigrationDependencies,
+} from "./lib/migration-ledger.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -262,7 +267,35 @@ const migrations = readdirSync(MIG_DIR)
   .sort();
 
 checkTrue(`${MIG_0027_NAME} 存在`, migrations.includes(MIG_0027_NAME));
-check("0027 是目前編號最大的一支", migrations[migrations.length - 1], MIG_0027_NAME);
+
+// ── 這裡原本是 `check("0027 是目前編號最大的一支", migrations.at(-1), MIG_0027_NAME)` ──
+//
+// 那一條是真的會轉紅的（不像 0023 那幾條假的位置快照），它的用意是「有人加了新的
+// migration，回來看一眼這支自檢」。問題是它對**每一支**新 migration 都轉紅，而且
+// 轉紅之後唯一的修法是把它改成新的檔名 —— 作者沒有被問到任何問題，只是把一個字串
+// 換掉。0028 進來的時候它就是這樣紅的。
+//
+// 換成 scripts/lib/migration-ledger.mjs 那一套，這支自檢從「編號快照」升級成兩件事：
+//
+//   · assertLedgerMatchesDisk() —— 比對**完整的有序檔名清單**與連續編號。比原來那條
+//     強：少一支、多一支、改名、跳號、重號、順序不對全都抓得到，而原來那條只看
+//     最後一個元素。新增 migration 而沒在帳本補一列，這裡照樣轉紅。
+//   · assertMigrationDependencies() —— 只有「動到 events_shape / localized_list」的
+//     migration 才把這支叫回來，而且訊息會直接寫出是哪一支動到哪一區。
+//
+// 0028（免費訂單結算）碰的是 orders_payments / order_expiry / event_registrations /
+// session_seats / invoice，與這一支要守的東西沒有交集 —— 它一個字都沒有動
+// events / event_blocks / is_localized_list。所以底下每一條斷言原樣成立。
+assertLedgerMatchesDisk(check, MIG_DIR);
+assertLedgerDeclarationsHonest(check, MIG_DIR);
+assertMigrationDependencies(check, MIG_DIR, {
+  suite: "event-blocks-selftest",
+  // 這支自檢從頭到尾在驗的就是 0027 建的那一套：events 的七個三語清單欄位
+  // （events_shape）與守著它們形狀的 is_localized_list（localized_list）。
+  dependsOn: ["events_shape", "localized_list"],
+  reviewedThrough: "0028_free_order_settlement.sql",
+});
+
 check(
   "0027 緊接在 0026 之後（沒有跳號、沒有被插隊）",
   migrations[migrations.indexOf(MIG_0027_NAME) - 1],

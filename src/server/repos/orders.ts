@@ -514,14 +514,21 @@ async function releaseInventoryReservations(orderId: string | null): Promise<voi
 }
 
 /**
- * Turn this order's reservations into real inventory sales. Called by the
- * PayUni webhook, and ONLY after the payment is confirmed and the order row
- * already says paid.
+ * Turn this order's reservations into real inventory sales. ONLY after the
+ * order row already says paid. Two callers:
  *
- * ⚠️ Never call this from the checkout path. Before the money has moved, an
- * inv.sales row is a fabricated sale: it pollutes revenue reports, gets picked
- * up by inv.allocate_fifo_cost(), and lands in supplier reconciliation — and
- * then has to be deleted 30 minutes later.
+ *   1. The PayUni / 黑貓 PAY webhooks, after markOrderPaid() confirmed the money.
+ *   2. createOrder() step 8, for `total = 0` orders ONLY — those never get a
+ *      webhook, and since 0028 they are also never reclaimed by
+ *      expire_unpaid_orders(), so this is their only route out of
+ *      stock_reservations. They are settled by step 5b before this runs.
+ *
+ * ⚠️ Never call this from the checkout path for an order that still owes money.
+ * Before the money has moved, an inv.sales row is a fabricated sale: it
+ * pollutes revenue reports, gets picked up by inv.allocate_fifo_cost(), and
+ * lands in supplier reconciliation — and then has to be deleted 30 minutes
+ * later. A free order owes nothing and is already paid, so the condition this
+ * rule protects ("the order row already says paid") holds for caller 2.
  *
  * Returns the number of oversold alerts written (0 is the normal case, and also
  * what a re-delivered webhook gets, because the underlying function claims its
@@ -769,6 +776,15 @@ export async function reissuePayment(token: string): Promise<PaymentHandoff | nu
  * belongs to src/server/repos/payments.ts, reached only from the webhook, which
  * is the only party that knows.
  *
+ * ⚠️ ONE exception, added by 0028: an order whose `total` is 0. There is no
+ * webhook coming for it because there is no money to move, so step 5b settles
+ * it by calling settle_free_order(). Even then this file does not write the
+ * column itself — the function re-reads the amount from the orders row and
+ * takes no amount parameter, so no caller can claim an order is free.
+ * Without that step the order sits `pending` and expire_unpaid_orders() cancels
+ * it, taking the event_registrations rows with it (on delete cascade). See the
+ * header of 0028_free_order_settlement.sql.
+ *
  * `payment_method` is written at order time only for the card path, so that
  * "this order was sent to a gateway" is visible in the row itself rather than
  * having to be inferred from the payments table.
@@ -825,7 +841,12 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
       total,
       shipping_method: shippingMethod,
       // NULL for the offline path — orders.payment_method's CHECK has no
-      // 'offline' value, and NULL is exactly what "no gateway involved" means.
+      // 'offline' value, and NULL is exactly what "no gateway involved" means:
+      // nobody has paid and the shop will arrange it by hand.
+      // ⚠️ A free order is inserted with this same NULL and then overwritten to
+      //    'free' by step 5b. The two are deliberately different values because
+      //    they are different facts — NULL means money is still owed, 'free'
+      //    means none was ever owed. See 0028 §1.
       payment_method: wantsCard ? "card" : null,
       idempotency_key: payload.idempotencyKey,
       locale: payload.locale,
@@ -1011,6 +1032,50 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
       reservedItemIds.push(orderItemId);
     }
 
+    // ---- step 5b: free orders settle here, not at a gateway ------------------
+    // 🔴 這一步是「免費活動報名會靜默消失」的修法。沒有它，一張 total = 0 的訂單
+    //    會停在 pending / pending，然後被每 5 分鐘跑一次的 expire_unpaid_orders()
+    //    當成「沒付錢」取消掉 —— 而 0020 §4c 在取消之前會先把這張訂單的
+    //    event_registrations 整批刪掉並把 seats_taken 扣回去，全程沒有任何錯誤
+    //    訊息。整段推理（含為什麼那不是 cascade）寫在 0028 的檔頭。
+    //
+    // 這裡是這個檔案唯一一處會讓 payment_status 變成已付款的地方，也是上面
+    // 「Nothing in this file may ever set payment_status = 'paid'」那條規則唯一的
+    // 例外。例外成立的理由是那條規則的**理由**：webhook 是唯一知道「錢有沒有進來」
+    // 的人。total = 0 沒有錢會進來，所以沒有人要等 —— 這件事在這裡就已經是定局。
+    // 即使如此，這個檔案仍然沒有自己寫那個欄位：它呼叫 settle_free_order()，而金額
+    // 是那支函式自己從 orders 那一列讀的（它沒有金額參數，見 0028 §2）。
+    //
+    // ⚠️ 位置：在 6a／6b **之前**。失敗要走 catch 把座位還回去、把訂單刪掉，讓客人
+    //    看到「請再試一次」——結不了帳好過一張沒人看得到、也永遠不會被回收的訂單。
+    //    6b 的 atomic_deduct_stock 是不可逆的（catch 不會把 products.stock 加回去），
+    //    所以任何**會 throw** 的新步驟都必須排在它前面。這條不變式寫在 6b 那一段。
+    if (total === 0) {
+      const { data: settleRows, error: settleError } = await db.rpc("settle_free_order", {
+        p_order_id: order.id,
+      });
+      // ⚠️ code + message，不印整包 error —— 同 reserve_session_seat 那一段的理由：
+      //    PostgREST 會把 Postgres 的 `DETAIL: Failing row contains (…)` 帶上來，而
+      //    這條路徑的那一列是 orders，滿滿都是客人的個資。
+      if (settleError) {
+        console.error(
+          `[checkout] 免費訂單結算失敗 order=${order.order_no}: ${settleError.code} ${settleError.message}`,
+        );
+        throw new CheckoutError("order_failed");
+      }
+      const settled = (Array.isArray(settleRows) ? settleRows[0] : settleRows) as
+        | { settled?: boolean; reason?: string }
+        | undefined;
+      // already_settled 也算成功（冪等）；其餘每一種 reason 都代表這張單不在它該在的
+      // 狀態，而那不是可以繼續往下走的情況。
+      if (!settled || (settled.settled !== true && settled.reason !== "already_settled")) {
+        console.error(
+          `[checkout] 免費訂單結算沒有生效 order=${order.order_no} reason=${settled?.reason ?? "no_row"}`,
+        );
+        throw new CheckoutError("order_failed");
+      }
+    }
+
     // ---- step 6a: inventory reservations (REVERSIBLE) ------------------------
     // Physical stock in inv.products is NOT touched here. This only writes rows
     // to stock_reservations, which is what makes the step undoable: releasing
@@ -1063,7 +1128,27 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
   // ---- step 7: payment hand-off ---------------------------------------------
   // After the order is durable, never before: if this throws we still want the
   // order to exist so the shopper can retry payment rather than lose the lot.
-  const payment = wantsCard ? await buildCardHandoff(order) : null;
+  //
+  // ⚠️ `total > 0` 是 0028 加的。免費訂單在 step 5b 就已經結清了，把它送去金流只會
+  //    拿到一個「金額必須大於 0」的錯誤，然後 buildCardHandoff 回 null —— 結果一樣，
+  //    但中間白白對外打了一次 API，而且錯誤 log 會誤導。客人在免費活動頁選了刷卡
+  //    是完全正常的（頁面上就有那個選項），不是異常。
+  const payment = wantsCard && total > 0 ? await buildCardHandoff(order) : null;
+
+  // ---- step 8: 免費訂單的庫存承兌 --------------------------------------------
+  // 一般訂單走的是 webhook：markOrderPaid() 之後由 payuni-webhook / blackcat-webhook
+  // 呼叫 commitInventoryForOrder()，把 stock_reservations 轉成真正的 inv.sales。
+  // 免費訂單**永遠不會有 webhook**，而它現在也不會再被 expire_unpaid_orders() 回收，
+  // 所以少了這一句，一張含有 inv 連結品項的免費訂單（0 元贈書之類）留下的保留量會
+  // 永遠掛在那裡，把可售量默默扣住 —— 沒有任何排程會補做這一步。
+  //
+  // 這不違反 commitInventoryForOrder() 檔頭那條「絕不可以從結帳路徑呼叫」：那條規則
+  // 守的是「錢還沒進來就寫 inv.sales 是偽造的銷售」，而免費訂單沒有錢會進來，step 5b
+  // 之後 orders 那一列已經是 paid。它的前提（訂單列已經說 paid）在這裡成立。
+  //
+  // 純活動報名的購物車不會有 invLines，這一句是 no-op；它自己吞掉所有錯誤且從不
+  // throw，而且用 DELETE…RETURNING 當冪等 claim，所以多呼叫也不會壞。
+  if (total === 0) await commitInventoryForOrder(order.id);
 
   return {
     orderNo: order.order_no,
