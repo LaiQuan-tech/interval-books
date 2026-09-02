@@ -94,11 +94,7 @@ export function isDirectCheckout(search: DirectCheckoutSearch): boolean {
  *   session_gone     帶了場次但這件商品沒有那一場（結束了、被取消了，或不是它的場次）
  *   sold_out         這一場已經沒有位子
  */
-export type DirectFailureReason =
-  | "product_gone"
-  | "session_required"
-  | "session_gone"
-  | "sold_out";
+export type DirectFailureReason = "product_gone" | "session_required" | "session_gone" | "sold_out";
 
 export type DirectResolution =
   | {
@@ -124,10 +120,7 @@ function isBooking(product: ShopProduct): boolean {
  *    的跨場次最大值，那個數字**不可以拿來當數量上限**（兩場各 5 位會變成單行可選 10），
  *    所以呼叫端只在真的選定一場之後才拿它去夾數量。
  */
-export function directSeatLimit(
-  product: ShopProduct,
-  session: ShopSession | null,
-): number | null {
+export function directSeatLimit(product: ShopProduct, session: ShopSession | null): number | null {
   return cartInputFor(product, 1, session).limit;
 }
 

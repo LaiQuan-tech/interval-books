@@ -1,12 +1,15 @@
+import { useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
-import { SessionList } from "@/components/shop/SessionPicker";
+import { SessionList, SessionPicker } from "@/components/shop/SessionPicker";
+import { QuantityStepper } from "@/components/shop/ShopBits";
 import { useT } from "@/i18n/LanguageContext";
 import type { Localized } from "@/i18n/types";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { fetchEventBySlug, fetchEventCategories } from "@/lib/cms";
-import { fetchActiveProductForEventSlug } from "@/lib/shop";
+import { directAnySeatsLeft, directCheckoutSearch, directSeatLimit } from "@/lib/direct-checkout";
+import { fetchActiveProductForEventSlug, type ShopProduct } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
 
 /**
@@ -57,7 +60,23 @@ const PAGE = {
   back: { zh: "回到活動", en: "Back to events", ja: "イベント一覧へ" },
   aboutThis: { zh: "關於這場活動", en: "About this event", ja: "この催しについて" },
   registration: { zh: "報名", en: "Registration", ja: "お申し込み" },
-  toRegistration: { zh: "前往報名", en: "Register", ja: "申し込む" },
+  quantity: { zh: "報名人數", en: "How many places", ja: "お申し込み人数" },
+  registerCta: { zh: "我要報名", en: "Register now", ja: "この回に申し込む" },
+  registerNote: {
+    zh: "按下之後直接進入結帳，會再請你填寫每一位參加者的資料。",
+    en: "This takes you straight to checkout, where we ask for each attendee's details.",
+    ja: "そのままお手続きへ進みます。次の画面で参加者お一人ずつの情報をご入力いただきます。",
+  },
+  pickSessionFirst: {
+    zh: "請先選擇場次",
+    en: "Please choose a sitting first",
+    ja: "先に回をお選びください",
+  },
+  noSeats: {
+    zh: "目前每一場都已額滿。歡迎來信詢問下一次的時間。",
+    en: "Every sitting is full for now. Write to us and we will let you know about the next one.",
+    ja: "現在すべての回が満席です。次回の日程についてはお問い合わせください。",
+  },
   notOpen: {
     zh: "報名尚未開放。開放之後會在這裡放上報名連結。",
     en: "Registration is not open yet. The link will appear here once it is.",
@@ -129,7 +148,7 @@ export const Route = createFileRoute("/events/$slug")({
 /** 報名按鈕的四種樣子。四種都要有畫面，沒有一種是「什麼都不畫」。 */
 type RegistrationCta =
   | { kind: "external"; href: string }
-  | { kind: "internal"; productSlug: string }
+  | { kind: "internal"; product: ShopProduct }
   | { kind: "closed" }
   | { kind: "unavailable" };
 
@@ -137,19 +156,33 @@ type RegistrationCta =
  * 目的地照 events.registration_type 決定 —— 這是 0001 就存在、五期以來沒有任何
  * 路由讀過的兩個欄位之一（另一個是 payment_enabled，這一期仍然沒有人讀）。
  *
- * ⚠️ 這一頁**不**自己做一個結帳入口。結帳是一條真管線（cartInputFor → cart →
- *    checkout → 座位預留 → 金流 → 發票），而它的數量上限取的是**選中那一場**的
- *    剩餘（見 src/routes/shop.$slug.tsx 對 remainingForSession 的用法）。第二個
- *    入口就是第二份那段邏輯，兩份遲早會長歪成「活動頁讓你買 5 個位子、那一場只
- *    剩 1 個」。所以這裡只負責把人帶到唯一的那個入口。
+ * ── 🔴 這一頁現在真的有一個報名入口了（原本這裡寫著「不可以有」）────────────
+ * 這段註解原本反對在活動頁做第二個結帳入口，理由是：「結帳是一條真管線
+ * （cartInputFor → cart → checkout → 座位預留 → 金流 → 發票），而它的數量上限取的是
+ * **選中那一場**的剩餘。第二個入口就是第二份那段邏輯，兩份遲早會長歪成『活動頁讓你買
+ * 5 個位子、那一場只剩 1 個』。」
+ *
+ * **那個擔心是對的，所以它沒有被刪掉 —— 是那兩份被消掉了。** 這一頁現在讓客人選場次與
+ * 人數，但它自己不算名額、也不建立訂單：
+ *
+ *   · 數量上限問的是 src/lib/direct-checkout.ts 的 directSeatLimit()，而那支只是
+ *     cartInputFor(product, 1, session).limit —— 與購物車行的上限**是同一行程式碼**
+ *     （src/lib/cart.ts:395）。這一頁沒有 remainingForSession、也沒有任何算式，
+ *     所以「活動頁讓你買 5 個、那一場只剩 1 個」在結構上就發生不了。
+ *   · 按鈕只是一個帶參數的 <Link to="/checkout">。品項在結帳頁由**同一份目錄資料**
+ *     組回來，之後仍然走 placeOrder() → createOrder() 那八步。這一頁沒有第二條下單
+ *     管線，也沒有第二份座位預留／發票／idempotency。
+ *
+ * 少掉的只有「商品頁 → 購物車」那兩頁 —— 它們對「哪一場、幾個人」沒有貢獻任何決定。
+ * scripts/event-detail-page-selftest.mjs 的 [8] 就是在守上面這兩點。
  */
 function registrationCta(
   registrationType: "external" | "internal",
   externalUrl: string,
-  booking: { product: { slug: string } | null; unavailable: boolean },
+  booking: { product: ShopProduct | null; unavailable: boolean },
 ): RegistrationCta {
   if (registrationType === "internal") {
-    if (booking.product) return { kind: "internal", productSlug: booking.product.slug };
+    if (booking.product) return { kind: "internal", product: booking.product };
     // 「問不到」不等於「沒有」。讀取失敗時說「報名尚未開放」是一句它還不知道
     // 真假的話，所以分成兩種狀態。
     return booking.unavailable ? { kind: "unavailable" } : { kind: "closed" };
@@ -229,38 +262,120 @@ function EventDetail() {
 
       <section className="container-editorial pb-32">
         <div className="grid gap-12 border-t border-border pt-12 md:grid-cols-2 md:gap-16">
-          <SessionList sessions={booking.product?.sessions ?? []} />
+          {cta.kind === "internal" ? (
+            <RegistrationPanel product={cta.product} />
+          ) : (
+            <>
+              <SessionList sessions={booking.product?.sessions ?? []} />
 
-          <div>
-            <p className="eyebrow text-2xl">{t(PAGE.registration)}</p>
-            <div className="mt-6">
-              {cta.kind === "external" ? (
-                <a
-                  href={cta.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
-                >
-                  {t(ui.buttons.toEvent)}
-                </a>
-              ) : cta.kind === "internal" ? (
-                <Link
-                  to="/shop/$slug"
-                  params={{ slug: cta.productSlug }}
-                  className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
-                >
-                  {t(PAGE.toRegistration)}
-                </Link>
-              ) : (
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {cta.kind === "unavailable" ? t(PAGE.registrationUnavailable) : t(PAGE.notOpen)}
-                </p>
-              )}
-            </div>
-          </div>
+              <div>
+                <p className="eyebrow text-2xl">{t(PAGE.registration)}</p>
+                <div className="mt-6">
+                  {cta.kind === "external" ? (
+                    <a
+                      href={cta.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
+                    >
+                      {t(ui.buttons.toEvent)}
+                    </a>
+                  ) : (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {cta.kind === "unavailable"
+                        ? t(PAGE.registrationUnavailable)
+                        : t(PAGE.notOpen)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </section>
     </PageShell>
+  );
+}
+
+/**
+ * 選場次、選人數、進結帳。這一區是這一頁唯一會寫入任何狀態的地方。
+ *
+ * ⚠️ 兩個狀態都只活在這個元件裡，**不進購物車、不進 localStorage**。這一頁連
+ *    @/lib/cart 都沒有 import（見 registrationCta 上面那段），所以它不可能把任何東西
+ *    留在瀏覽器上 —— 客人按下按鈕之前，這一頁對世界沒有任何副作用。
+ *
+ * 場次**不預選**。預選第一場會讓「我選過了」與「系統幫我選了」在畫面上長得一樣，而這
+ * 一頁下一步就是收錢。沒選場次時按鈕是一顆不能按的 <button>（不是一個 <Link>），所以
+ * 「沒選場次 → 進得了結帳」這件事在 DOM 上就沒有那條路可走。
+ */
+function RegistrationPanel({ product }: { product: ShopProduct }) {
+  const t = useT();
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [qty, setQty] = useState(1);
+
+  const selectedSession = product.sessions.find((s) => s.id === sessionId) ?? null;
+  // 🔴 上限問 directSeatLimit()（→ cartInputFor().limit），這一頁自己不算。
+  //    沒選場次時**不是**退回商品層級的數字 —— 那是跨場次最大值，拿它當數量上限正是
+  //    這一期在防的 bug。沒選場次就把數量鎖在 1、連 stepper 都不能動。
+  const seatLimit = selectedSession ? directSeatLimit(product, selectedSession) : 1;
+  const anySeats = directAnySeatsLeft(product);
+
+  return (
+    <>
+      {anySeats ? (
+        <SessionPicker
+          sessions={product.sessions}
+          selectedId={sessionId}
+          onSelect={(id) => {
+            setSessionId(id);
+            // 換場次就把數量收回 1：舊的數量可能超過新場次的剩餘。與
+            // src/routes/shop.$slug.tsx 同一個決定。
+            setQty(1);
+          }}
+        />
+      ) : (
+        <SessionList sessions={product.sessions} />
+      )}
+
+      <div>
+        <p className="eyebrow text-2xl">{t(PAGE.registration)}</p>
+        {anySeats ? (
+          <div className="mt-6 space-y-5">
+            <div className="flex flex-wrap items-center gap-4">
+              <QuantityStepper
+                value={qty}
+                max={seatLimit}
+                onChange={(next) => setQty(Math.max(1, next))}
+                label={t(PAGE.quantity)}
+                disabled={selectedSession === null}
+              />
+              {selectedSession ? (
+                <Link
+                  to="/checkout"
+                  search={directCheckoutSearch(product, selectedSession, qty)}
+                  className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
+                >
+                  {t(PAGE.registerCta)}
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-block cursor-not-allowed border border-border px-6 py-3 text-xs tracking-widest text-muted-foreground"
+                >
+                  {t(PAGE.registerCta)}
+                </button>
+              )}
+            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {selectedSession ? t(PAGE.registerNote) : t(PAGE.pickSessionFirst)}
+            </p>
+          </div>
+        ) : (
+          <p className="mt-6 text-sm leading-relaxed text-muted-foreground">{t(PAGE.noSeats)}</p>
+        )}
+      </div>
+    </>
   );
 }
 

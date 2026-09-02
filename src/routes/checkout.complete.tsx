@@ -35,6 +35,7 @@ import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { useCart } from "@/lib/cart";
 import { checkoutErrorText, type OrderConfirmation } from "@/lib/checkout";
 import { fetchOrderConfirmation, retryPayment } from "@/lib/checkout-fns";
+import { shouldClearCartAfterOrder } from "@/lib/direct-checkout";
 import { submitPaymentForm } from "@/lib/payment-redirect";
 import { formatPrice } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
@@ -142,7 +143,8 @@ function CheckoutComplete() {
   });
 
   /**
-   * Empty the cart only once the order no longer owes anybody money.
+   * Empty the cart only once the order no longer owes anybody money — and only
+   * when the cart is what the order came from.
    *
    * THIS CONDITION IS THE WHOLE POINT — do not simplify it back to `if (order)`.
    * Arriving here does not mean the shopper paid: with a gateway in the flow
@@ -155,12 +157,20 @@ function CheckoutComplete() {
    * (see getOrderByToken) — never from a URL parameter the gateway controls —
    * and is false both for a settled card order and for an offline order, which
    * has no payment step to wait for.
+   *
+   * 🔴 第二個條件是直接結帳（活動頁 →「我要報名」）帶來的：`clear()` 清的是**整個**
+   *    購物車，不分辨這張單是哪裡來的。一筆從活動頁直接下的訂單從來沒有經過購物車，
+   *    所以那一下清掉的會是別人的東西 —— 客人放在裡面的兩本書。判斷本身是
+   *    src/lib/direct-checkout.ts 的 shouldClearCartAfterOrder()：抽成純函式是因為
+   *    這條規則的兩個錯法（清了不該清的、該清的沒清）都是靜默的，只能靠真的跑一次
+   *    來證明，見 scripts/direct-checkout-selftest.mjs。
    */
   useEffect(() => {
-    if (!order || order.awaitingPayment || cleared.current) return;
+    if (cleared.current) return;
+    if (!shouldClearCartAfterOrder(order, token)) return;
     cleared.current = true;
     clear();
-  }, [order, clear]);
+  }, [order, token, clear]);
 
   /**
    * While the gateway still owes us an answer, ask the server again.

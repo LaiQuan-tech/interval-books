@@ -282,9 +282,14 @@ checkTrue("而列表頁仍然用得到它", /imageFor\(/.test(indexCode));
 // [6] 場次區：空的時候要有文案，不是整塊消失
 // =============================================================================
 console.log("\n[6] 場次區與空狀態");
+// 這一期起這一頁同時用得到唯讀的 SessionList 與選得動的 SessionPicker（見 [8]），
+// 兩個都從同一個檔案來 —— 所以這裡釘的是「SessionList 在這一行 import 裡」，
+// 不是整行逐字相等。
 checkTrue(
   "路由 import 了 SessionList",
-  /import \{ SessionList \} from "@\/components\/shop\/SessionPicker";/.test(detailCode),
+  /import \{[^}]*\bSessionList\b[^}]*\} from "@\/components\/shop\/SessionPicker";/.test(
+    detailCode,
+  ),
 );
 checkTrue("路由真的渲染 <SessionList", /<SessionList\b/.test(detailCode));
 // 沒有商品就沒有場次（event_sessions 掛的是 product_id），但那時候要傳空陣列
@@ -317,8 +322,15 @@ checkTrue("SessionPicker 本人還在", /export function SessionPicker\(/.test(p
 console.log("\n[7] 報名按鈕");
 checkTrue("讀 events.registration_type", /registrationType/.test(detailCode));
 checkTrue("external 走 external_url", /kind: "external"; href: string/.test(detailCode));
-checkTrue("internal 導到 /shop/$slug", /to="\/shop\/\$slug"/.test(detailCode));
-checkTrue("internal 帶的是商品的 slug", /params=\{\{ slug: cta\.productSlug \}\}/.test(detailCode));
+// 🔴 目的地在這一期換了：原本是「導到商品頁 /shop/$slug，讓客人在那裡加入購物車」，
+//    現在是「就地選場次與人數，直接進 /checkout」。少掉的是商品頁與購物車那兩頁 ——
+//    它們對「哪一場、幾個人」沒有貢獻任何決定。第二個入口為什麼安全，見 [8]。
+checkTrue("internal 直接導到 /checkout", /to="\/checkout"/.test(detailCode));
+checkFalse("不再繞道商品頁（那一步就是這一期要拿掉的）", /to="\/shop\/\$slug"/.test(detailCode));
+checkTrue(
+  "internal 拿到的是整件商品（要靠它問場次與名額）",
+  /kind: "internal"; product: ShopProduct/.test(detailCode),
+);
 // 接不到商品時不可以導去一個會 404 的網址，要顯示狀態。
 checkTrue("接不到商品時顯示「報名尚未開放」", /t\(PAGE\.notOpen\)/.test(detailCode));
 // 「問不到」與「沒有」是兩件事：讀取失敗時說「尚未開放」是一句還不知道真假的話。
@@ -368,27 +380,58 @@ checkFalse(
 );
 
 // =============================================================================
-// [8] 不在這一頁重做第二個結帳入口
+// [8] 第二個結帳入口存在了，但沒有第二份邏輯
 // =============================================================================
-console.log("\n[8] 沒有第二個結帳入口");
-// 結帳是一條真管線（cartInputFor → cart → checkout → 座位預留 → 金流 → 發票），
-// 而它的數量上限取的是**選中那一場**的剩餘。第二個入口就是第二份那段邏輯。
-for (const forbidden of ["cartInputFor", "useCart", "addItem", "QuantityStepper"]) {
+console.log("\n[8] 第二個入口沒有帶來第二份邏輯");
+//
+// ── 這一段為什麼從「不准有第二個入口」改成現在這樣 ─────────────────────────
+// 這裡原本守的是「這一頁不可以自己做結帳入口」，理由寫在路由檔裡：「結帳是一條真管線
+// （cartInputFor → cart → checkout → 座位預留 → 金流 → 發票），而它的數量上限取的是
+// **選中那一場**的剩餘。第二個入口就是第二份那段邏輯，兩份遲早會長歪成『活動頁讓你買
+// 5 個位子、那一場只剩 1 個』。」
+//
+// **那個擔心沒有被推翻，是被消掉了。** 這一期真的加了入口，但：
+//   · 上限不在這一頁 —— 一律 directSeatLimit() → cartInputFor().limit，與購物車行
+//     同一行程式碼；這一頁連 remainingForSession 都沒有 import。
+//   · 下單不在這一頁 —— 按鈕只是一個帶參數的 <Link to="/checkout">，訂單仍然由
+//     /checkout 走 placeOrder() → createOrder()。
+// 所以下面守的變成這兩件事本身。夾出來的數字對不對是 scripts/direct-checkout-selftest.mjs
+// 真的跑一次在驗的（兩個名額不同的場次），這裡只守形狀。
+//
+// 🔴 上限只有一份
+checkTrue("上限問共用的 directSeatLimit()", /directSeatLimit\(/.test(detailCode));
+for (const forbidden of ["remainingForSession", "remainingFor(", "seatsTaken", "capacity"]) {
+  checkFalse(
+    `路由沒有自己算名額（${forbidden}）`,
+    new RegExp(forbidden.replace(/[()]/g, "\\$&")).test(detailCode),
+  );
+}
+// 🔴 沒選場次時，數量上限不可以退回商品層級的跨場次最大值 —— 那正是那個 bug。
+checkTrue(
+  "沒選場次時上限鎖成 1，不是跨場次最大值",
+  /selectedSession \? directSeatLimit\(product, selectedSession\) : 1/.test(detailCode),
+);
+// 🔴 下單管線只有一條
+for (const forbidden of ["placeOrder", "createOrder", "idempotency", "reserve_session_seat"]) {
+  checkFalse(`路由沒有第二條下單管線（${forbidden}）`, new RegExp(forbidden).test(detailCode));
+}
+// 🔴 這一頁仍然不碰購物車 store：它一個位元組都不寫進 localStorage。
+for (const forbidden of ["useCart", "addItem", "cartInputFor"]) {
   checkFalse(`路由沒有用到 ${forbidden}`, new RegExp(`\\b${forbidden}\\b`).test(detailCode));
 }
 checkFalse("路由沒有 import @/lib/cart", /from "@\/lib\/cart"/.test(detailCode));
-// ⚠️ 不可以寫成「檔案裡不准出現 SessionPicker」：SessionList 就是從
-//    "@/components/shop/SessionPicker" 這個路徑 import 進來的，那樣寫必定紅。
-//    要釘的是「沒有 import 那個具名元件」與「沒有把它渲染出來」。
-checkFalse(
-  "路由沒有 import SessionPicker 這個元件",
-  /import \{[^}]*\bSessionPicker\b[^}]*\} from/.test(detailCode),
-);
-checkFalse("路由沒有渲染 <SessionPicker", /<SessionPicker\b/.test(detailCode));
-// 對照組：真正的入口還在 /shop/$slug，斷言才有意義。
+checkFalse("路由沒有 localStorage", /localStorage/.test(detailCode));
+// ⚠️ 參加者姓名／電話不可以出現在這一頁（它會被寫進網址）——  與 cart.ts 檔頭同一條。
+checkFalse("路由不經手參加者資料", /participant|Participant/.test(detailCode));
+// 對照組：既有的「商品頁 → 購物車」那條路還在，上面那幾條否定斷言才有意義
+// （不是因為 cartInputFor 這個東西被刪掉了才「沒用到」）。
 checkTrue(
-  "唯一的結帳入口仍在 shop.$slug.tsx",
+  "對照組：cartInputFor 仍然活著，而且 shop.$slug.tsx 還在用",
   /cartInputFor\(/.test(stripTs(readFile("src/routes/shop.$slug.tsx"))),
+);
+checkTrue(
+  "對照組：直接結帳的上限也是走 cartInputFor",
+  /cartInputFor\(/.test(stripTs(readFile("src/lib/direct-checkout.ts"))),
 );
 
 // =============================================================================

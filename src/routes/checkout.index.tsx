@@ -52,6 +52,13 @@ import {
   type OfferedShippingMethod,
 } from "@/lib/checkout";
 import { fetchPaymentOptions, placeOrder } from "@/lib/checkout-fns";
+import {
+  parseDirectCheckoutSearch,
+  rememberCartKept,
+  resolveDirectCheckout,
+  type DirectCheckoutSearch,
+  type DirectFailureReason,
+} from "@/lib/direct-checkout";
 import { ParticipantFields } from "@/components/shop/ParticipantFields";
 import { submitPaymentForm } from "@/lib/payment-redirect";
 import { fetchActiveProducts, formatPrice } from "@/lib/shop";
@@ -204,6 +211,41 @@ const PAGE = {
     ja: "カートにご購入いただけない商品があります。カートで削除してからお進みください。",
   },
   backToCart: { zh: "回到購物車", en: "Back to cart", ja: "カートへ戻る" },
+  // ── 直接結帳（從活動頁帶著場次與人數進來）─────────────────────────────────
+  // 這幾句是網址被改壞時看到的畫面。四種原因分開講，因為它們的下一步不一樣：
+  // 「這一場滿了」值得去看別場，「連結失效」只能回列表重找。
+  backToEvents: { zh: "回到活動", en: "Back to events", ja: "イベント一覧へ" },
+  directProblemTitle: {
+    zh: "這個報名連結用不了",
+    en: "This registration link does not work",
+    ja: "このお申し込みリンクはご利用いただけません",
+  },
+  directProductGone: {
+    zh: "找不到這個品項。它可能已經下架，或連結被改過了。",
+    en: "We cannot find that item. It may have been taken down, or the link was altered.",
+    ja: "この商品が見つかりません。掲載が終了したか、リンクが変更された可能性があります。",
+  },
+  directSessionRequired: {
+    zh: "這個連結沒有指定場次。請回到活動頁選一場再報名。",
+    en: "This link does not say which sitting. Please go back to the event and choose one.",
+    ja: "このリンクには開催回の指定がありません。イベントページで回をお選びください。",
+  },
+  directSessionGone: {
+    zh: "找不到這個場次。它可能已經結束或被取消了。",
+    en: "We cannot find that sitting. It may have finished or been cancelled.",
+    ja: "この回が見つかりません。終了または中止となった可能性があります。",
+  },
+  directSoldOut: {
+    zh: "這一場的名額已經滿了。歡迎回到活動頁看看其他場次。",
+    en: "That sitting is full. Have a look at the other sittings on the event page.",
+    ja: "この回は満席です。イベントページで他の回もご覧ください。",
+  },
+  directClamped: {
+    zh: "報名人數已調整為這一場目前還剩下的名額。",
+    en: "The number of places has been adjusted to what is still left in this sitting.",
+    ja: "お申し込み人数を、この回の残席数に合わせて調整しました。",
+  },
+  backToItem: { zh: "看這個品項", en: "View this item", ja: "商品ページを見る" },
   catalogueDown: {
     zh: "商品資料暫時無法載入，請稍後再試。",
     en: "The catalogue is temporarily unavailable. Please try again shortly.",
@@ -213,11 +255,44 @@ const PAGE = {
 
 const NO_ITEMS: CartLine[] = [];
 
+/**
+ * 直接結帳失敗的四種原因，各自對應一句話。
+ *
+ * 寫成 switch 而不是查表，是為了讓 DirectFailureReason 之後多一種時 TypeScript 立刻
+ * 在這裡叫回來 —— 一個「多了一種原因、但畫面上沒有那一句」的漏洞是靜默的（會掉進
+ * default 印出別人的話），而這一頁在收錢。
+ */
+function directProblemText(reason: DirectFailureReason) {
+  switch (reason) {
+    case "product_gone":
+      return PAGE.directProductGone;
+    case "session_required":
+      return PAGE.directSessionRequired;
+    case "session_gone":
+      return PAGE.directSessionGone;
+    case "sold_out":
+      return PAGE.directSoldOut;
+  }
+}
+
 export const Route = createFileRoute("/checkout/")({
+  /**
+   * 品項的**第二個**來源：直接結帳（活動頁 →「我要報名」）。
+   *
+   * 三個參數都是選填，所以一個都不帶時這一頁與從前一模一樣 —— 走購物車。解析規則
+   * （包括「網址參數什麼都不能相信」）全部在 src/lib/direct-checkout.ts，這裡只是把
+   * TanStack 交來的 raw search 轉過去，不在路由檔裡放第二份解析。
+   */
+  validateSearch: (search: Record<string, unknown>): DirectCheckoutSearch =>
+    parseDirectCheckoutSearch(search),
   // Same read as /cart: the catalogue decides prices, purchase limits and —
   // uniquely here — whether anything in the cart needs posting at all.
   // paymentOptions is a single boolean read at request time, so adding the
   // PayUni keys to the deployment turns the card option on without a rebuild.
+  //
+  // 直接結帳**不多讀一次資料庫**：fetchActiveProducts() 已經把場次一起掛上來了
+  // （attachSessions），所以品項是從這同一份目錄組出來的 —— 畫面上的名額與夾數量用的
+  // 名額不可能是兩個不同時間點的答案。
   loader: async () => ({
     catalogue: await fetchActiveProducts(),
     paymentOptions: await fetchPaymentOptions(),
@@ -251,7 +326,31 @@ function Checkout() {
   const hydrated = useCartHydrated();
   const storedItems = useCart((s) => s.items);
   const syncFromCatalogue = useCart((s) => s.syncFromCatalogue);
-  const items = hydrated ? storedItems : NO_ITEMS;
+
+  /**
+   * 品項的來源有兩個，而且是互斥的。
+   *
+   * `direct === null` 就是原本的路徑：品項來自購物車，這一頁的行為與從前逐字相同。
+   * 不是 null 時這一頁在服務一筆從活動頁直接帶進來的報名 —— 那時候**購物車完全不參與**：
+   * 不讀它的內容、不 syncFromCatalogue（那會寫回 localStorage）、成立訂單之後也不清它。
+   * 最後那一條見 onSubmit 裡的 rememberCartKept()。
+   *
+   * 依賴列刻意攤成三個原始值而不是整個 search 物件：search 的參照是否穩定是 router 的
+   * 實作細節，而這個 memo 的下游（participantSlots → zod schema）每一次換參照都要重建。
+   */
+  const { product: directProduct, session: directSession, qty: directQty } = Route.useSearch();
+  const direct = useMemo(
+    () =>
+      resolveDirectCheckout(catalogue.products, {
+        product: directProduct,
+        session: directSession,
+        qty: directQty,
+      }),
+    [catalogue.products, directProduct, directSession, directQty],
+  );
+  const directMode = direct !== null;
+  const directItems = useMemo<CartLine[]>(() => (direct?.ok ? [direct.line] : NO_ITEMS), [direct]);
+  const items = directMode ? directItems : hydrated ? storedItems : NO_ITEMS;
 
   const [submitting, setSubmitting] = useState(false);
   const [method, setMethod] = useState<OfferedShippingMethod>("home");
@@ -281,9 +380,12 @@ function Checkout() {
   );
 
   useEffect(() => {
+    // 直接結帳不碰購物車：syncFromCatalogue 會寫回 store（也就是 localStorage），
+    // 而這一筆訂單與購物車裡放著什麼無關。
+    if (directMode) return;
     if (!hydrated || catalogue.unavailable) return;
     syncFromCatalogue(catalogue.products);
-  }, [hydrated, catalogue, syncFromCatalogue]);
+  }, [directMode, hydrated, catalogue, syncFromCatalogue]);
 
   const buyable = useMemo(() => items.filter((i) => !i.unavailable), [items]);
   const hasUnavailable = items.length > buyable.length;
@@ -483,6 +585,17 @@ function Checkout() {
         return;
       }
 
+      /**
+       * 🔴 直接結帳的訂單**不可以清購物車**。
+       *
+       * /checkout/complete 在付款結清之後呼叫的是 cart 的 clear()，而那支是清空整個
+       * 購物車、不分辨訂單是哪裡來的。這一筆訂單從來沒有經過購物車，所以那一下清掉的
+       * 會是別人的東西 —— 一個購物車裡放著兩本書的客人，從活動頁報名並付款成功，回來
+       * 會發現那兩本書不見了。旗標記在這裡（建單當下、拿得到 token 的唯一時機），
+       * 由 /checkout/complete 讀。理由與做法見 src/lib/direct-checkout.ts。
+       */
+      if (directMode) rememberCartKept(result.publicToken);
+
       // The cart is NOT cleared here, and not on arrival at the confirmation
       // page either — only once payment is settled. Clearing it now would send
       // anyone whose card is declined back to an empty cart with an unpaid
@@ -508,7 +621,46 @@ function Checkout() {
     }
   }
 
-  if (hydrated && buyable.length === 0) {
+  /**
+   * 直接結帳組不出品項的四種情況，各自有一句話與一條回得去的路。
+   *
+   * 放在購物車的空狀態**之前**：這時候購物車裡有沒有東西完全不相干，掉回「購物車是
+   * 空的」會是一句與事實無關的話（而且那個「繼續選購」按鈕會把人帶去一個他沒在找的
+   * 地方）。目錄整個讀不到時另外講，因為那時候「找不到這件商品」還不知道是不是真的。
+   */
+  if (directMode && !direct.ok) {
+    return (
+      <PageShell>
+        <PageHeader
+          eyebrow={`Checkout  ／  ${t(PAGE.eyebrowSuffix)}`}
+          title={t(PAGE.directProblemTitle)}
+        />
+        <section className="container-editorial pb-32">
+          <div className="border border-border p-10">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {catalogue.unavailable ? t(PAGE.catalogueDown) : t(directProblemText(direct.reason))}
+            </p>
+            <div className="mt-8 flex flex-wrap gap-4">
+              <Link
+                to="/events"
+                className="inline-block border border-foreground px-5 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
+              >
+                {t(PAGE.backToEvents)}
+              </Link>
+              <Link
+                to="/shop"
+                className="inline-block border border-border px-5 py-3 text-xs tracking-widest text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
+              >
+                {t(ui.buttons.continueShopping)}
+              </Link>
+            </div>
+          </div>
+        </section>
+      </PageShell>
+    );
+  }
+
+  if (!directMode && hydrated && buyable.length === 0) {
     return (
       <PageShell>
         <PageHeader eyebrow={`Checkout  ／  ${t(PAGE.eyebrowSuffix)}`} title={t(PAGE.title)} />
@@ -546,6 +698,13 @@ function Checkout() {
               <Link to="/cart" className="underline underline-offset-4">
                 {t(PAGE.backToCart)}
               </Link>
+            </p>
+          )}
+          {/* 網址帶的人數被夾過（0、負數，或多過這一場剩下的名額）。夾了就要說 ——
+              一個安靜變小的數字會在客人按下「前往付款」之後才被發現。 */}
+          {direct?.ok && direct.clamped && (
+            <p className="mb-8 border border-border p-5 text-sm text-muted-foreground">
+              {t(PAGE.directClamped)}
             </p>
           )}
 
@@ -1094,12 +1253,24 @@ function Checkout() {
               <span className="font-serif text-2xl tabular-nums">{formatPrice(total)}</span>
             </div>
 
-            <Link
-              to="/cart"
-              className="mt-7 inline-block border border-foreground px-5 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
-            >
-              {t(PAGE.backToCart)}
-            </Link>
+            {/* 直接結帳的人沒有「回到購物車」這件事可做（他的購物車與這一筆訂單
+                無關，而且裡面可能正放著別的東西）。給他回得去的是那個品項自己。 */}
+            {direct?.ok ? (
+              <Link
+                to="/shop/$slug"
+                params={{ slug: direct.line.slug }}
+                className="mt-7 inline-block border border-foreground px-5 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
+              >
+                {t(PAGE.backToItem)}
+              </Link>
+            ) : (
+              <Link
+                to="/cart"
+                className="mt-7 inline-block border border-foreground px-5 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
+              >
+                {t(PAGE.backToCart)}
+              </Link>
+            )}
           </div>
         </aside>
       </section>
