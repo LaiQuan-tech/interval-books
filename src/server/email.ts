@@ -31,7 +31,7 @@
  * 全部在 src/server/notify.ts 與 0022 的 email_outbox 上。
  */
 import "@tanstack/react-start/server-only";
-import { maskEmail } from "@/lib/email-templates";
+import { maskEmail, parseRecipients } from "@/lib/email-templates";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -54,6 +54,11 @@ export type SendResult = {
 };
 
 export type OutgoingEmail = {
+  /**
+   * 收件人。可以是逗號分隔的多個地址（店家的新訂單通知可能有多個收件人，見
+   * src/lib/email-templates.ts 的 parseRecipients()）。單一地址時行為與過去
+   * 完全相同——split(",") 在沒有逗號時就是一個元素的陣列。
+   */
   to: string;
   subject: string;
   text: string;
@@ -115,7 +120,9 @@ export async function sendEmail(message: OutgoingEmail): Promise<SendResult> {
       },
       body: JSON.stringify({
         from,
-        to: [message.to],
+        // parseRecipients()：Resend 的 to 是陣列，每個元素要是單一地址。單一
+        // 地址（沒有逗號）拆出來還是一個元素的陣列，行為與過去逐字相同。
+        to: parseRecipients(message.to),
         subject: message.subject,
         text: message.text,
         html: message.html,

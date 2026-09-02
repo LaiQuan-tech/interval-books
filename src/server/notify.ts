@@ -40,6 +40,7 @@ import { sendEmail, emailConfigured } from "@/server/email";
 import {
   claimEmailBatch,
   claimOrderNotify,
+  enqueueAdminOrderEmail,
   enqueueOrderEmail,
   enqueueRegistrationEmails,
   failEmail,
@@ -60,6 +61,7 @@ import { loadPaidRoster, loadPaidRosterByOrder } from "@/server/repos/event-regi
 import { getEventSessionById } from "@/server/repos/event-sessions";
 import {
   maskEmail,
+  renderAdminOrderNotificationEmail,
   renderOrderPaidEmail,
   renderRegistrationTicketEmail,
   renderSessionReminderEmail,
@@ -71,12 +73,14 @@ export type NotifyOutcome =
   | { ok: true; queued: number; adopted: boolean }
   | { ok: false; reason: string };
 
-/** dedupe_key 的三種格式。**只在這裡組**，免得有第二個地方拼錯前綴。 */
+/** dedupe_key 的四種格式。**只在這裡組**，免得有第二個地方拼錯前綴。 */
 export const dedupeKeys = {
   orderPaid: (orderId: string) => `order_paid:${orderId}`,
   registrationTicket: (registrationId: string) => `registration_ticket:${registrationId}`,
   sessionReminder: (sessionId: string, registrationId: string) =>
     `session_reminder:${sessionId}:${registrationId}`,
+  /** 0032：店家的新訂單／新報名通知。一張訂單一封，跟 orderPaid 用同一個實體 id。 */
+  orderNotifyAdmin: (orderId: string) => `order_notify_admin:${orderId}`,
 };
 
 // -----------------------------------------------------------------------------
@@ -86,8 +90,9 @@ export const dedupeKeys = {
 /**
  * 一次把某張訂單該寄的信全部排進 outbox。**永不 throw。**
  *
- * 排幾封：訂購人 1 封（付款成功）＋ 這張訂單上每一位在簽到表上的參加者 1 封
- * （報名成功）。只買書的訂單就只有第一封。
+ * 排幾封：訂購人 1 封（付款成功）＋ 店家 1 封（新訂單／新報名通知，0032，收件人
+ * 是 site_settings.notify_emails，空白就安靜不排）＋ 這張訂單上每一位在簽到表上
+ * 的參加者 1 封（報名成功）。只買書的訂單就是訂購人與店家各 1 封。
  *
  * 回傳 queued 是**這一次真的新增的列數**，重跑時會是 0（全部撞 dedupe_key），
  * 那是正常的，不是失敗。
@@ -152,6 +157,53 @@ async function queueWithClaim(orderId: string): Promise<NotifyOutcome> {
     html: paidMail.html,
   });
   if (addedOrderMail) queued += 1;
+
+  // ---- 1.5 店家的新訂單／新報名通知（0032）------------------------------------
+  // ⚠️ 整段包在自己的 try/catch 裡，**絕對不能讓店家信的任何失敗拖累客人的信**：
+  //    上面訂購人的付款成功信已經排進去了，下面每一位參加者的報名成功信還沒排——
+  //    這一段夾在中間，萬一 renderAdminOrderNotificationEmail() 或
+  //    enqueueAdminOrderEmail() 丟出意外例外（不應該發生：兩者都設計成不 throw，
+  //    但這裡按「防禦性」處理，不賭它們的實作永遠不變），try/catch 讓函式繼續往
+  //    下跑到報名信的迴圈與 finishOrderNotify()，不會被這一段拖垮。
+  //    店家信箱是空的（site_settings.notify_emails 沒設）不算失敗，是
+  //    enqueue_admin_order_email() 內建的安靜跳過（0032 §2），這裡收到的就是
+  //    普通的 false，不會進到 catch。
+  try {
+    // 場次的參加人數：這張訂單裡屬於同一個 session 的 item.quantity 加總。
+    // ⚠️ 這是「這場買了幾個名額」，不是「簽到表上有幾筆」——不需要等下面的
+    //    loadPaidRosterByOrder()，訂單的 order_items 就夠了，店家通知信也不需要
+    //    逐位名單（那要登入後台看）。
+    const sessionParticipants = new Map<string, number>();
+    for (const it of items) {
+      if (!it.sessionId) continue;
+      sessionParticipants.set(
+        it.sessionId,
+        (sessionParticipants.get(it.sessionId) ?? 0) + it.quantity,
+      );
+    }
+    const adminMail = renderAdminOrderNotificationEmail({
+      orderNo: order.orderNo,
+      total: order.total,
+      paymentMethod: order.paymentMethod,
+      shippingMethod: order.shippingMethod,
+      items: items.map((i) => ({ name: i.name, quantity: i.quantity, subtotal: i.subtotal })),
+      sessions: sessionIds.flatMap((id) => {
+        const session = sessions.get(id);
+        if (!session) return [];
+        return [{ session, participants: sessionParticipants.get(id) ?? 0 }];
+      }),
+    });
+    const addedAdminMail = await enqueueAdminOrderEmail({
+      dedupeKey: dedupeKeys.orderNotifyAdmin(orderId),
+      subject: adminMail.subject,
+      text: adminMail.text,
+      html: adminMail.html,
+    });
+    if (addedAdminMail) queued += 1;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[notify] 店家通知信排入失敗 order=${order.orderNo} ${message}`);
+  }
 
   // ---- 2. 每一位參加者的報名成功信 -------------------------------------------
   // ⚠️ 用 loadPaidRosterByOrder()，不是自己寫一次付款狀態的條件。「誰在簽到表上」

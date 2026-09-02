@@ -20,7 +20,7 @@ import type { Localized } from "@/i18n/types";
 const SINGLETON_ID = 1;
 
 const COLUMNS =
-  "id, short_desc, address, city, hours, closed, contact_email, site_url, social_instagram, social_facebook, social_line, map_embed, map_link, map_apple, meta_site_name, meta_author, meta_twitter_card, meta_og_type, default_meta_title, default_meta_description, created_at, updated_at";
+  "id, short_desc, address, city, hours, closed, contact_email, site_url, social_instagram, social_facebook, social_line, map_embed, map_link, map_apple, meta_site_name, meta_author, meta_twitter_card, meta_og_type, default_meta_title, default_meta_description, notify_emails, created_at, updated_at";
 
 export type SiteSettingsRow = {
   id: number;
@@ -43,6 +43,14 @@ export type SiteSettingsRow = {
   meta_og_type: string;
   default_meta_title: string;
   default_meta_description: string;
+  /**
+   * 新訂單／新報名通知信收件人（0032）。逗號分隔可填多人，空字串＝不寄。
+   * ⚠️ 這一欄對 anon/authenticated **沒有** SELECT 權限（0032 §0.2 的
+   * column-level grant）——這裡讀寫的是 service_role（supabaseAdmin()），不受
+   * 影響，但別假設這個型別的每一欄都能像 contact_email 一樣被前台的
+   * fetchSiteContent() 讀到。
+   */
+  notify_emails: string;
   created_at: string;
   updated_at: string;
 };
@@ -68,6 +76,7 @@ export type SiteSettingsUpdateInput = {
   meta_og_type: string;
   default_meta_title: string;
   default_meta_description: string;
+  notify_emails: string;
 };
 
 /**
@@ -117,6 +126,7 @@ export async function updateSiteSettings(input: SiteSettingsUpdateInput): Promis
       meta_og_type: input.meta_og_type,
       default_meta_title: input.default_meta_title,
       default_meta_description: input.default_meta_description,
+      notify_emails: input.notify_emails,
     })
     .eq("id", SINGLETON_ID)
     .select(COLUMNS)

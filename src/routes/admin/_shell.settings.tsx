@@ -59,6 +59,7 @@ function toFormValues(settings: SiteSettingsData): SiteSettingsFormValues {
     meta_og_type: settings.meta_og_type,
     default_meta_title: settings.default_meta_title,
     default_meta_description: settings.default_meta_description,
+    notify_emails: settings.notify_emails,
   };
 }
 
@@ -134,6 +135,36 @@ function AdminSettingsPage() {
                   )}
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>訂單通知</CardTitle>
+              <CardDescription>
+                有新訂單或新報名、且付款成功時，系統會寄一封通知信到這裡——內容是訂單摘要，不含客人的完整地址與電話，完整資料請登入後台查看。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FormField
+                control={form.control}
+                name="notify_emails"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>通知信收件人</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="例如 info@intervalbooks.tw, owner@intervalbooks.tw"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      多個信箱請用逗號分隔。留空即代表暫時不寄送新訂單通知信。
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 

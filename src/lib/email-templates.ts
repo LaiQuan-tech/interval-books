@@ -79,6 +79,28 @@ export type RegistrationEmailInput = {
   session: SessionBrief;
 };
 
+/**
+ * 店家的新訂單／新報名通知（renderAdminOrderNotificationEmail 的輸入）。
+ *
+ * ⚠️ **刻意沒有 customer_name / phone / 完整地址欄位。** 這封信只是「有新單，
+ *    去後台看」的提醒，店家點進後台本來就看得到完整資料；信件內文 30 天後會被
+ *    purge_sent_email_bodies() 清掉（0022 §6），但清掉前那 30 天內文都躺在
+ *    email_outbox 與 Resend 的紀錄裡——這是原始個資的副本，能不放就不放
+ *    （同 0022 §0.4.2 的理由）。型別上沒有這幾個欄位，notify.ts 想傳也傳不了，
+ *    這是編譯期就擋住的保證，不是「記得不要傳」這種約定。
+ */
+export type AdminOrderNotificationInput = {
+  orderNo: string;
+  total: number;
+  /** public.orders.payment_method（0005:88）。null＝webhook 還沒填（理論上不會發生——排這封信的前提是訂單已經 paid）。 */
+  paymentMethod: string | null;
+  /** public.orders.shipping_method（0005:86）。 */
+  shippingMethod: string;
+  items: { name: Localized; quantity: number; subtotal: number }[];
+  /** 這張訂單買到的場次，附這個場次總共幾位參加者（不是逐位名單——名單要登入後台看）。 */
+  sessions: { session: SessionBrief; participants: number }[];
+};
+
 // -----------------------------------------------------------------------------
 // 佔位文案（fallback）
 // -----------------------------------------------------------------------------
@@ -183,7 +205,50 @@ const LABELS: Record<string, Localized> = {
   location: { zh: "地點", en: "Where", ja: "場所" },
   attendee: { zh: "參加者", en: "Attendee", ja: "参加者" },
   seatNo: { zh: "座位序號", en: "Seat", ja: "座席番号" },
+  paymentMethod: { zh: "付款方式", en: "Payment method", ja: "お支払い方法" },
+  shippingMethod: { zh: "收件方式", en: "Delivery method", ja: "受け取り方法" },
+  participants: { zh: "參加人數", en: "Participants", ja: "参加人数" },
 };
+
+/**
+ * 店家通知信專用的兩張對照表——刻意寫死在這裡，不進 email_copy CMS。
+ *
+ * 理由同上面 LABELS 那一段的檔頭：這是「payment_method 這個資料庫值該印成什麼
+ * 中文」的對照，不是一句可以有不同寫法的文案，改動機率趨近於零。CMS 管的是
+ * 句子，這種值域固定的代碼表留在程式碼裡——多一個能被後台清空存檔的地方，
+ * 換來的風險（「付款方式：」後面空白一片）比它省下的彈性貴。
+ *
+ * 值域抄自 supabase/migrations/0005_commerce_orders.sql 的兩條 CHECK
+ * （payment_method 另外含 0028 加的 'free'）；不在表裡的值（理論上不會發生，
+ * 兩欄都是 DB CHECK 鎖住的）印代碼本身，不是空字串——「看到一個沒翻譯過的
+ * 代碼」好過「看到一片空白，以為是資料遺失」。
+ */
+const PAYMENT_METHOD_LABEL_ZH: Record<string, string> = {
+  card: "信用卡",
+  atm: "ATM 轉帳",
+  cvs_cod: "超商代收",
+  test_paid: "測試付款",
+  free: "免費（無需付款）",
+};
+
+const SHIPPING_METHOD_LABEL_ZH: Record<string, string> = {
+  home: "宅配到府",
+  cvs: "超商取貨",
+  pickup: "門市自取",
+  none: "無需配送",
+};
+
+/** payment_method → 中文顯示字串。null（理論上不會發生）與未知值印代碼本身。 */
+export function paymentMethodLabel(code: string | null | undefined): string {
+  if (!code) return "（未設定）";
+  return PAYMENT_METHOD_LABEL_ZH[code] ?? code;
+}
+
+/** shipping_method → 中文顯示字串。未知值印代碼本身。 */
+export function shippingMethodLabel(code: string | null | undefined): string {
+  if (!code) return "（未設定）";
+  return SHIPPING_METHOD_LABEL_ZH[code] ?? code;
+}
 
 // -----------------------------------------------------------------------------
 // 小工具
@@ -199,15 +264,48 @@ const LABELS: Record<string, Localized> = {
  * 遮罩規則才驗得到。它是純字串處理，沒有伺服器相依。
  *
  * 星號數量固定，不跟著原本的長度走 —— 長度本身也是一點資訊。
+ *
+ * ⚠️ **支援逗號分隔的多個地址**（店家通知信 to 可能是好幾個人，見
+ *    parseRecipients()）。這不是為了對稱加的：舊版只找第一個 `@`，
+ *    `"a@x.com, b@y.com"` 會被切成 name="a"、domain="@x.com, b@y.com"，
+ *    第二個地址整段原樣印在 domain 裡 —— 遮罩了頭，沒遮罩尾，log 紀律照樣被
+ *    違反。逐段遞迴遮罩才不會漏。單一地址（沒有逗號）的輸出與舊版逐字元相同。
  */
 export function maskEmail(email: string | null | undefined): string {
   const v = (email ?? "").trim();
+  if (v.includes(",")) {
+    return v
+      .split(",")
+      .map((part) => maskEmail(part))
+      .join(", ");
+  }
   const at = v.indexOf("@");
   if (at <= 0) return "***";
   const name = v.slice(0, at);
   const domain = v.slice(at);
   const head = name.slice(0, name.length > 1 ? 2 : 1);
   return `${head}***${domain}`;
+}
+
+/**
+ * 把「逗號分隔的信箱字串」拆成乾淨的地址陣列。
+ *
+ * 每一段先 trim，空字串（含只有空白的字串）整段丟棄——後台的收件人欄位打錯多一個
+ * 逗號、留了頭尾空白，都不該讓通知信整批失敗。用途：
+ *
+ *   1. src/server/email.ts 送給 Resend 之前，把 email_outbox.to_email 這一欄
+ *      拆成 `to: string[]`（Resend 的 `to` 是陣列，每個元素要是單一地址）。
+ *   2. src/lib/admin/schemas.ts 驗證後台「通知信收件人」欄位時，判斷「拆出來
+ *      至少一個看起來像 email 的地址」。
+ *
+ * 空輸入（null / undefined / 空字串 / 只有逗號與空白）回傳空陣列，不是丟錯——
+ * 「沒有收件人」在這兩個呼叫端都是合法狀態，不是例外。
+ */
+export function parseRecipients(raw: string | null | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }
 
 /** 取一個語言的字串，缺了就退回中文（zh 是這個站的主語言）。 */
@@ -486,4 +584,64 @@ export function renderSessionReminderEmail(
     text,
     html,
   };
+}
+
+/**
+ * 新訂單／新報名通知（寄給**店家**，不是客人）。
+ * dedupe_key = `order_notify_admin:<order_id>`（src/server/notify.ts 的 dedupeKeys）。
+ *
+ * ── 為什麼只有中文，不進 email_copy CMS ─────────────────────────────────────
+ * 上面三支信是寄給客人的，客人結帳時選了語言（orders.locale），三語是必要的。
+ * 這封信只有店家自己會看，而店家是台北的中文使用者——三語文案要維護三份、
+ * DEFAULT_EMAIL_COPY 要多 12 把 key（4 段 × 3 語言）、0022 §2 的種子資料也要
+ * 跟著加，換來的是**永遠只會被拿掉 zh 那一份來看**的 en/ja 文案。這是這個檔案
+ * 檔頭說的「不要為了對稱硬做三語」的具體案例：DEFAULT_EMAIL_COPY 那三個模板
+ * 三語，是因為收件人真的會切換語言；這裡收件人固定，切換的理由不存在。
+ *
+ * 同一個理由也適用「進不進 CMS」：LABELS 已經示範過「改動機率趨近於零的文案
+ * 留在程式碼裡」，這封信的標題／段落跟 LABELS 是同一種東西（操作型提示，不是
+ * 要打動客人的行銷文案），所以整封信——不只是欄位標籤——都直接寫在這裡，不查
+ * email_copy、不接受 copy 參數。文案要改就是改這支函式，跟改 LABELS 一樣。
+ *
+ * ── 為什麼不含客人的完整地址與電話 ──────────────────────────────────────────
+ * AdminOrderNotificationInput 的型別上就沒有這兩個欄位（見該型別的檔頭）：
+ * 店家點進後台看得到完整資料，這封信只負責「有新單，去後台看」。少放一份
+ * 個資副本進 Resend 與 email_outbox 的紀錄裡。
+ */
+export function renderAdminOrderNotificationEmail(
+  input: AdminOrderNotificationInput,
+): RenderedEmail {
+  const hasSessions = input.sessions.length > 0;
+  const heading = hasSessions ? "有新的訂單／活動報名" : "有新的訂單";
+  const subject = `【小時光書店】新訂單 ${input.orderNo}`;
+
+  const itemLines = input.items
+    .map((it) => `${pick(it.name, "zh")} × ${it.quantity}　${formatMoney(it.subtotal)}`)
+    .join("\n");
+
+  const rows: Row[] = [
+    { label: pick(LABELS.orderNo, "zh"), value: input.orderNo },
+    { label: pick(LABELS.total, "zh"), value: formatMoney(input.total) },
+    { label: pick(LABELS.paymentMethod, "zh"), value: paymentMethodLabel(input.paymentMethod) },
+    { label: pick(LABELS.shippingMethod, "zh"), value: shippingMethodLabel(input.shippingMethod) },
+  ];
+  if (itemLines) rows.push({ label: pick(LABELS.items, "zh"), value: itemLines });
+
+  const { text, html } = layout({
+    heading,
+    intro: "後台收到一筆新訂單，摘要如下，完整資料請登入後台查看。",
+    rows,
+    blocks: input.sessions.map(({ session, participants }) => ({
+      title: pick(LABELS.sessionTitle, "zh"),
+      rows: [
+        ...sessionRows(session, "zh"),
+        { label: pick(LABELS.participants, "zh"), value: String(participants) },
+      ],
+    })),
+    outro: "",
+    signature: "小時光書店後台系統",
+    footerNote: "本信件由系統自動發送，收件人於後台「全站設定」設定。",
+  });
+
+  return { subject, text, html };
 }

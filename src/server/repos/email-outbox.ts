@@ -117,6 +117,37 @@ export async function enqueueOrderEmail(input: {
   return data === true;
 }
 
+/**
+ * 把一封信排給店家（0032 §2 的 enqueue_admin_order_email）。回 true 代表這一次
+ * 真的新增了一列。回 false 有兩種可能，刻意不分辨：dedupe_key 已存在（之前排過
+ * 了），或 site_settings.notify_emails 是空的／只有逗號與空白——兩種對呼叫端的
+ * 意義一樣，這一次不需要做任何事，也**不是錯誤**（收件信箱本來就允許留白）。
+ *
+ * ⚠️ 沒有收件地址參數。跟 enqueueOrderEmail 同一個理由：地址由 0032 §2 的 SQL
+ *    自己從 site_settings 查，不從呼叫端傳入。
+ */
+export async function enqueueAdminOrderEmail(input: {
+  dedupeKey: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<boolean> {
+  const { data, error } = await supabaseAdmin().rpc("enqueue_admin_order_email", {
+    p_dedupe_key: input.dedupeKey,
+    p_subject: input.subject,
+    p_body_text: input.text,
+    p_body_html: input.html,
+  });
+
+  if (error) {
+    console.error(
+      `[repo/email-outbox] enqueue_admin_order_email 失敗 key=${input.dedupeKey}：${error.code} ${error.message}`,
+    );
+    return false;
+  }
+  return data === true;
+}
+
 /** enqueueRegistrationEmails 的一筆。**沒有地址欄位** —— 那是重點。 */
 export type RegistrationMailItem = {
   registrationId: string;
@@ -418,6 +449,10 @@ export type NotifyOrder = {
   total: number;
   /** 客人結帳時用的語言（0005 的 orders.locale）。信就用這個語言寫。 */
   locale: Lang;
+  /** public.orders.payment_method（0005:88，0028 加了 'free'）。店家通知信要用。 */
+  paymentMethod: string | null;
+  /** public.orders.shipping_method（0005:86）。店家通知信要用。 */
+  shippingMethod: string;
 };
 
 export type NotifyOrderItem = {
@@ -429,12 +464,16 @@ export type NotifyOrderItem = {
 };
 
 /**
- * 付款成功信要用的資料。
+ * 付款成功信（客人）與新訂單通知信（店家，0032）共用的資料。
  *
  * ⚠️ **刻意不 select customer_email。** 地址由 0022 §7 的
  *    enqueue_order_email() 自己從 orders join，所以它不需要經過 Node。
  *    （發票那一條路不同：Amego 的 API 要求把買方信箱送過去，所以
  *    getOrderForInvoice() 有那一欄。兩條路各自只拿自己需要的。）
+ *
+ * payment_method / shipping_method 是 0032 加的：店家通知信要印「付款方式」
+ * 「收件方式」，但兩欄都只是分類代碼（'card' / 'home' 這種），不是
+ * order_addresses 裡的完整地址或電話——選這兩欄進來不算多拿個資。
  */
 export async function getOrderForNotify(
   orderId: string,
@@ -443,7 +482,7 @@ export async function getOrderForNotify(
   const [orderRes, itemsRes] = await Promise.all([
     db
       .from("orders")
-      .select("id, order_no, customer_name, total, locale")
+      .select("id, order_no, customer_name, total, locale, payment_method, shipping_method")
       .eq("id", orderId)
       .maybeSingle(),
     db
@@ -478,6 +517,8 @@ export async function getOrderForNotify(
       customerName: String(o.customer_name ?? ""),
       total: Number(o.total ?? 0),
       locale,
+      paymentMethod: o.payment_method == null ? null : String(o.payment_method),
+      shippingMethod: String(o.shipping_method ?? "none"),
     },
     items: ((itemsRes.data ?? []) as Record<string, unknown>[]).map((r) => ({
       name: (r.name ?? {}) as Localized,
