@@ -112,6 +112,14 @@ export type EventEntry = {
    *    永遠會回一張圖，順序反過來就是「每一場活動都長同一張不相干的照片」。
    */
   imageKey: string | null;
+  /**
+   * 活動日期（events.iso_date）。null = 還沒定日期（display_date 可能是「即將公告」）。
+   *
+   * ⚠️ 這一欄唯一的用途是判斷「已結束」（見 src/lib/event-status.ts）。**畫面上
+   *    給人看的日期是 `date`（display_date）**，那是自由文字、可以寫「2026.5.30~5.31」
+   *    這種範圍。兩者不可以互換。
+   */
+  isoDate: string | null;
   date: string;
   category: string;
   externalUrl: string;
@@ -249,6 +257,8 @@ export const FALLBACK_EVENTS: EventEntry[] = staticEvents.map((e) => ({
   slug: e.id,
   // bundled 種子也沒有封面。null 的意思是「不要畫封面」，不是「畫一張預設圖」。
   imageKey: null,
+  // bundled 種子沒有 iso_date —— 判不出結束與否，一律留在進行中。
+  isoDate: null,
   title: e.title,
   summary: e.summary,
   description: e.description,
@@ -575,7 +585,7 @@ export function eyebrowOf(page: PageContent | null, prefix: string, suffix: stri
 export async function fetchEvents(): Promise<EventEntry[]> {
   const rows = await select(
     "events",
-    "id,slug,title,summary,description,display_date,category,external_url,image_key,sort_order",
+    "id,slug,title,summary,description,display_date,iso_date,category,external_url,image_key,sort_order",
     { order: "sort_order" },
   );
   if (!rows || !rows.length) return FALLBACK_EVENTS;
@@ -598,6 +608,7 @@ export async function fetchEvents(): Promise<EventEntry[]> {
       category: str(r.category),
       externalUrl: str(r.external_url),
       imageKey: nullableStr(r.image_key),
+      isoDate: nullableStr(r.iso_date),
     });
   }
   return mapped.length ? mapped : FALLBACK_EVENTS;
@@ -678,6 +689,8 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
         //    imageFor(key, fallback) 永遠會回一張圖，對還沒設圖的活動渲染封面得到的
         //    不是「沒有封面」，是每場活動都長一樣的灰框。那一支有斷言在守這件事。
         imageKey: null,
+        // 詳情頁不做「已結束」的判斷（直接連過來的人本來就該看得到內容）。
+        isoDate: null,
         registrationType: r.registration_type === "internal" ? "internal" : "external",
       },
       unavailable: false,

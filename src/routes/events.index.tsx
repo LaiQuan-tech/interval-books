@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { isPastEvent } from "@/lib/event-status";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
@@ -44,6 +45,8 @@ const PAGE = {
 
 /** "all" filter pill — a page_block on the events page. */
 const ALL = { zh: "全部", en: "All", ja: "すべて" };
+const PAST_LABEL = { zh: "已結束", en: "Past", ja: "終了" };
+const PAST_BADGE = { zh: "已結束", en: "Ended", ja: "終了" };
 
 /**
  * 「活動詳情」——  連到 /events/$slug。
@@ -94,10 +97,24 @@ function Events() {
   });
 
   const labelById = new Map(categories.map((c) => [c.id, c.label] as const));
-  const filterIds = ["all", ...categories.map((c) => c.id)];
+  // 「已結束」不是一個 event_categories 的分類，是一個時間狀態，所以它是一個
+  // 寫死的哨兵 id 而不是從 categories 來的。放在最後一格。
+  const PAST_FILTER = "__past__";
+  const filterIds = ["all", ...categories.map((c) => c.id), PAST_FILTER];
 
   const [filter, setFilter] = useState<string>("all");
-  const list = filter === "all" ? events : events.filter((e) => e.category === filter);
+
+  // 🔴 已結束的活動**只有在「已結束」那一格才找得到**。其餘每一格（含「全部」）
+  //    都把它們排除掉 —— 「全部」的意思是「所有還在進行的活動」，不是「所有列」。
+  //    辦過的活動留在站上是為了讓人看得到我們辦過什麼，不是為了讓人以為還能報名。
+  const upcoming = events.filter((e) => !isPastEvent(e.isoDate));
+  const past = events.filter((e) => isPastEvent(e.isoDate));
+  const list =
+    filter === PAST_FILTER
+      ? past
+      : filter === "all"
+        ? upcoming
+        : upcoming.filter((e) => e.category === filter);
 
   return (
     <PageShell>
@@ -123,7 +140,9 @@ function Events() {
           const label =
             f === "all"
               ? t(p.block("filters.all", ALL))
-              : t(labelById.get(f) ?? { zh: f, en: f, ja: f });
+              : f === PAST_FILTER
+                ? t(p.block("filters.past", PAST_LABEL))
+                : t(labelById.get(f) ?? { zh: f, en: f, ja: f });
           const active = filter === f;
           return (
             <button
@@ -144,9 +163,18 @@ function Events() {
       <section className="container-editorial pb-32 grid gap-px bg-border border border-border md:grid-cols-2">
         {list.map((e) => (
           <article key={e.id} className="bg-background p-8 md:p-10 flex flex-col">
-            <p className="eyebrow text-2xl">
-              {t(labelById.get(e.category) ?? { zh: e.category, en: e.category, ja: e.category })}
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="eyebrow text-2xl">
+                {t(labelById.get(e.category) ?? { zh: e.category, en: e.category, ja: e.category })}
+              </p>
+              {/* 已結束要在卡片上看得出來 —— 只靠「它在另一個分頁底下」不夠：
+                  分享出去的連結、從搜尋進來的人都不會看到那個分頁。 */}
+              {isPastEvent(e.isoDate) ? (
+                <span className="border border-border px-2 py-0.5 text-xs tracking-widest text-muted-foreground">
+                  {t(p.block("filters.pastBadge", PAST_BADGE))}
+                </span>
+              ) : null}
+            </div>
             <h3 className="display mt-4 text-2xl md:text-3xl leading-snug">{t(e.title)}</h3>
             <p className="mt-4 text-sm text-muted-foreground">{e.date}</p>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(e.summary)}</p>
