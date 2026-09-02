@@ -15,6 +15,9 @@
  * 任何一頁告訴使用者它在那裡。所以它們只活在這張表單的狀態裡，送出之後就交給
  * 伺服器。src/lib/cart.ts 的檔頭有同一條註記。
  *
+ * 同一條規矩也管「同購買人」那個勾選框：它的**狀態**由 /checkout 用 useState 持有、
+ * 它**帶入的值**寫進 react-hook-form 的表單狀態，兩者都不會經過 cart 或 localStorage。
+ *
  * 欄位路徑是攤平的 `participants.<index>.<field>`，不是
  * `participants["<productId>:<sessionId>"][n].name`。react-hook-form 把 `.` 當成
  * 層級分隔，而 lineKey 裡有冒號與 uuid，巢狀路徑它解析不了 —— 錯誤訊息會印不回
@@ -27,7 +30,8 @@
  * 而這個 repo 已經有兩個那樣的欄位了（events.registration_type 與
  * payment_enabled，五期沒人讀）。
  */
-import { useFormContext } from "react-hook-form";
+import { useEffect, useId } from "react";
+import { useFormContext, useWatch } from "react-hook-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -47,6 +51,26 @@ const COPY = {
   name: { zh: "姓名", en: "Name", ja: "お名前" },
   email: { zh: "電子信箱", en: "Email", ja: "メールアドレス" },
   phone: { zh: "手機號碼", en: "Mobile", ja: "携帯番号" },
+  /**
+   * 「同購買人」——只有全表單的第一位會看到。
+   *
+   * ⚠️ 不要把它寫成「與第 1 位相同」之類的相對說法：第二位以後根本沒有這個框，
+   *    而唯一有框的那一位，它的參照對象是上面那一段「聯絡資料」，不是別的參加者。
+   */
+  sameAsBuyer: {
+    zh: "同購買人（帶入上方聯絡資料）",
+    en: "Same as the person booking (use the contact details above)",
+    ja: "お申し込み者と同じ（上のご連絡先を使う）",
+  },
+  /**
+   * 勾起來之後才出現。它解釋的是「為什麼這三格打不了字」——沒有這一句，客人會在
+   * 唯讀的欄位裡打字、發現沒反應，然後以為是頁面壞了。
+   */
+  sameAsBuyerHint: {
+    zh: "這三格會跟著上方的聯絡資料自動更新。要分開填的話，取消勾選即可（已帶入的內容會留著）。",
+    en: "These three fields follow the contact details above. Untick to edit them separately — what has been filled in stays.",
+    ja: "この3つの項目は上のご連絡先に自動で追従します。個別に入力する場合はチェックを外してください（入力済みの内容は残ります）。",
+  },
   contactHint: {
     zh: "信箱與手機至少填一項，活動有異動時我們才聯絡得到這位參加者。",
     en: "Please give at least an email or a mobile number, so we can reach this attendee if anything changes.",
@@ -75,6 +99,18 @@ type ParticipantFieldsProps = {
    */
   startIndex: number;
   count: number;
+  /**
+   * 「同購買人」的勾選狀態。**只有全表單的第一位**（startIndex + offset === 0）
+   * 看得到這個框 —— 第二位以後是別人，沒有「同購買人」可言。傳 undefined 就完全
+   * 不渲染它，所以第二行以後的 ParticipantFields 連知道都不用知道有這件事。
+   *
+   * ⚠️ 這個布林**不進 CheckoutFormValues**，由 /checkout 用 useState 持有。
+   *    放進表單值會讓它跟著 `{...values}` 一起送進 placeOrder() —— 那就是改了送出的
+   *    形狀；放進購物車則會被 persist() 寫進 localStorage（見本檔檔頭與 src/lib/cart.ts）。
+   *    它只是一個畫面上的開關，不是訂單的一部分。
+   */
+  sameAsBuyer?: boolean;
+  onSameAsBuyerChange?: (next: boolean) => void;
 };
 
 export function ParticipantFields({
@@ -82,9 +118,49 @@ export function ParticipantFields({
   sessionTitle,
   startIndex,
   count,
+  sameAsBuyer,
+  onSameAsBuyerChange,
 }: ParticipantFieldsProps) {
   const t = useT();
-  const { control } = useFormContext<CheckoutFormValues>();
+  const { control, setValue } = useFormContext<CheckoutFormValues>();
+  const sameAsBuyerId = useId();
+
+  /** 只有第一組的第一位會連動；其餘的 ParticipantFields 這裡永遠是 false。 */
+  const linked = startIndex === 0 && sameAsBuyer === true;
+
+  /**
+   * 🔴 用 useWatch 訂閱這三格，**不是**在 onCheckedChange 裡複製一次。
+   *
+   * 使用者的實際順序常常是「先勾起來、再回上面把電話改掉」。只在勾的當下複製一次的
+   * 寫法，那個改動會靜默不同步 —— 畫面上第一位參加者還留著舊電話，而客人已經看過
+   * 那三格是自動帶入的、不會再檢查一次。useWatch 讓這三個值一變就重新 render，
+   * 下面那個 effect 的相依陣列也就跟著變、跟著重跑。
+   *
+   * ⚠️ 這三個相依（buyerName / buyerEmail / buyerPhone）少掉任何一個，就退化成
+   *    「只有勾的當下複製一次」的那個 bug，而畫面上看起來完全正常。
+   */
+  const buyerName = useWatch({ control, name: "customerName" });
+  const buyerEmail = useWatch({ control, name: "customerEmail" });
+  const buyerPhone = useWatch({ control, name: "customerPhone" });
+
+  useEffect(() => {
+    if (!linked) return;
+    const opts = { shouldValidate: false, shouldDirty: true } as const;
+    setValue("participants.0.name", buyerName ?? "", opts);
+    setValue("participants.0.email", buyerEmail ?? "", opts);
+    setValue("participants.0.phone", buyerPhone ?? "", opts);
+    /**
+     * ⚠️ `participants.0.noticeAck` **不在這裡**，而且不可以加進來。
+     *
+     * 那是每一位參加者各自對注意事項的同意，購買人沒有立場替人勾 —— 資料庫存的是
+     * event_registrations.notice_ack_at（一個時間戳），代表「這個人在那個時刻同意了」。
+     * 自動勾起來會讓那個時間戳變成一句謊話。
+     *
+     * 取消勾選時也刻意**不清空**：這個 effect 在 linked 變成 false 之後就什麼都不做，
+     * 已經帶進去的值原封不動留在表單裡讓人繼續編輯。清空會讓「不小心點到」變成
+     * 「資料沒了」。
+     */
+  }, [linked, buyerName, buyerEmail, buyerPhone, setValue]);
 
   return (
     <div className="space-y-6 border border-border p-5">
@@ -97,6 +173,10 @@ export function ParticipantFields({
 
       {Array.from({ length: count }, (_, offset) => {
         const i = startIndex + offset;
+        // 全表單的第一位。i 是攤平陣列的 index，所以這一條同時涵蓋了「不是第一組」
+        // 與「不是這一組的第一位」兩種情況。
+        const isFirstOverall = i === 0;
+        const linkedHere = isFirstOverall && linked;
         return (
           <div
             key={i}
@@ -106,6 +186,32 @@ export function ParticipantFields({
               {t(COPY.seatLabel).replace("{n}", String(offset + 1))}
             </p>
 
+            {isFirstOverall && onSameAsBuyerChange ? (
+              <div className="space-y-2">
+                {/* 一般的 <label htmlFor>，不是 <FormLabel> —— 這個開關不是表單欄位，
+                    它沒有（也不該有）對應的 CheckoutFormValues 路徑，而 <FormLabel>
+                    需要 <FormField> 的 context 才 render 得出來。Radix 的 Checkbox
+                    Root 是 <button>，而 button 是可被 label 標示的元素，所以點文字
+                    一樣切得動。 */}
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id={sameAsBuyerId}
+                    checked={sameAsBuyer === true}
+                    onCheckedChange={(v) => onSameAsBuyerChange(v === true)}
+                  />
+                  <label
+                    htmlFor={sameAsBuyerId}
+                    className="cursor-pointer text-sm font-normal leading-relaxed"
+                  >
+                    {t(COPY.sameAsBuyer)}
+                  </label>
+                </div>
+                {linkedHere ? (
+                  <p className="text-xs text-muted-foreground">{t(COPY.sameAsBuyerHint)}</p>
+                ) : null}
+              </div>
+            ) : null}
+
             <FormField
               control={control}
               name={`participants.${i}.name` as const}
@@ -113,7 +219,17 @@ export function ParticipantFields({
                 <FormItem>
                   <FormLabel>{t(COPY.name)}</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ""} autoComplete="off" />
+                    {/* readOnly，不是 disabled：唯讀的輸入框仍然對得到焦點、選得起來、
+                        讀得到（disabled 會被拿掉 tab 順序，螢幕閱讀器也常常整格跳過），
+                        而且值照樣進表單。視覺上換底色是為了讓「這格是被帶入的」看得
+                        出來 —— 否則客人會在裡面打字、發現改不動。 */}
+                    <Input
+                      {...field}
+                      value={field.value ?? ""}
+                      readOnly={linkedHere}
+                      className={linkedHere ? "bg-muted text-muted-foreground" : undefined}
+                      autoComplete="off"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -128,7 +244,14 @@ export function ParticipantFields({
                   <FormItem>
                     <FormLabel>{t(COPY.email)}</FormLabel>
                     <FormControl>
-                      <Input type="email" {...field} value={field.value ?? ""} autoComplete="off" />
+                      <Input
+                        type="email"
+                        {...field}
+                        value={field.value ?? ""}
+                        readOnly={linkedHere}
+                        className={linkedHere ? "bg-muted text-muted-foreground" : undefined}
+                        autoComplete="off"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -146,6 +269,8 @@ export function ParticipantFields({
                         inputMode="numeric"
                         {...field}
                         value={field.value ?? ""}
+                        readOnly={linkedHere}
+                        className={linkedHere ? "bg-muted text-muted-foreground" : undefined}
                         autoComplete="off"
                       />
                     </FormControl>

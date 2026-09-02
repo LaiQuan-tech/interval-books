@@ -355,6 +355,18 @@ function Checkout() {
   const [submitting, setSubmitting] = useState(false);
   const [method, setMethod] = useState<OfferedShippingMethod>("home");
 
+  /**
+   * 第一位參加者的「同購買人」開關。
+   *
+   * 🔴 刻意**不放進 react-hook-form**。表單值會被 `{...values}` 整包送進 placeOrder()，
+   *    多一個欄位就是改了送出去的形狀 —— 而這個布林對伺服器毫無意義（它只是幫使用者
+   *    填格子的一個畫面開關）。同理它也不進購物車：CartLine 會被 persist() 寫進
+   *    localStorage，見 src/lib/cart.ts 與 ParticipantFields.tsx 的檔頭。
+   *
+   * 預設 false：預先勾好會讓「我勾的」與「系統幫我勾的」長得一樣，而下一步就是收錢。
+   */
+  const [sameAsBuyer, setSameAsBuyer] = useState(false);
+
   // Card when it is available, otherwise the pre-gateway flow. Held outside
   // react-hook-form because it is not a validated field — it steers where the
   // browser goes next and has no bearing on what the order costs.
@@ -776,6 +788,10 @@ function Checkout() {
                         .slice(0, idx)
                         .reduce((sum, s) => sum + s.count, 0)}
                       count={slot.count}
+                      // 「同購買人」只交給第一組（第一組的第一位就是全表單的第一位）。
+                      // 其餘的 ParticipantFields 拿不到 handler，也就完全不渲染那個框。
+                      sameAsBuyer={idx === 0 ? sameAsBuyer : undefined}
+                      onSameAsBuyerChange={idx === 0 ? setSameAsBuyer : undefined}
                     />
                   ))}
                 </fieldset>

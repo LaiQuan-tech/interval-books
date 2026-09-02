@@ -61,6 +61,15 @@ const PAGE = {
   aboutThis: { zh: "關於這場活動", en: "About this event", ja: "この催しについて" },
   registration: { zh: "報名", en: "Registration", ja: "お申し込み" },
   quantity: { zh: "報名人數", en: "How many places", ja: "お申し込み人数" },
+  /**
+   * 這個功能一直都在（人數選 2 就會出現兩組參加者欄位），但畫面上從來沒有一句話說過，
+   * 等於藏起來。一個沒有人知道的功能與一個不存在的功能，在使用者那一端是同一件事。
+   */
+  quantityHint: {
+    zh: "想找朋友一起來就把人數往上加，一筆訂單就報好；結帳時會逐位填寫參加者資料。",
+    en: "Bringing friends? Turn the number up and book everyone in one order — we ask for each attendee's details at checkout.",
+    ja: "ご友人とご一緒の場合は人数を増やしてください。1回のお申し込みでまとめて受け付けます（参加者ごとの情報はお手続き画面でご入力いただきます）。",
+  },
   registerCta: { zh: "我要報名", en: "Register now", ja: "この回に申し込む" },
   registerNote: {
     zh: "按下之後直接進入結帳，會再請你填寫每一位參加者的資料。",
@@ -373,6 +382,10 @@ function RegistrationPanel({ product }: { product: ShopProduct }) {
                 </button>
               )}
             </div>
+            {/* 人數選擇器就在上面一行，這一句貼著它 —— 它解釋的是那個 stepper 能做
+                什麼，不是這一頁的總說明。沒選場次時 stepper 是鎖住的，但這句話仍然
+                要出現：客人得先知道「可以幫朋友一起報名」，才會想去選場次。 */}
+            <p className="text-sm leading-relaxed text-muted-foreground">{t(PAGE.quantityHint)}</p>
             <p className="text-sm leading-relaxed text-muted-foreground">
               {selectedSession ? t(PAGE.registerNote) : t(PAGE.pickSessionFirst)}
             </p>
