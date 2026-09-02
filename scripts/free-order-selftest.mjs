@@ -186,7 +186,22 @@ assertMigrationDependencies(check, MIG_DIR, {
   // settle_free_order()、orders_payment_method_check、invoice_backlog() 的
   // total > 0、expire_unpaid_orders() 撈得到誰，0031 一個字都沒提到。免費訂單
   // 的結清路徑與活動的相簿、外部連結是兩件無關的事。原樣成立。
-  reviewedThrough: "0031_event_gallery.sql",
+  // ── 0032_admin_order_notify.sql 的重讀結論 ─────────────────────────────────
+  // 0032 加店家的新訂單／新報名通知：site_settings.notify_emails ＋
+  // enqueue_admin_order_email()，把摘要信排進既有的 email_outbox。它的 SQL 本體
+  // 完全沒有碰 settle_free_order()、orders_payment_method_check、
+  // invoice_backlog()、expire_unpaid_orders()——沒有 alter 任何一張表、沒有
+  // create or replace 任何既有函式。帳本標 orders_payments 是語意上的：
+  // enqueue_admin_order_email() 本身只查 site_settings 不查 orders，真正讀
+  // public.orders 的是既有的 getOrderForNotify()（0022 就有），0032 只多加
+  // payment_method / shipping_method 兩個既有欄位（0005 就存在）用來組信件摘要，
+  // 完全不碰 status / payment_status / paid_at 這三個 settle_free_order() 與
+  // expire_unpaid_orders() 實際判斷的欄位。這支自檢守的「免費訂單成立之後不會被
+  // 回收、也不會被拿去開發票」跟「有沒有人排了一封通知信」是兩件不相交的事——
+  // 免費訂單一樣會走 queueOrderNotifications()，店家一樣會收到通知（那正是
+  // 0032 要補的洞），但那不影響訂單本身的 status / payment_status，也不影響
+  // invoice_backlog() 的 total > 0 判斷。原樣成立。
+  reviewedThrough: "0032_admin_order_notify.sql",
 });
 
 // =============================================================================

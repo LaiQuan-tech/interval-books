@@ -274,7 +274,34 @@ assertMigrationDependencies(check, MIG_DIR, {
   // sessions_due_for_reminder，以及 0023 補回的兩個排程，0031 一個字都沒提到。
   // 相簿與外部連結是活動的展示層屬性，跟「該不該寄信、寄給誰」沒有交集。
   // 原樣成立。
-  reviewedThrough: "0031_event_gallery.sql",
+  // ── 0032_admin_order_notify.sql 的重讀結論 ─────────────────────────────────
+  // 0032 加第三種信：店家的新訂單／新報名通知。收件人是 site_settings.notify_emails
+  // （逗號分隔多人），走**同一套** email_outbox + claim_order_notify + dedupe_key
+  // 機制——它自己的檔頭 §0.6 說得很白：「這支不動 0022 的任何函式／表，只新增」。
+  // 逐項核對這句話：public.email_outbox 沒有被 alter；claim_order_notify() /
+  // notify_backlog() / dispatch_notify_task() / enqueue_registration_emails() /
+  // sessions_due_for_reminder() 沒有一支被 create or replace；沒有新增或修改任何
+  // cron.schedule（0032 沒有標 cron_jobs，帳本也是這樣記的）。真正新增的是
+  // enqueue_admin_order_email()（新函式，只 insert，on conflict (dedupe_key) do
+  // nothing 沿用既有的冪等寫法）與呼叫端 notify.ts 的 dedupeKeys.orderNotifyAdmin
+  // （新前綴 `order_notify_admin:<order_id>`，整段包在自己的 try/catch 裡、夾在
+  // 訂購人信之後／報名信迴圈之前，失敗只留 log 不影響其他信——見
+  // admin-order-notify-selftest.mjs 的隔離性斷言）。orders_payments 這個標籤是
+  // enqueue_admin_order_email() 讀 public.orders 帶進來的，但那是**呼叫端**
+  // getOrderForNotify()（0022 就有的既有函式）多加 payment_method /
+  // shipping_method 兩個既有欄位（0005 就存在，0032 沒有 ALTER orders），不是
+  // 這支自檢守的「這張單真的付過錢」那個判斷用的欄位。
+  // 逐條重讀之後：本檔 [3]-[13] 對 email_outbox 冪等／重試／purge、
+  // claim_order_notify 的 claim-then-act、notify_backlog() 的補跑範圍、報名信與
+  // 提醒信的斷言全部只看得到 0022/0023 建立的那些函式與欄位，0032 一個字都沒碰。
+  // 唯一需要順手修正的是 [13] 那段描述性註解：「dedupe_key 的三種格式只在一個
+  // 地方組」現在是四種（多了 orderNotifyAdmin）——那個迴圈本來就只逐一確認三個
+  // 既有前綴存在，不是「只能有三種」的窮舉斷言，所以邏輯沒有失守——只是描述性
+  // 註解的數字過時了，已經把它改成「四種」（純註解，[13] 那三條 checkTrue 的
+  // 斷言邏輯本身沒有改動；要不要另外新增第四條驗 orderNotifyAdmin 前綴，屬於
+  // 「改斷言」的範疇，這裡不擅自加，留給任務清單裡的「真正衝突」欄位說明）。
+  // 原樣成立。
+  reviewedThrough: "0032_admin_order_notify.sql",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -790,7 +817,10 @@ checkTrue(
   "標成 sent 的話，一個忘了設金鑰的正式環境會顯示「全部寄出成功」",
 );
 
-// dedupe_key 的三種格式只在一個地方組。
+// dedupe_key 的格式只在一個地方組。
+// ⚠️ 0032 重讀：dedupeKeys 現在有四種格式（多了 orderNotifyAdmin，前綴
+//    `order_notify_admin:`），這裡只逐一確認底下這三個既有前綴還在，不是「總共
+//    只能有三種」的窮舉斷言——第四種存不存在不影響這幾條 checkTrue 的真偽。
 checkTrue("dedupeKeys 集中定義", /export const dedupeKeys = \{/.test(notifyCode));
 for (const [name, prefix] of [
   ["orderPaid", "order_paid:"],

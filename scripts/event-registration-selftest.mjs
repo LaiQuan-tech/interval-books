@@ -298,7 +298,23 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 的 RETURNS TABLE 形狀、event_registrations 的零 grant，0031 一個字都沒碰。
   // 「佔了 N 個位子 ⇔ 有 N 位參加者」那條不變量與相簿、external_url 都無關——
   // 兩者都是活動的展示層屬性，不影響任何一場報名的名額計算。原樣成立。
-  reviewedThrough: "0031_event_gallery.sql",
+  // ── 0032_admin_order_notify.sql 的重讀結論 ─────────────────────────────────
+  // 0032 加店家的新訂單／新報名通知：site_settings.notify_emails ＋
+  // enqueue_admin_order_email()，把摘要信排進既有的 email_outbox。它的 SQL 本體
+  // 完全沒有碰 event_sessions、event_registrations、products、order_items——
+  // 沒有 alter、沒有 create or replace 任何既有函式，reserve_session_seat() /
+  // release_session_seat() / expire_unpaid_orders() 一支都沒被重寫。帳本標
+  // orders_payments 是語意上的：enqueue_admin_order_email() 本身只查
+  // site_settings，真正讀 public.orders 的是既有的 getOrderForNotify()
+  // （0022 就有），0032 只把它的 select 清單多加 payment_method / shipping_method
+  // 兩個既有欄位（0005 就存在）用來組信件摘要，不影響「這張單有幾個位子」的任何
+  // 判斷。這支自檢守的核心不變量「佔了 N 個位子 ⇔ 有 N 位參加者」看的是
+  // event_sessions.seats_taken 與 event_registrations 的列數，兩者都不經過
+  // orders.payment_method / shipping_method；expire_unpaid_orders() 的
+  // RETURNS TABLE 形狀、event_registrations 的零 grant、SessionPicker 的
+  // showSeatsRemaining prop，0032 一個字都沒提到。位置快照（0025 在原位）也不受
+  // 影響——0032 是往後接的第 32 支。原樣成立。
+  reviewedThrough: "0032_admin_order_notify.sql",
 });
 for (const f of [
   "0004_commerce_products.sql",

@@ -147,20 +147,38 @@ check("沒有 drop view", /drop\s+view/i.test(sql0032), false);
 
 // ⚠️ 這支測試不去自動比對 scripts/lib/migration-ledger.mjs（任務指示：那個檔案
 //    由另一個流程補列，這裡不搶著改）。但既有的共用斷言照樣掛上——這是每一支
-//    引用它的自檢都會做的事，0032 沒有理由是例外。目前這兩條**預期會紅**：
-//    帳本最後一列是 0030，磁碟上已經有 0031（另一個 agent 的活動相簿功能）與
-//    這一支 0032，帳本還沒登記。見任務交付時的回報。
-console.log(
-  yellow(
-    "  ⚠ 下面兩條呼叫共用帳本斷言，在 0032／0031 補上帳本列之前預期會紅——" +
-      "這是設計如此（見 scripts/lib/migration-ledger.mjs 檔頭），不是這支自檢的 bug。",
-  ),
-);
+//    引用它的自檢都會做的事，0032 沒有理由是例外。
+// 帳本現在已經補上 0032 那一列（touches: cms / orders_payments / email_outbox），
+// 下面兩條共用斷言恢復全綠。
 assertLedgerMatchesDisk(check, MIG_DIR);
 assertMigrationDependencies(check, MIG_DIR, {
   suite: "admin-order-notify-selftest",
   dependsOn: ["cms", "email_outbox", "orders_payments"],
-  reviewedThrough: "0030_customer_accounts.sql",
+  // ── 0031_event_gallery.sql：不必重讀 ───────────────────────────────────
+  // 0031 在帳本上標的是 events_shape / localized_list / products_availability /
+  // session_seats —— 沒有 cms / email_outbox / orders_payments 任何一個，所以這條
+  // 從來沒有為它轉紅。它加的是活動相簿（events.gallery_keys）與放寬
+  // admin_upsert_event_with_session() 的 external_url 驗證，跟 site_settings、
+  // email_outbox、enqueue_admin_order_email() 都沒有交集。
+  // ── 0032_admin_order_notify.sql 的重讀結論 ─────────────────────────────
+  // 這支自檢本來就是為 0032 寫的（見檔頭 [1]-[9]），所以它跟這支 migration 的關係
+  // 跟其他六支不一樣：不是「後來的 migration 動到我在乎的東西，我要回頭確認」，
+  // 而是「我在乎的東西就是這支 migration 本身」。[1] 直接 readFile(MIG_0032) 讀
+  // 現在磁碟上的 0032 全文，[2] 逐條核對 site_settings 的 alter / revoke / grant，
+  // [3] 核對 enqueue_admin_order_email() 的函式本體與權限，[13] 核對
+  // src/server/notify.ts、src/server/repos/email-outbox.ts、
+  // src/lib/email-templates.ts、src/server/repos/site-settings.ts、
+  // src/routes/admin/_shell.settings.tsx 這五支被 0032 那個 commit
+  // （1fd71b4）一起改動的檔案——驗到的都是它們**現在**的內容，不是某個舊版本的
+  // 快照，所以沒有「0032 落地之後這些斷言是否還成立」這個問題：它們本來就是照著
+  // 落地後的 0032 寫的。真正需要交代的只有 dependsOn 這三個區域本身：cms（=
+  // site_settings 的 grant 收緊）、email_outbox（= 新的 dedupe_key 前綴與新函式）、
+  // orders_payments（= enqueue_admin_order_email() 讀 public.orders 帶進來的標籤，
+  // 但 0032 的 SQL 裡一行 `select … from public.orders` 都沒有——真正讀 orders 的
+  // 是 getOrderForNotify()，它是 0022 就有的既有函式，0032 只把它的 select 清單
+  // 多加兩欄 payment_method / shipping_method，兩欄都是 0005 就存在、由 0028 加了
+  // 一個允許值的既有欄位，不是新開的洞）都已經是這份清單在驗的東西。原樣成立。
+  reviewedThrough: "0032_admin_order_notify.sql",
 });
 
 // =============================================================================

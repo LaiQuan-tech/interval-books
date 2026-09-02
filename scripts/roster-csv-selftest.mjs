@@ -299,7 +299,28 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 明文出口，0031 一個字都沒提到，也沒有新增任何檔案落進「event_registrations
   // 不可以出現 paid 字面值」那條規則的掃描範圍——這一期沒有新增或修改任何一支
   // TypeScript 檔案提到 event_registrations。原樣成立。
-  reviewedThrough: "0031_event_gallery.sql",
+  // ── 0032_admin_order_notify.sql 的重讀結論 ─────────────────────────────────
+  // 0032 加店家的新訂單／新報名通知：site_settings.notify_emails ＋
+  // enqueue_admin_order_email()，把摘要信排進既有的 email_outbox。它的 SQL 本體
+  // 完全沒有碰 0021 的 admin_event_roster / on_roster / pii_access_log，也沒有
+  // 動 event_registrations 或 event_sessions 的任何一欄。帳本標 orders_payments
+  // 是語意上的：enqueue_admin_order_email() 只查 site_settings，真正讀
+  // public.orders 的是既有的 getOrderForNotify()，0032 只多加 payment_method /
+  // shipping_method 兩個既有欄位，沒有碰 payment_status——on_roster 那條
+  // `(o.payment_status = 'paid') as on_roster` 的定義（0021 §3）原樣沒動。
+  // ⚠️ 這一期新增或修改的六支檔案裡（git show 1fd71b4 --stat：
+  //    email-templates.ts / _shell.settings.tsx / server/email.ts /
+  //    server/notify.ts / repos/email-outbox.ts / repos/site-settings.ts），
+  //    有兩支落進下面 [7] 那條「整個 src/ 裡碰 event_registrations /
+  //    admin_event_roster 的檔案都不准自己寫一次 'paid'」的掃描範圍——
+  //    server/email.ts（檔頭一段散文提到 event_registrations 當範例）與
+  //    repos/email-outbox.ts（三處註解提到 event_registrations / 0022 §7 的
+  //    join 慣例）。逐一確認過這兩支剝掉註解之後都沒有 "paid" 或 'paid' 這個
+  //    字面值——它們判斷「該不該寄」用的是 claim_order_notify() 的 claim 結果與
+  //    dedupe_key，不是自己重新判斷一次付款狀態。其餘四支（email-templates.ts /
+  //    _shell.settings.tsx / notify.ts / site-settings.ts）完全不提
+  //    event_registrations / admin_event_roster，不落在掃描範圍內。原樣成立。
+  reviewedThrough: "0032_admin_order_notify.sql",
 });
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {

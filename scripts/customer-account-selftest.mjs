@@ -164,7 +164,25 @@ assertMigrationDependencies(check, MIG_DIR, {
   // event_registrations，也沒有新增或修改任何一支 TypeScript 檔案。
   // fetchMyRegistrations 查的 event_registrations 欄位形狀、reserve_session_seat
   // 的七步都不受影響。原樣成立。
-  reviewedThrough: "0031_event_gallery.sql",
+  // ── 0032_admin_order_notify.sql 的重讀結論 ─────────────────────────────────
+  // 0032 加店家的新訂單／新報名通知：site_settings.notify_emails ＋
+  // enqueue_admin_order_email()，把摘要信排進既有的 email_outbox。它的 SQL 本體
+  // 完全沒有碰 public.orders、order_items、event_sessions、event_registrations —
+  // 沒有 alter、沒有新的 RLS policy、沒有動任何既有函式，這支帳本列標
+  // orders_payments 是**語意上**的（0032 的檔頭 §0.2/§0.6 明講：呼叫端多讀了
+  // orders.payment_method / shipping_method 兩欄組信件摘要，SQL 本身一行
+  // `from public.orders` 都沒有）。這支自檢在乎的三道閘（claim_guest_orders() 的
+  // p_user_id 簽章、user_id is null 的 where 子句、partial index）與
+  // customer-orders.ts 的 user_id 過濾層、PII 欄位排除，0032 一個字都沒提到——
+  // claim_guest_orders() 不在 0032 的異動清單裡（0032 §0.6：「這支不動 0022 的
+  // 任何函式／表，只新增」，而 claim_guest_orders 是 0030 的函式，同樣沒被
+  // 0032 碰）。0032 唯一改到的既有 TS 檔案裡也沒有 customer-orders.ts 或
+  // customer-auth.ts（見 git show 1fd71b4 --stat：只動了 email-templates.ts /
+  // _shell.settings.tsx / server/email.ts / server/notify.ts /
+  // repos/email-outbox.ts / repos/site-settings.ts）。「fetchMyRegistrations 查的
+  // event_registrations 欄位形狀、reserve_session_seat 的七步」同樣不受影響。
+  // 原樣成立。
+  reviewedThrough: "0032_admin_order_notify.sql",
 });
 
 // =============================================================================

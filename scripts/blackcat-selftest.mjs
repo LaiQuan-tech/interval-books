@@ -1280,7 +1280,47 @@ for (const [label, src] of [
     // ALTER 任何一張表 —— 唯一的 DDL 是 orders_payment_method_check 的 drop + add
     // （多一個允許值 'free'，既有四個原樣保留；那正是 0024 檔頭寫下的規定做法）。
     // 逐條重讀之後：這一支的斷言都在 0024 的檔案內容、payuni/blackcat 的簽章與 APN 流程上，沒有任何一條窮舉 payment_method 的允許值（1198 那條驗的是 0024 **寫下了**改法，不是目前有哪些值），也沒有一條碰 invoice_backlog。原樣成立。
-    reviewedThrough: "0028_free_order_settlement.sql",
+    // ── 0029_event_seats_visibility.sql：不必重讀 ─────────────────────────────
+    // 0029 在帳本上標的是 products_availability / session_seats / events_shape /
+    // localized_list —— 沒有 orders_payments，所以這條從來沒有為它轉紅。跳過它是
+    // 機制本身允許的（localized-list-selftest 對 0028 也是同一個情況，它的註解寫了
+    // 同一件事）：reviewedThrough 記的是「審到哪裡」，中間沒動到我在乎的區域的那幾支
+    // 本來就不需要我回來看。
+    // ── 0030_customer_accounts.sql 的重讀結論 ────────────────────────────────
+    // 0030 加客人帳號的資料層：一支新函式 claim_guest_orders(uuid)（security definer、
+    // 只 grant execute 給 service_role），把 customer_email 對得上、而且 user_id 仍是
+    // null 的訪客訂單指給註冊並驗證過信箱的帳號；外加一支 partial index。
+    // **沒有 ALTER 任何一張表、沒有 create or replace 任何既有函式、沒有動任何 CHECK／
+    // trigger／排程，也沒有開任何 RLS policy 或對 anon / authenticated 的 grant**
+    // （0005:318-336 的姿態原樣保留）。它唯一寫到的欄位是 public.orders.user_id ——
+    // 那一欄 0005:65 就存在，而且到 0029 為止沒有任何程式碼讀或寫過它。
+    // 逐條重讀之後：付款狀態機（status / payment_status / payment_method / paid_at /
+    // payment_url / gateway_trans_id）與 payment_alerts()、webhook_events 這一支全部
+    // 的斷言對象，0030 一個字都沒提到。user_id 不出現在這支自檢的任何一條斷言裡。
+    // 「0024 仍在第 24 個位置」也不受影響（0030 是往後接的第 30 支）。原樣成立。
+    // ── 0031_event_gallery.sql：不必重讀 ─────────────────────────────────────
+    // 0031 在帳本上標的是 events_shape / localized_list / products_availability /
+    // session_seats —— 沒有 orders_payments，所以這條從來沒有為它轉紅。它加的是
+    // events.gallery_keys 與放寬 external_url 驗證，跟金流無關。
+    // ── 0032_admin_order_notify.sql 的重讀結論 ───────────────────────────────
+    // 0032 加店家的新訂單／新報名通知：site_settings.notify_emails ＋
+    // enqueue_admin_order_email()，把摘要信排進既有的 email_outbox。它的 SQL 本體
+    // 裡沒有任何一行碰 orders / payments / webhook_events / payment_alerts /
+    // order_post_payment_log（這五個是 orders_payments 這一區的識別字）——0032 的
+    // `enqueue_admin_order_email()` 只查 site_settings，一行 `from public.orders`
+    // 都沒有。帳本上標了 orders_payments，是因為**呼叫端**（notify.ts 用來組信件
+    // 摘要的 getOrderForNotify()，src/server/repos/email-outbox.ts）多讀了
+    // public.orders 的 payment_method / shipping_method 兩欄——這兩欄不是 0032
+    // 新開的：payment_method 是 0005:88 就存在、0028 只多加了一個允許值 'free'
+    // 進它的 CHECK；shipping_method 是 0005:86～87 就存在，CHECK 允許值
+    // ('home','cvs','pickup','none') 0032 一個字都沒動。
+    // 逐條重讀之後：這一支的斷言都在 0024 的檔案內容、payuni/blackcat 的簽章與
+    // APN 流程、payment_alerts()、webhook_events、orders_payment_method_check 上，
+    // 0032 沒有 ALTER 這張表、沒有 create or replace 任何既有函式、沒有動任何
+    // CHECK／trigger／排程，也沒有改 orders / payments 對任何角色的 grant（0032
+    // 唯一動到的 grant 是 site_settings 那一張表，跟這支自檢的斷言對象是兩張不同
+    // 的表）。「0024 仍在第 24 個位置」不受影響（0032 是往後接的第 32 支）。原樣成立。
+    reviewedThrough: "0032_admin_order_notify.sql",
   });
 }
 
