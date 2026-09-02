@@ -37,7 +37,7 @@ import type { Localized, LocalizedList } from "@/i18n/types";
  *    後推碼**。
  */
 const COLUMNS =
-  "id, slug, title, summary, description, display_date, iso_date, category, speaker_id, image_key, external_url, registration_type, payment_enabled, is_published, sort_order, highlights, suitable_for, not_suitable_for, takeaways, outline, includes, notes, show_seats_remaining, created_at, updated_at";
+  "id, slug, title, summary, description, display_date, iso_date, category, speaker_id, image_key, external_url, registration_type, payment_enabled, is_published, sort_order, highlights, suitable_for, not_suitable_for, takeaways, outline, includes, notes, show_seats_remaining, gallery_keys, created_at, updated_at";
 
 /** products 的欄位，只取活動後台要顯示的那幾個。 */
 const PRODUCT_COLUMNS = "id, slug, source_id, price, compare_at_price, status, sort_order";
@@ -102,6 +102,13 @@ export type EventRow = {
   outline: LocalizedList;
   includes: LocalizedList;
   notes: LocalizedList;
+  /**
+   * 活動相簿（0031）：一個有序的圖片 key 陣列，值的形狀與 image_key 同一個
+   * 慣例。not null default 空陣列，讀出來永遠是一個陣列，不是
+   * `string[] | null` —— 跟 highlights 等七個清單欄位同一條規則：空陣列＝
+   * 前台這一塊不畫，不是「還沒填」。
+   */
+  gallery_keys: string[];
   created_at: string;
   updated_at: string;
 };
@@ -126,6 +133,12 @@ export type EventUpsertInput = {
   sort_order: number;
   /** 前台印不印「尚餘名額 N」（0029）。省略時：新增用 true，更新沿用舊值。 */
   show_seats_remaining?: boolean;
+  /**
+   * 活動相簿（0031）。省略＝這一欄不動（與 SQL 那一側 payload 沒帶
+   * gallery_keys 時 coalesce 到 v_prev.gallery_keys 是同一條規則）；要清空
+   * 相簿是一個看得見的動作，送一個空陣列。
+   */
+  gallery_keys?: string[];
   /**
    * 七個清單欄位（0027）。**省略某一欄 = 那一欄不動**，與 SQL 那一側的
    * `coalesce(v_ev -> '…', v_prev.…, c_empty_list)` 是同一條規則。要清空就送三個
@@ -246,6 +259,10 @@ export async function upsertEvent(input: EventUpsertInput): Promise<EventRow> {
         // ⚠️ 這一支只寫 events；products 那一份由 0029 的
         //    events_seats_visibility_sync_product trigger 跟著改。
         show_seats_remaining: input.show_seats_remaining ?? true,
+        // 0031：同一條「upsert 不是 patch」規則——省略時要用欄位預設（空陣列），
+        // 不能讓「沒送」變成 NULL 撞上 NOT NULL。這一支不走 RPC，沒有 v_prev
+        // 可以沿用，所以跟 show_seats_remaining 一樣落到欄位預設，不是「不動」。
+        gallery_keys: input.gallery_keys ?? [],
       },
       { onConflict: "id" },
     )
@@ -302,6 +319,10 @@ export async function upsertEventWithProduct(
       ...(input.show_seats_remaining === undefined
         ? {}
         : { show_seats_remaining: input.show_seats_remaining }),
+      // 0031：相簿。同一條「省略這個 key = SQL 那邊沿用 v_prev，不是清空」的
+      // 規則，所以跟 show_seats_remaining 同一個寫法——沒給值時整個 key 都不
+      // 放進去，不是放一個 undefined 讓 JSON.stringify 順手丟掉。
+      ...(input.gallery_keys === undefined ? {} : { gallery_keys: input.gallery_keys }),
       // 0027 的七個清單欄位。**照 EVENT_LIST_FIELDS 逐欄展開，不是把整個 lists 物件
       // 攤進去** —— 攤進去的話，呼叫端多送一個不存在的 key 會安靜地跟著飛到 SQL 那邊，
       // 而那支 RPC 對它不認得的 key 是完全沉默的。

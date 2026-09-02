@@ -130,20 +130,48 @@ export type EventCategoryEntry = { id: string; label: Localized };
 export type EventRegistrationType = "external" | "internal";
 
 /**
- * One event, as the detail page needs it. Adds the one column the list page
- * has no use for: `registrationType`, which decides where the 報名 button goes.
+ * 講者介紹，只有活動詳情頁需要。null＝這場活動沒有指定講者，或指定的講者已被
+ * 停用（public.artists 的 RLS 只讓 anon/authenticated 讀 is_active 的列，見
+ * 0019_vendors_pii_portal.sql）——兩種情況前台都是同一個結果：這一頁不畫
+ * 講者區。
  *
- * ⚠️ imageKey 這一欄在 EventEntry 上是真的（首頁的活動卡片會畫封面），但
- *    **詳情頁刻意不畫**，所以 fetchEventBySlug() 連 select 都不帶 image_key，
- *    mapping 直接給 null。理由：imageFor(key, fallback) 永遠會回*某一張*圖，
- *    對還沒設圖的活動渲染封面，得到的不是「沒有封面」，是每場活動都長一樣的
- *    灰框佔位。scripts/event-detail-page-selftest.mjs 的 [5] 有斷言在守。
+ * 欄位對應到 public.artists：discipline 當「頭銜」、long_bio 優先於 bio 當
+ * 「簡介內文」（跟這一頁 summary/description 的「短句在標題旁、長文在下面」是
+ * 同一個決定）。bio/discipline 是純字串不是三語 —— 見
+ * src/server/repos/artists.ts 檔頭，這裡不重新發明三語慣例。
+ */
+export type EventSpeaker = {
+  name: string;
+  /** artists.discipline，例如「陶藝家」。空字串＝沒有頭銜可顯示。 */
+  title: string;
+  /** artists.long_bio，退回 artists.bio。空字串＝沒有簡介可顯示。 */
+  bio: string;
+  /** ⚠️ 呼叫端一樣要先判斷非空再呼叫 imageFor() —— 規則與 imageKey 相同。 */
+  imageKey: string | null;
+};
+
+/**
+ * One event, as the detail page needs it. Adds 列表頁用不到的三塊：
+ * `registrationType`（決定報名按鈕連去哪）、`galleryKeys`（相簿）、`speaker`
+ * （講者介紹）。
  *
- *    要在詳情頁加封面是可以的，但那是一個**要連同那組斷言一起改**的決定 ——
- *    正確的做法是「先判斷 imageKey 非空再呼叫 imageFor()」，不是把判斷拿掉。
+ * ⚠️ imageKey 這一欄在 EventEntry 上一直都是真的（首頁的活動卡片會畫封面），
+ *    但詳情頁在這一期之前刻意不畫——select 都不帶 image_key，mapping 直接給
+ *    null，理由是 imageFor(key, fallback) 永遠會回*某一張*圖，對還沒設圖的
+ *    活動渲染封面得到的不是「沒有封面」，是每場活動都長一樣的灰框佔位。這一期
+ *    改成畫大圖，做法是「先判斷 imageKey 非空再呼叫 imageFor()」——見
+ *    src/routes/events.$slug.tsx——不是把判斷拿掉。scripts/event-detail-page-selftest.mjs
+ *    的 [5] 從這一期起改成守「有判斷才呼叫」，不再是「完全不呼叫」。
+ *
+ * galleryKeys 與 speaker 用同一條規則：陣列空／物件是 null 就代表這一頁不畫
+ * 那一塊，不是「還沒填」與「空框」之間的模糊地帶。
  */
 export type EventDetailEntry = EventEntry & {
   registrationType: EventRegistrationType;
+  /** events.gallery_keys（0031）。空陣列＝沒有相簿，這一頁不畫相簿區。 */
+  galleryKeys: string[];
+  /** null＝沒有講者，這一頁不畫講者區。見 EventSpeaker 的欄位對應說明。 */
+  speaker: EventSpeaker | null;
 };
 
 /**
@@ -625,8 +653,13 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
       //
       // ⚠️ slug 是 0026 加的。**0026 沒有先套上 live DB 就推這個檔，壞的不只是後台，
       //    連這一頁也會壞**（0025 那次只有後台壞，因為這裡的清單沒有 speaker_id）。
+      //
+      // image_key / speaker_id / gallery_keys 這一期起真的要讀：大圖、講者、相簿
+      // 三塊都要靠它們。image_key 與 speaker_id 從 0025／0026 就存在，只是這一頁
+      // 一直刻意不選；gallery_keys 是 0031 新加的欄位，同一條「先套 migration
+      // 再推程式碼」規則對它也成立。
       .select(
-        "id,slug,title,summary,description,display_date,category,external_url,registration_type",
+        "id,slug,title,summary,description,display_date,category,external_url,registration_type,image_key,speaker_id,gallery_keys",
       )
       .eq("slug", slug)
       .maybeSingle();
@@ -645,6 +678,45 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
     // unavailable：這是資料本身壞了，重試一次也不會變好。
     if (!title || !summary || !description) return { event: null, unavailable: false };
 
+    // ── 相簿 ─────────────────────────────────────────────────────────────
+    // gallery_keys 是 text[]，not null default '{}'（0031），所以 r.gallery_keys
+    // 讀出來一定是陣列，不會是 null——這裡仍然防一手（RLS/schema 之外的來源，
+    // 例如還沒套上 0031 的環境）：不是陣列就當成沒有相簿，而不是讓
+    // .filter() 在一個非陣列值上炸掉。
+    const galleryKeys = Array.isArray(r.gallery_keys)
+      ? r.gallery_keys.filter((k): k is string => typeof k === "string" && k.length > 0)
+      : [];
+
+    // ── 講者 ─────────────────────────────────────────────────────────────
+    // speaker_id 是 FK -> public.artists(id)，on delete set null（0025）。
+    // 這裡另外一趟查詢，不是把 artists 塞進上面那個 .select() 裡：那樣寫的話，
+    // 上面 [4] 的欄位斷言（一條逐一比對 events 真的有的欄位的清單）得先學會
+    // 剖析巢狀的 PostgREST 嵌入語法，而這一頁的講者資料量小到不值得那個複雜度。
+    // artists 的 RLS（artists_select_public，0019）只讓 anon/authenticated 讀
+    // is_active 的列，所以講者被停用時這裡自然查不到列，不需要另外判斷
+    // is_active——跟資料庫裡唯一的真相來源保持一致，不是這裡重新決定一次。
+    let speaker: EventSpeaker | null = null;
+    const speakerId = nullableStr(r.speaker_id);
+    if (speakerId) {
+      const { data: artistRow, error: speakerError } = await db
+        .from("artists")
+        .select("name, discipline, bio, long_bio, image_key")
+        .eq("id", speakerId)
+        .maybeSingle();
+      if (speakerError) {
+        // 講者讀不到不該讓整個活動頁跟著壞——這一塊退場，其餘照常渲染。
+        logFailure(`events/${slug}/speaker`, speakerError.message);
+      } else if (artistRow) {
+        const a = artistRow as unknown as Row;
+        speaker = {
+          name: str(a.name),
+          title: nullableStr(a.discipline) ?? "",
+          bio: nullableStr(a.long_bio) || nullableStr(a.bio) || "",
+          imageKey: nullableStr(a.image_key),
+        };
+      }
+    }
+
     return {
       event: {
         id: str(r.id),
@@ -655,14 +727,14 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
         date: str(r.display_date),
         category: str(r.category),
         externalUrl: str(r.external_url),
-        // ⚠️ 刻意是 null，不是讀出來的值：**這一頁不畫封面**，所以連 select 都不帶
-        //    image_key。理由見 scripts/event-detail-page-selftest.mjs 的 [5] ——
-        //    imageFor(key, fallback) 永遠會回一張圖，對還沒設圖的活動渲染封面得到的
-        //    不是「沒有封面」，是每場活動都長一樣的灰框。那一支有斷言在守這件事。
-        imageKey: null,
+        // ⚠️ 呼叫端必須先判斷非空再呼叫 imageFor()——見 EventEntry.imageKey 的
+        //    型別註解與 events.$slug.tsx 的渲染。這裡不再刻意寫死 null。
+        imageKey: nullableStr(r.image_key),
         // 詳情頁不做「已結束」的判斷（直接連過來的人本來就該看得到內容）。
         isoDate: null,
         registrationType: r.registration_type === "internal" ? "internal" : "external",
+        galleryKeys,
+        speaker,
       },
       unavailable: false,
     };

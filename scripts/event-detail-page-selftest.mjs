@@ -248,6 +248,8 @@ const EVENT_COLUMNS = new Set([
   "image_key",
   // 0029_event_seats_visibility.sql
   "show_seats_remaining",
+  // 0031_event_gallery.sql —— 相簿。
+  "gallery_keys",
 ]);
 checkTrue("select 不是空的", selectedCols.length >= 6);
 for (const col of selectedCols) {
@@ -257,12 +259,18 @@ for (const col of selectedCols) {
 // （products.slug = event-<events.slug>）。少了它，那條反查只能退回 params.slug，
 // 而那正是「網址正規化之後安靜查錯東西」的入口。
 checkTrue("select 有帶到 slug（0026 之後這一頁靠它反查商品）", selectedCols.includes("slug"));
-// 這三個是最可能被想當然耳寫進去的：image_key 與 speaker_id 存在但這一頁不讀，
-// payment_enabled 從 0001 就存在而五期以來沒有任何路由讀它。
+// 🔴 0031 起 image_key 與 speaker_id 反過來變成**必須**選出來：大圖靠 image_key，
+// 講者反查（events -> artists）靠 speaker_id。舊版這裡守的是「這兩欄不該被選」，
+// 因為那時候這一頁刻意不畫封面、也沒有講者區——那個決定本身變了，斷言要跟著改
+// 守新的事實，不是把它刪掉了事（見 [5] 檔頭的同一個決定）。
+for (const required of ["image_key", "speaker_id", "gallery_keys"]) {
+  checkTrue(`select 有帶到 ${required}（0031 起這一頁真的要讀）`, selectedCols.includes(required));
+}
+// payment_enabled 從 0001 就存在而五期以來沒有任何路由讀它，不該被想當然耳選進來。
 // show_seats_remaining（0029）也在這一組：這一頁畫的是 SessionList，而那個旗標是
 // 從**商品**那一側讀進來的（products.show_seats_remaining → ShopProduct）。從 events
 // 再讀一份，就是替同一個事實開第二個來源。
-for (const ghost of ["image_key", "speaker_id", "payment_enabled", "show_seats_remaining"]) {
+for (const ghost of ["payment_enabled", "show_seats_remaining"]) {
   check(`select 沒有帶到 ${ghost}`, selectedCols.includes(ghost), false);
 }
 // 網址吃的是 events.slug（0026 回填成 id，所以舊網址仍然有效）。
@@ -270,14 +278,63 @@ checkTrue('查詢條件是 .eq("slug", slug)', /\.eq\("slug", slug\)/.test(bySlu
 checkFalse('沒有留著舊的 .eq("id", slug)', /\.eq\("id", slug\)/.test(bySlugBody));
 
 // =============================================================================
-// [5] 沒有封面圖是刻意的
+// [5] 大圖／講者照片／相簿都要「先判斷非空，才呼叫 imageFor()」
 // =============================================================================
-console.log("\n[5] 不呼叫 imageFor()");
-// 0026 之後 events **有** image_key 了，但這一頁的結論沒變：imageFor(key, fallback)
-// **永遠**會回一張圖，所以對「還沒設圖」的活動渲染封面，得到的不是「沒有封面」，
-// 是每一場活動都長一樣的灰框佔位。
-checkFalse("路由沒有呼叫 imageFor()", /imageFor\(/.test(detailCode));
-checkFalse("路由連 imageFor 都沒有 import", /from "@\/lib\/images"/.test(detailCode));
+console.log("\n[5] imageFor() 一定要有守衛才能呼叫");
+// 🔴 這一條原本守的是「這一頁完全不呼叫 imageFor()」（0026 剛加 image_key 那時候，
+//    這一頁刻意不畫封面）。這一期起真的要畫大圖、講者照片、相簿，所以原本的斷言
+//    現在**注定**要轉紅——這裡是有意識地把它改成守新行為，不是刪掉了事：
+//    imageFor(key, fallback) 永遠會回一張圖這件事沒有變，變的是「這一頁現在有三處
+//    需要畫圖，而且每一處都必須先判斷對應的資料非空，才可以呼叫 imageFor()」。
+//    src/lib/cms.ts#EventDetailEntry 的型別註解與這支測試檔頭都寫著同一句話。
+checkTrue(
+  "路由現在會呼叫 imageFor()（大圖／講者照片／相簿都要用到）",
+  /imageFor\(/.test(detailCode),
+);
+checkTrue("路由 import 了 imageFor", /from "@\/lib\/images"/.test(detailCode));
+
+// 大圖：event.imageKey 非空才畫，而且沒有資料時整塊是 null——不是一張假的
+// fallback 圖片，也不是一個空的 <section>。
+checkTrue(
+  "大圖：先判斷 event.imageKey 非空，中間呼叫 imageFor(event.imageKey, …)，沒有資料就整塊 null",
+  /event\.imageKey \? \([\s\S]{0,500}?imageFor\(event\.imageKey,\s*""\)[\s\S]{0,300}?\)\s*:\s*null/.test(
+    detailCode,
+  ),
+);
+
+// 講者：event.speaker 非 null 才畫這一整塊；塊內的照片再另外判斷
+// event.speaker.imageKey 非空——**兩層判斷都要在**，因為講者可以只填名字（還沒
+// 上傳照片），那時候只印名字，不能因為外層判斷過了就對 imageFor() 少一道防線。
+checkTrue(
+  "講者區：先判斷 event.speaker 非 null，沒有資料就整塊 null",
+  /event\.speaker \? \([\s\S]{0,600}?\)\s*:\s*null/.test(detailCode),
+);
+checkTrue(
+  "講者照片：區塊內再判斷 event.speaker.imageKey 非空，才呼叫 imageFor()",
+  /event\.speaker\.imageKey \? \([\s\S]{0,200}?imageFor\(event\.speaker\.imageKey,\s*""\)/.test(
+    detailCode,
+  ),
+);
+
+// 相簿：event.galleryKeys.length > 0 才畫，陣列本身空的時候整塊 null；陣列裡
+// 每一張圖也是透過 imageFor() 解析，不是自己另外兜一條路徑。
+checkTrue(
+  "相簿：先判斷 event.galleryKeys.length > 0，沒有照片就整塊 null",
+  /event\.galleryKeys\.length > 0 \? \([\s\S]{0,700}?\)\s*:\s*null/.test(detailCode),
+);
+checkTrue(
+  "相簿：陣列裡每一張圖都呼叫 imageFor()",
+  /event\.galleryKeys\.map\([\s\S]{0,200}?imageFor\(/.test(detailCode),
+);
+
+// 🔴 剛好三個呼叫點（大圖一次、講者照片一次、相簿的 map 內一次）——多一個就代表
+// 有地方在上面三條守衛之外又呼叫了一次 imageFor()，那一處很可能沒有守衛。
+check(
+  "剛好三處呼叫 imageFor()（大圖、講者照片、相簿各一個呼叫點；多一處代表有地方漏了守衛）",
+  (detailCode.match(/imageFor\(/g) ?? []).length,
+  3,
+);
+
 checkFalse("路由沒有 import 任何 @/assets 圖片", /from "@\/assets\//.test(detailCode));
 checkFalse("head() 沒有硬塞 og:image", /"og:image"/.test(detailCode));
 // 對照組：imageFor 這支函式本身還在，斷言才有意義（不是因為函式被刪掉才「沒呼叫」）。

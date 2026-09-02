@@ -9,6 +9,7 @@ import type { Localized } from "@/i18n/types";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { fetchEventBySlug, fetchEventCategories } from "@/lib/cms";
 import { directAnySeatsLeft, directCheckoutSearch, directSeatLimit } from "@/lib/direct-checkout";
+import { imageFor } from "@/lib/images";
 import { fetchActiveProductForEventSlug, type ShopProduct } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
 
@@ -28,15 +29,25 @@ import { useSiteContent } from "@/lib/site-content";
  *    因為這一頁對查無此活動是真的回 404（見下面第三段）。那句警告寫在 0026 的檔頭
  *    與後台 slug 欄位的說明文字上。
  *
- * ── 這一頁仍然不畫封面圖 ───────────────────────────────────────────────────
- * 原本的理由是 events 根本沒有 image_key。0026 加了那一欄，但這一頁的結論沒變：
- * imageFor(key, fallback) 永遠會回一張圖，所以對「還沒設圖」的活動渲染封面，
- * 得到的不是「沒有封面」而是一個假的灰框佔位 —— 每一場都長一樣的那張。寧可沒有。
+ * ── 這一頁現在畫大圖、相簿、講者了（原本這裡寫著「仍然不畫封面圖」）───────────
+ * 0026 加了 events.image_key 之後，這裡一路刻意不畫封面，理由是
+ * imageFor(key, fallback) 永遠會回一張圖，對「還沒設圖」的活動渲染封面得到的不是
+ * 「沒有封面」，而是一個假的灰框佔位——每一場都長一樣的那張。這個顧慮沒有消失，
+ * 是被守住了：三塊新內容（大圖、相簿、講者）**各自**先判斷資料非空才畫，沒有資料
+ * 就整塊不出現，不會出現空框或不相干的預設圖。
  *
- * events.image_key 這一期**不是**一個沒有讀者的欄位（那正是 0020 §1 警告過的事）：
- * 後台表單寫它，而 0026 的 admin_upsert_event_with_session() 把它投影到
- * products.image_key，商店那一側是有在畫的。要在這一頁畫封面，是等有一張像樣的
- * 預設圖之後的另一個決定。
+ *   · 大圖：event.imageKey 非空才畫，用的正是後台表單一直在寫、也投影到
+ *     products.image_key 給商店那一側用的同一欄。
+ *   · 相簿：event.galleryKeys（0031 新加的 events.gallery_keys）非空陣列才畫。
+ *   · 講者：event.speaker 非 null 才畫。這欄的真相在 public.artists（0025 的
+ *     speaker_id 外鍵），不是新欄位——後台的「主講人」下拉一直都在，這一頁只是
+ *     這一期才把它畫出來。見 src/lib/cms.ts#fetchEventBySlug 的檔頭。
+ *
+ * ⚠️ **版面刻意跟 /shop/$slug 不一樣**，不是偷懶漏抄：商品頁是「圖在左、資訊在
+ *    右」的一次性兩欄格線（一張圖對一件商品）。這一頁是由上到下的編輯式排版——
+ *    大圖是通欄的橫幅，相簿是多張縮圖的網格，講者是照片＋文字並排的小卡——因為
+ *    一場活動可能有零到多張圖、有沒有講者也不一定，兩欄格線裝不下這種可變數量，
+ *    勉強塞只會擠成「看起來像同一頁複製過來的」那種相似感。
  *
  * ── 三種讀取結果是三件事 ───────────────────────────────────────────────────
  *   查無此活動（或未發布）  → notFound()，真的 404
@@ -101,6 +112,8 @@ const PAGE = {
     en: "Registration details are temporarily unavailable. Please try again shortly.",
     ja: "申し込み情報を読み込めませんでした。しばらくしてからお試しください。",
   },
+  aboutSpeaker: { zh: "關於講者", en: "About the speaker", ja: "講師について" },
+  gallery: { zh: "更多照片", en: "More photos", ja: "その他の写真" },
 };
 
 /**
@@ -257,6 +270,23 @@ function EventDetail() {
         <div className="rule mt-10" />
       </section>
 
+      {/* 大圖。⚠️ event.imageKey 非空才畫這整塊——imageFor(key, fallback) 永遠
+          會回一張圖，沒有判斷式的話，沒設圖的活動也會畫出同一張假灰框。
+          通欄橫幅（跟 shop.$slug.tsx 的 aspect-[4/5] 兩欄格線刻意不同），
+          fallback 傳空字串：這個分支只在 imageKey 非空時才會執行，fallback
+          永遠不會被用到，傳一個真的圖檔只是多一個沒有用途的 import。 */}
+      {event.imageKey ? (
+        <section className="container-editorial pb-16">
+          <div className="aspect-[21/9] w-full overflow-hidden bg-muted">
+            <img
+              src={imageFor(event.imageKey, "")}
+              alt={t(event.title)}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        </section>
+      ) : null}
+
       {/* 引言。events.description 從 0001 就在資料裡，而 0001 自己的欄位註解寫著
           "not rendered by any route yet" —— 五期之後，它終於有工作了。
           whitespace-pre-line：這一欄是後台的多行輸入，換行是作者排的。 */}
@@ -268,6 +298,56 @@ function EventDetail() {
           </p>
         </div>
       </section>
+
+      {/* 講者介紹。event.speaker 非 null 才畫——真相在 public.artists，這一頁
+          只是唯讀顯示。照片、頭銜、簡介三者各自再判斷一次非空，因為講者可以
+          只填名字（例如還沒上傳照片）：那時候只印名字，不印一張不相干的照片
+          或一段空白。 */}
+      {event.speaker ? (
+        <section className="container-editorial pb-16">
+          <div className="max-w-3xl border-t border-border pt-12">
+            <p className="eyebrow text-2xl">{t(PAGE.aboutSpeaker)}</p>
+            <div className="mt-6 flex flex-col gap-6 sm:flex-row sm:items-start">
+              {event.speaker.imageKey ? (
+                <img
+                  src={imageFor(event.speaker.imageKey, "")}
+                  alt={event.speaker.name}
+                  className="h-32 w-32 shrink-0 rounded-full object-cover sm:h-40 sm:w-40"
+                />
+              ) : null}
+              <div>
+                <p className="text-lg font-medium">{event.speaker.name}</p>
+                {event.speaker.title ? (
+                  <p className="mt-1 text-xs tracking-widest text-muted-foreground">
+                    {event.speaker.title}
+                  </p>
+                ) : null}
+                {event.speaker.bio ? (
+                  <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-foreground/80">
+                    {event.speaker.bio}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {/* 相簿。event.galleryKeys 非空陣列才畫。RWD：手機兩欄、桌機三欄。 */}
+      {event.galleryKeys.length > 0 ? (
+        <section className="container-editorial pb-16">
+          <div className="border-t border-border pt-12">
+            <p className="eyebrow text-2xl">{t(PAGE.gallery)}</p>
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {event.galleryKeys.map((key, i) => (
+                <div key={`${key}-${i}`} className="aspect-square overflow-hidden bg-muted">
+                  <img src={imageFor(key, "")} alt="" className="h-full w-full object-cover" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="container-editorial pb-32">
         <div className="grid gap-12 border-t border-border pt-12 md:grid-cols-2 md:gap-16">

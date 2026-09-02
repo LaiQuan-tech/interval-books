@@ -271,7 +271,34 @@ assertMigrationDependencies(check, MIG_DIR, {
   // stock / product_availability 都不在它的觸發欄位裡，結帳熱路徑不受影響。
   // 這一期**有**動到這支自檢守的 SessionPicker：它多了一個必填的 showSeatsRemaining
   // prop。下面 [12] 那一整段是為此新加的**真渲染**斷言（含額滿的對照組）。原樣成立。
-  reviewedThrough: "0029_event_seats_visibility.sql",
+  // ── 0030_customer_accounts.sql 的重讀結論 ────────────────────────────────
+  // 0030 加客人帳號的資料層：一支新函式 claim_guest_orders(uuid)（security definer、
+  // 只 grant execute 給 service_role），把 customer_email 對得上、而且 user_id 仍是
+  // null 的訪客訂單指給註冊並驗證過信箱的帳號；外加一支 partial index。
+  // **沒有 ALTER 任何一張表、沒有 create or replace 任何既有函式、沒有動任何 CHECK／
+  // trigger／排程，也沒有開任何 RLS policy 或對 anon / authenticated 的 grant**。
+  // 它唯一寫到的欄位是 public.orders.user_id（0005:65 就存在，到 0029 為止沒有任何
+  // 程式碼讀或寫過它）。
+  // 逐條重讀之後：0020 的 reserve_session_seat 七步、expire_unpaid_orders 的
+  // RETURNS TABLE 形狀、event_registrations 與 event_sessions 的零 grant 與欄位形狀，
+  // 0030 一個字都沒提到（它連 order_items 都沒碰）。位置快照（0020 在第 20、0021 在
+  // 第 21）也不受影響 —— 0030 是往後接的第 30 支。「佔了 N 個位子 ⇔ 有 N 位參加者」
+  // 那條不變量與 user_id 無關：認領改的是「這張單是誰的」，不是「這張單有幾個位子」。
+  // 原樣成立。
+  // ── 0031_event_gallery.sql 的重讀結論 ─────────────────────────────────────
+  // 0031 加活動相簿：public.events.gallery_keys（text[] not null default '{}'），
+  // 並放寬 admin_upsert_event_with_session() 對 external_url 的「不可為空」驗證
+  // （改成 coalesce 到空字串，修好 5 場已清空外部連結的活動存不回去的 bug）。
+  // 這支函式的本體是 0029 那一份**逐字照抄**，只在 events 那一段多了 gallery_keys
+  // 的宣告／驗證／insert／on conflict 四處，以及 external_url 那一行的 coalesce。
+  // **完全沒有動到 event_sessions、products、seats_taken 的任何一行**——products
+  // 與 event_sessions 兩段是原封不動搬過來的，這一支唯一新寫的程式碼全部落在
+  // events 那一段（insert 欄位清單多兩個值、驗證迴圈少一個 key、多一段陣列型別
+  // 轉換）。逐條重讀之後：0020 的 reserve_session_seat 七步、expire_unpaid_orders
+  // 的 RETURNS TABLE 形狀、event_registrations 的零 grant，0031 一個字都沒碰。
+  // 「佔了 N 個位子 ⇔ 有 N 位參加者」那條不變量與相簿、external_url 都無關——
+  // 兩者都是活動的展示層屬性，不影響任何一場報名的名額計算。原樣成立。
+  reviewedThrough: "0031_event_gallery.sql",
 });
 for (const f of [
   "0004_commerce_products.sql",

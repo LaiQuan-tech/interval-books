@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { LIST_MAX_ITEMS, LIST_MAX_ITEM_CHARS, splitLines } from "@/lib/admin/localized-list";
 import { EVENT_BLOCK_KINDS } from "@/lib/event-blocks";
+import { parseRecipients } from "@/lib/email-templates";
 
 export const localizedSchema = z.object({
   zh: z.string().trim().min(1, "請輸入中文內容"),
@@ -218,7 +219,24 @@ const publishFields = {
  * not a UI preference — a value outside these two is rejected by Postgres.
  */
 const registrationFields = {
-  external_url: z.string().trim().url("請輸入完整網址（含 https://）"),
+  /**
+   * 🔴 0031：原本是 `z.string().url()`，一律要求合法網址。那是一個真的 bug——
+   *    registration_type = "internal" 的活動（站內報名）本來就沒有外部網址，
+   *    而正式庫已經有 5 場活動的 external_url 被清成空字串（2026-09 把「前往
+   *    活動網站」從列表頁拿掉的那次改動）。這五場活動只要打開後台儲存一次，
+   *    表單就會在送出前被這條規則攔下來——不是 RPC 拒絕，是連送都送不出去。
+   *
+   *    改用跟 artistSchema.portal_url／publicationSchema.external_url 同一個
+   *    「空字串合法、非空才驗網址格式」的寫法，不是新發明的驗證方式。
+   *    supabase/migrations/0031_event_gallery.sql 把 SQL 那一側
+   *    admin_upsert_event_with_session() 的「不可為空」也放寬了——兩邊要一起
+   *    改：只放寬這裡、不放寬 SQL，表單能送出但 RPC 還是會擋；只放寬 SQL、
+   *    不放寬這裡，表單自己先擋下來，RPC 那邊的修法永遠用不到。
+   */
+  external_url: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || /^https?:\/\//.test(v), "請輸入完整網址（含 https://）或留空"),
   registration_type: z.enum(["external", "internal"]),
   payment_enabled: z.boolean(),
 };
@@ -271,6 +289,13 @@ export const eventSchema = z.object({
    * products.image_key —— 同一張圖不該讓店家上傳兩次。
    */
   image_key: z.string().trim().optional().nullable(),
+  /**
+   * 活動相簿（0031_event_gallery.sql）。一個有序的圖片 key 陣列，值的形狀
+   * 跟 image_key 同一個慣例。省略＝這一欄不動（SQL 那一側 payload 沒帶這個
+   * key 時 coalesce 到舊值，不是清空），跟 highlights 等七個清單欄位是同一條
+   * 「省略＝不動」規則——所以這裡也是 `.optional()`，不是 `.default([])`。
+   */
+  gallery_keys: z.array(z.string().trim().min(1)).optional(),
   ...registrationFields,
   /**
    * 前台印不印這場活動的「尚餘名額 N」（0029_event_seats_visibility.sql）。
@@ -518,6 +543,31 @@ export const pageListItemSchema = z.object({
 export type PageListItemFormValues = z.infer<typeof pageListItemSchema>;
 
 /** Single row, `check (id = 1)` — update only, never insert or delete. */
+/**
+ * 店家新訂單／新報名通知信收件人（public.site_settings.notify_emails，0032）。
+ *
+ * 空字串合法——代表「先不寄」，src/server/repos/email-outbox.ts 的
+ * enqueueAdminOrderEmail() 與 0032 的 enqueue_admin_order_email() 都把空收件人
+ * 當成安靜跳過，不是錯誤，這裡不該逼使用者填點什麼才能存檔。
+ *
+ * 非空時，用 parseRecipients()（src/lib/email-templates.ts，同一支邏輯負責把
+ * 這一欄拆成 Resend 要的地址陣列）拆開，每一段都要像 email。這是送出前的第一道
+ * 防線：純標點符號（例如打成一串逗號）在這裡就會被擋下來，不用等寄信那一步
+ * 燒掉重試額度才發現收件人是空的。
+ */
+const EMAIL_LIKE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const notifyEmailsSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) => {
+      if (value === "") return true;
+      const parts = parseRecipients(value);
+      return parts.length > 0 && parts.every((p) => EMAIL_LIKE_RE.test(p));
+    },
+    { message: "請輸入有效的電子郵件，多個地址用逗號分隔（留白＝先不寄通知信）" },
+  );
+
 export const siteSettingsSchema = z.object({
   short_desc: localizedSchema,
   address: localizedSchema,
@@ -539,6 +589,7 @@ export const siteSettingsSchema = z.object({
   meta_og_type: z.string().trim(),
   default_meta_title: z.string().trim(),
   default_meta_description: z.string().trim(),
+  notify_emails: notifyEmailsSchema,
 });
 export type SiteSettingsFormValues = z.infer<typeof siteSettingsSchema>;
 

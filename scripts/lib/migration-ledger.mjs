@@ -440,6 +440,31 @@ export const MIGRATION_LEDGER = Object.freeze([
     //    標上它們是對的：任何依賴那兩區的自檢都該回來確認那份抄寫沒有走樣。
     touches: ["products_availability", "session_seats", "events_shape", "localized_list"],
   },
+  {
+    file: "0030_customer_accounts.sql",
+    note: "客人帳號：claim_guest_orders() 把 customer_email 對得上、且還沒有主人的訪客訂單指給註冊後的 auth 帳號，加一支正規化 email 的 partial index",
+    // ⚠️ 只標 orders_payments，而且那不是偷懶：這一支唯一寫到的表就是
+    //    public.orders 的 user_id 欄位（0005:65 就存在、從來沒被寫過）。
+    //    它沒有 ALTER 任何表、沒有重建任何既有函式、沒有碰 order_items、
+    //    沒有碰 event_registrations / event_sessions，也沒有開任何 RLS policy
+    //    或對 anon / authenticated 的 grant（0005:318-336 的姿態原樣保留）。
+    //    偵測器掃得到的識別字也只有 orders 一個。
+    touches: ["orders_payments"],
+  },
+  {
+    file: "0031_event_gallery.sql",
+    note: "活動相簿：events.gallery_keys text[]；admin_upsert_event_with_session() 多吃這個 key，並放寬 external_url 的「不可為空」（改成允許空字串，修好 5 場已清空外部連結的活動存不回去的 bug）",
+    // ⚠️ events_shape / localized_list / products_availability / session_seats
+    //    這四個標籤是**函式重建帶進來的**，跟 0026／0027／0029 同一個理由：
+    //    admin_upsert_event_with_session() 用 create or replace 整支重寫，
+    //    而它的本體裡本來就寫著 products 與 event_sessions 的 insert/update、
+    //    is_localized() / is_localized_list() 的驗證——逐字照抄 0029 那一份，
+    //    只多了 gallery_keys 與 external_url 兩處改動，兩者都在 events 那一段。
+    //    講者（public.artists）**不在**這一支範圍：events.speaker_id 從 0025
+    //    就指到 artists 了，這一支沒有加任何新欄位、沒有動 artists 一個字，
+    //    所以不標 cms。
+    touches: ["events_shape", "localized_list", "products_availability", "session_seats"],
+  },
 ]);
 
 /** 磁碟上的 migration 檔名，排序過。空目錄 = 丟例外（那不是「沒有違規」）。 */

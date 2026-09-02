@@ -273,7 +273,33 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 逐條重讀之後：0021 的 admin_event_roster、on_roster、pii_access_log 與那兩個會留痕
   // 的明文出口，0029 一個字都沒提到。show_seats_remaining 是店家對「畫面上印不印一個
   // 數字」的決定，跟名單、遮罩、個資出口沒有交集；它也沒有新增任何 grant。原樣成立。
-  reviewedThrough: "0029_event_seats_visibility.sql",
+  // ── 0030_customer_accounts.sql 的重讀結論 ────────────────────────────────
+  // 0030 加客人帳號的資料層：一支新函式 claim_guest_orders(uuid)（security definer、
+  // 只 grant execute 給 service_role），把 customer_email 對得上、而且 user_id 仍是
+  // null 的訪客訂單指給註冊並驗證過信箱的帳號；外加一支 partial index。
+  // **沒有 ALTER 任何一張表、沒有 create or replace 任何既有函式、沒有動任何 CHECK／
+  // trigger／排程，也沒有開任何 RLS policy 或對 anon / authenticated 的 grant**。
+  // 它唯一寫到的欄位是 public.orders.user_id（0005:65 就存在，到 0029 為止沒有任何
+  // 程式碼讀或寫過它）。
+  // 逐條重讀之後：0021 的 admin_event_roster、on_roster、pii_access_log 與那兩個會
+  // 留痕的明文出口，0030 一個字都沒提到。
+  // ⚠️ 但**這一期真的多了一個檔案落進下面 [n] 那條掃描的範圍**：
+  //    src/server/repos/customer-orders.ts 提到 event_registrations（客人看自己買到的
+  //    位子）。那條規則因此會自動掃到它，而它沒有 "paid" 字面值 —— 它讀的是 orders
+  //    的 payment_status **欄位名**，不是 'paid' 這個**值**，判斷付款狀態這件事整支
+  //    檔案都沒有做。這正是那條規則想要的結果，不需要例外。
+  //    （那一支也沒有 insert / update / delete，只讀。）
+  // 原樣成立。
+  // ── 0031_event_gallery.sql 的重讀結論 ─────────────────────────────────────
+  // 0031 加活動相簿（events.gallery_keys text[]），並放寬
+  // admin_upsert_event_with_session() 對 external_url 的「不可為空」驗證。函式
+  // 本體是 0029 那一份逐字照抄，新寫的程式碼只在 events 那一段（insert 欄位
+  // 清單、驗證迴圈、一段陣列型別轉換）；products 與 event_sessions 兩段、
+  // 0021 的 admin_event_roster、on_roster、pii_access_log 與那兩個會留痕的
+  // 明文出口，0031 一個字都沒提到，也沒有新增任何檔案落進「event_registrations
+  // 不可以出現 paid 字面值」那條規則的掃描範圍——這一期沒有新增或修改任何一支
+  // TypeScript 檔案提到 event_registrations。原樣成立。
+  reviewedThrough: "0031_event_gallery.sql",
 });
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {

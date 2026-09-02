@@ -165,7 +165,28 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 逐條重讀之後：settle_free_order()、orders_payment_method_check、invoice_backlog()
   // 的 total > 0，0029 一個字都沒提到。它對 session_seats 的接觸只是函式本體裡照抄的
   // event_sessions 段落。免費訂單的結清路徑與名額顯示是兩件無關的事。原樣成立。
-  reviewedThrough: "0029_event_seats_visibility.sql",
+  // ── 0030_customer_accounts.sql 的重讀結論 ────────────────────────────────
+  // 0030 加客人帳號的資料層：一支新函式 claim_guest_orders(uuid)（security definer、
+  // 只 grant execute 給 service_role），把 customer_email 對得上、而且 user_id 仍是
+  // null 的訪客訂單指給註冊並驗證過信箱的帳號；外加一支 partial index。
+  // **沒有 ALTER 任何一張表、沒有 create or replace 任何既有函式、沒有動任何 CHECK／
+  // trigger／排程，也沒有開任何 RLS policy 或對 anon / authenticated 的 grant**。
+  // 它唯一寫到的欄位是 public.orders.user_id（0005:65 就存在，到 0029 為止沒有任何
+  // 程式碼讀或寫過它）。
+  // 逐條重讀之後：settle_free_order()、orders_payment_method_check 的允許值、
+  // invoice_backlog() 的 total > 0、expire_unpaid_orders() 撈得到誰 —— 0030 一個字
+  // 都沒提到。認領只改 user_id，而過期路徑挑的是 status / payment_status / paid_at
+  // 三欄，兩者沒有交集；發票的待處理清單也不看 user_id。原樣成立。
+  // ── 0031_event_gallery.sql 的重讀結論 ─────────────────────────────────────
+  // 0031 加活動相簿（events.gallery_keys text[]），並放寬
+  // admin_upsert_event_with_session() 對 external_url 的「不可為空」驗證。函式
+  // 本體是 0029 那一份逐字照抄，新寫的程式碼只在 events 那一段（insert 欄位
+  // 清單、驗證迴圈、一段陣列型別轉換）；它對 session_seats 的接觸跟 0029 一樣，
+  // 只是函式本體裡照抄的 event_sessions 段落，一個字都沒改。逐條重讀之後：
+  // settle_free_order()、orders_payment_method_check、invoice_backlog() 的
+  // total > 0、expire_unpaid_orders() 撈得到誰，0031 一個字都沒提到。免費訂單
+  // 的結清路徑與活動的相簿、外部連結是兩件無關的事。原樣成立。
+  reviewedThrough: "0031_event_gallery.sql",
 });
 
 // =============================================================================

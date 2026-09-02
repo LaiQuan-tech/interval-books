@@ -724,7 +724,21 @@ assertMigrationDependencies(check, join(ROOT, "supabase/migrations"), {
   // 任何 jsonb 欄位 —— 它加的兩欄都是 boolean。函式本體裡出現的 is_localized 呼叫是
   // 0027 那一份照抄過來的驗證，形狀與呼叫點都沒變。三語清單的欄位清單與 CHECK 不受影響。
   // 原樣成立。
-  reviewedThrough: "0029_event_seats_visibility.sql",
+  // ── 0031_event_gallery.sql 的重讀結論 ─────────────────────────────────────
+  // ⚠️ reviewedThrough 從 0029 推到 0031，中間跳過的 0030_customer_accounts.sql
+  //    也重讀過：帳本標它只碰 orders_payments，它唯一寫到的欄位是
+  //    public.orders.user_id，一個 jsonb 欄位、一個 is_localized 呼叫都沒有，
+  //    也沒有重新定義 admin_upsert_event_with_session()。
+  // 0031 用 create or replace 又重寫了一次 admin_upsert_event_with_session()
+  // ——這正是這支自檢依賴 events_shape 的理由。但那份重寫是 0029 那一份**逐字
+  // 照抄**：is_localized() 與 is_localized_list() 的呼叫（title/summary/
+  // description 三語物件的檢查、七個清單欄位的形狀檢查）一個字都沒動，呼叫點
+  // 也沒搬過家。0031 新增的兩處改動——gallery_keys（型別是 text[]，不是
+  // jsonb，所以完全不經過 is_localized_list()）與 external_url 的驗證放寬
+  // ——都不是三語 jsonb 欄位，不受這支自檢守的任何一條規則管轄。它也沒有新增
+  // 任何 jsonb 欄位或 CHECK 約束。三語清單的欄位清單與 CHECK 不受影響。
+  // 原樣成立。
+  reviewedThrough: "0031_event_gallery.sql",
 });
 
 // -----------------------------------------------------------------------------

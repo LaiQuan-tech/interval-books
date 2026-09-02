@@ -307,7 +307,21 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 三組斷言原樣成立 —— 0029 只是在同一份清單後面多接一欄，七欄一個都沒被移動或改寫。
   // is_localized_list() 的形狀守衛與 v_prev 的讀取也原樣照抄。event_blocks 那張表與
   // admin_reorder_event_blocks() 0029 一個字都沒提到。原樣成立。
-  reviewedThrough: "0029_event_seats_visibility.sql",
+  // ── 0031_event_gallery.sql 的重讀結論 ─────────────────────────────────────
+  // ⚠️ reviewedThrough 從 0029 推到 0031，中間跳過的 0030_customer_accounts.sql
+  //    也重讀過：帳本標它只碰 orders_payments，它沒有重新定義
+  //    admin_upsert_event_with_session()，也沒有動 events / event_blocks /
+  //    is_localized_list 任何一個字。
+  // 0031 用 create or replace 又重寫了一次 admin_upsert_event_with_session()
+  // ——上面 [7] 的 liveUpsert / upsertFn 從這一刻起讀到的就是 0031 那一份，
+  // 這正是這支自檢逐條核對過的（見上面 [7] 每一條斷言，特別是
+  // EVENT_LIST_FIELDS 那個迴圈）。0031 對 0027 的七個清單欄位（insert 欄位
+  // 清單／on conflict／coalesce 到 v_prev）三組斷言一個字都沒動——七欄一個都
+  // 沒被移動或改寫，新增的 gallery_keys 與 external_url 兩處改動插在它們
+  // **後面**，不影響任何一欄的位置。is_localized_list() 的形狀守衛與 v_prev
+  // 的讀取也原樣照抄。event_blocks 那張表與 admin_reorder_event_blocks()
+  // 0031 一個字都沒提到（它連 event_blocks 這個字都沒出現過）。原樣成立。
+  reviewedThrough: "0031_event_gallery.sql",
 });
 
 check(

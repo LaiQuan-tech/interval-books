@@ -250,7 +250,31 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 逐條重讀之後：0022 的 email_outbox / claim_order_notify / notify_backlog /
   // enqueue_registration_emails、0023 補回的排程，0029 一個字都沒提到，也沒有新增任何
   // 排程。名額顯示是純渲染層的決定，不會改變任何一封信該不該寄、寄給誰。原樣成立。
-  reviewedThrough: "0029_event_seats_visibility.sql",
+  // ── 0030_customer_accounts.sql 的重讀結論 ────────────────────────────────
+  // 0030 加客人帳號的資料層：一支新函式 claim_guest_orders(uuid)（security definer、
+  // 只 grant execute 給 service_role），把 customer_email 對得上、而且 user_id 仍是
+  // null 的訪客訂單指給註冊並驗證過信箱的帳號；外加一支 partial index。
+  // **沒有 ALTER 任何一張表、沒有 create or replace 任何既有函式、沒有動任何 CHECK／
+  // trigger／排程，也沒有開任何 RLS policy 或對 anon / authenticated 的 grant**。
+  // 它唯一寫到的欄位是 public.orders.user_id（0005:65 就存在，到 0029 為止沒有任何
+  // 程式碼讀或寫過它）。
+  // 逐條重讀之後：0022 的 email_outbox / claim_order_notify / notify_backlog /
+  // enqueue_registration_emails / sessions_due_for_reminder，以及 0023 補回的兩個
+  // 排程，0030 一個字都沒提到，也沒有新增任何一個 cron。信件走的閘門是「這張單真的
+  // 付過錢」與收件人的 customer_email，兩者都不看 user_id —— 認領一張舊訂單不會讓
+  // 任何一封信被重寄、少寄或寄給別人。原樣成立。
+  // ── 0031_event_gallery.sql 的重讀結論 ─────────────────────────────────────
+  // 0031 加活動相簿（events.gallery_keys text[]），並放寬
+  // admin_upsert_event_with_session() 對 external_url 的「不可為空」驗證。這支
+  // 函式的本體是 0029 那一份逐字照抄，唯一新寫的程式碼落在 events 那一段的
+  // insert 欄位清單、驗證迴圈與一段陣列型別轉換；products 與 event_sessions
+  // 兩段一個字都沒動，這一支也完全沒有碰 email_outbox（0022）任何一支函式，
+  // 沒有新增或修改任何排程。逐條重讀之後：0022 的 email_outbox /
+  // claim_order_notify / notify_backlog / enqueue_registration_emails /
+  // sessions_due_for_reminder，以及 0023 補回的兩個排程，0031 一個字都沒提到。
+  // 相簿與外部連結是活動的展示層屬性，跟「該不該寄信、寄給誰」沒有交集。
+  // 原樣成立。
+  reviewedThrough: "0031_event_gallery.sql",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

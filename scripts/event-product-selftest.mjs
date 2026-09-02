@@ -777,9 +777,18 @@ for (const fn of ["events_sync_product_seats_visibility", "products_pull_seats_v
 
 // RPC 也要投影這一欄（沒有它，「上架成商品」那一步會讓商品拿到欄位預設而不是活動
 // 的決定）。這裡對的是**現在生效的那一份**，不是 0029 這個檔案本身。
+//
+// 🔴 0031_event_gallery.sql 用 create or replace 又重寫了一次這支函式（多吃
+//    gallery_keys、放寬 external_url），所以「現在生效的那一份」從這一刻起
+//    是 0031，不再是 0029——這正是 live-definition.mjs 檔頭警告過的「下一支
+//    重寫它的 migration 會再踩一次」。這一條斷言的職責就是在那一刻把作者
+//    叫回來：上面 0029 那一段的每一條斷言都已經逐條核對過，在 0031 逐字照抄
+//    的那一份裡原樣成立（0031 對 show_seats_remaining 一個字都沒動）。
+const MIG_0031_NAME = "0031_event_gallery.sql";
+checkTrue(`${MIG_0031_NAME} 存在`, migrations.includes(MIG_0031_NAME));
 checkTrue(
-  "現在生效的 RPC 就是 0029 那一份",
-  liveRpc.file === MIG_0029_NAME,
+  "現在生效的 RPC 就是 0031 那一份",
+  liveRpc.file === MIG_0031_NAME,
   `實際是 ${liveRpc.file}`,
 );
 checkTrue(

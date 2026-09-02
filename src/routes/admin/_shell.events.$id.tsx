@@ -90,6 +90,7 @@ import {
 } from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { LocalizedListField } from "@/components/admin/LocalizedListField";
+import { GalleryField } from "@/components/admin/GalleryField";
 import { ImageField } from "@/components/admin/ImageField";
 import { MirrorNote } from "@/components/admin/MirrorNote";
 import { EventBlockEditor, type EventBlockItem } from "@/components/admin/EventBlockEditor";
@@ -260,6 +261,7 @@ const FIELD_LABELS: Record<string, string> = {
   category: "§1 分類",
   speaker_id: "§1 主講人",
   image_key: "§1 活動圖片",
+  gallery_keys: "§1 活動相簿",
   sort_order: "§1 排序",
   external_url: "§4 報名／活動網址",
   registration_type: "§4 報名方式",
@@ -312,6 +314,7 @@ function toFormValues(
     id: row?.id,
     slug: row?.slug ?? "",
     image_key: row?.image_key ?? null,
+    gallery_keys: row?.gallery_keys ?? [],
     title: row?.title ?? { ...EMPTY_LOCALIZED },
     summary: row?.summary ?? { ...EMPTY_LOCALIZED },
     description: row?.description ?? { ...EMPTY_LOCALIZED },
@@ -839,8 +842,25 @@ function AdminEventAssemblerPage() {
                   fallback={eventReading}
                 />
                 <FormDescription>
-                  活動頁本身目前不畫封面。這張圖是給**商品**用的：上架之後它會出現在 /shop
-                  的商品卡與商品頁上。
+                  上架之後它也會出現在 /shop 的商品卡與商品頁上；活動頁本身則是這張圖
+                  以通欄大圖的方式出現在標題下方。
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="gallery_keys"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>活動相簿（選填）</FormLabel>
+                {/* GalleryField 跟 ImageField 一樣是複合元件，不可以包在
+                    <FormControl>（Radix Slot）裡——同一個雷 5。 */}
+                <GalleryField value={field.value ?? []} onChange={field.onChange} />
+                <FormDescription>
+                  上傳的照片會依序出現在活動頁的「更多照片」區；沒有照片就不會畫出這一區。
                 </FormDescription>
                 <FormMessage />
               </FormItem>
