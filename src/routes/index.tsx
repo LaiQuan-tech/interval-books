@@ -172,26 +172,6 @@ function Index() {
             </div>
           </div>
         </div>
-
-        {/* 三入口卡片 */}
-        <div className="mt-20 grid gap-px bg-border md:grid-cols-3 border border-border">
-          {p.rows("entryCards", ENTRY_CARDS_FALLBACK).map((card, i) => (
-            <Link
-              key={ENTRY_LINKS[i] ?? "/events"}
-              to={ENTRY_LINKS[i] ?? "/events"}
-              className="group bg-background p-8 md:p-10 transition-colors hover:bg-[oklch(0.96_0.014_82)]"
-            >
-              <p className="eyebrow text-2xl">{t(p.block("entries.explore", ENTRIES.explore))}</p>
-              <h3 className="display mt-4 text-2xl">{t(card.label)}</h3>
-              <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-                {card.note ? t(card.note) : ""}
-              </p>
-              <span className="mt-8 inline-block text-xs tracking-widest text-clay group-hover:text-foreground">
-                —— {t(p.block("entries.goTo", ENTRIES.goTo))}
-              </span>
-            </Link>
-          ))}
-        </div>
       </section>
 
       {/* 精選活動 */}
