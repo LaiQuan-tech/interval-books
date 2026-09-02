@@ -946,6 +946,43 @@ for (const missing of [
   setEnv();
 }
 
+// ── 🔴 金流商連不到的網址一律不算設定完成（2026-09-02 掉單事故的防線）──────
+//
+// 這一組守的是一個**真的發生過**的失敗：SITE_URL 從來沒有設在 Vercel 上，
+// siteUrl() 因此退回預設值 http://localhost:8080，而 blackcatApnUrl() 與
+// blackcatReturnUrl() 共用它。結果是客人刷卡成功被導到 localhost，而我們送給
+// 黑貓的 APN 網址也是 localhost —— 通知永遠不會到，訂單卡在 pending，兩小時後
+// 被 expire_unpaid_orders() 取消、座位還回去，而錢已經收了（IB-202600001191，
+// NT$1,800，靠人工向黑貓回查才救回來）。
+//
+// 當時 blackcatApnUrl() 的註解已經預測到這件事，但把責任交給「部署設定」——
+// 而那是一個沒有人在檢查的地方。現在擋在程式裡。
+//
+// 判準不是「哪個環境」而是「金流商連得到嗎」：loopback 與非 https 在任何環境下
+// 都不是有效的 APN 目的地。
+{
+  const unreachable = [
+    ["http://localhost:8080", "就是這次出事的那個預設值"],
+    ["http://127.0.0.1:3000", "loopback 的另一種寫法"],
+    ["https://localhost:8080", "https 但仍然是 loopback"],
+    ["http://www.intervalbooks.tw", "正式網域但是 http —— 金流商不會打明文"],
+    ["https://shop.local", ".local 是區網名稱"],
+  ];
+  for (const [site, why] of unreachable) {
+    setEnv({ SITE_URL: site });
+    check(`🔴 SITE_URL=${site} → blackcatApnUrl() 回 null（${why}）`, bc.blackcatApnUrl(), null);
+    check(`🔴 進而讓 blackcatConfigured() 為 false（${site}）`, bc.blackcatConfigured(), false);
+  }
+  // 對照組：真的連得到的網址必須通過，否則上面那五條可能只是因為函式壞了。
+  setEnv({ SITE_URL: "https://www.intervalbooks.tw" });
+  checkTrue(
+    "對照組：https 的正式網域通得過（證明上面不是因為函式整支壞掉）",
+    (bc.blackcatApnUrl() ?? "").startsWith("https://www.intervalbooks.tw/"),
+  );
+  checkTrue("對照組：此時 blackcatConfigured() 為 true", bc.blackcatConfigured());
+  setEnv();
+}
+
 checkTrue("APN 網址帶著 ?k= 密鑰閘門", (bc.blackcatApnUrl() ?? "").includes(`k=${FIXTURE.secret}`));
 check(
   "APN 路徑與 src/server.ts 攔截的常數是同一個",

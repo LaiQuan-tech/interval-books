@@ -158,9 +158,27 @@ export const BLACKCAT_RETURN_PATH = "/api/payments/blackcat/return";
  * 擋掉整條刷卡路線。
  *
  * ⚠️ 規格 P40 的 apn_url 上限 250 字元，`?k=` 之後的密鑰也算在內。
- * ⚠️ 規格沒有限制 port（PayUni 限 80/443），所以這裡不做 port 檢查 ——
- *    但 SITE_URL 設成 localhost 時對方當然打不進來，那要靠部署設定，不是這裡。
+ *
+ * ── 🔴 2026-09-02：這裡原本不擋 localhost，結果掉了一張單 ────────────────
+ * 原本的註解寫著：「SITE_URL 設成 localhost 時對方當然打不進來，那要靠部署設定，
+ * 不是這裡。」那句話預測對了失敗，卻把責任交給一個沒有人在檢查的地方 ——
+ * **`SITE_URL` 從來沒有設在 Vercel 上**，`siteUrl()` 因此退回預設值
+ * `http://localhost:8080`，而這一支與 blackcatReturnUrl() 共用它。
+ *
+ * 後果：客人刷卡成功被導到 localhost（看到「無法連線」），而我們送給黑貓的 APN
+ * 網址也是 localhost —— 通知永遠不會到，訂單卡在 pending，兩小時後被
+ * expire_unpaid_orders() 取消、座位還回去，而錢已經收了。
+ * （實際發生在 IB-202600001191，NT$1,800，靠人工回查黑貓才救回來。）
+ *
+ * 所以現在擋在這裡。判準不是「哪個環境」而是「金流商連得到嗎」——
+ * loopback 位址與非 https 的網址，**在任何環境下**都不是一個有效的 APN 目的地。
+ * 本機開發不受影響：那時候沒有真的憑證，blackcatConfigured() 本來就是 false。
+ *
+ * 擋下來的後果是整條刷卡路線降級成「不經金流」（訂單成立、由店家另行安排付款），
+ * 那是**吵的**失敗 —— 比「刷得過但通知送不到」那種安靜的失敗好得多。
  */
+const UNREACHABLE_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+
 export function blackcatApnUrl(): string | null {
   const secret = process.env.BLACKCAT_WEBHOOK_SECRET;
   if (!secret) return null;
@@ -170,6 +188,9 @@ export function blackcatApnUrl(): string | null {
   } catch {
     return null;
   }
+  // 🔴 金流商的伺服器從外網打進來。這兩條擋掉它永遠到不了的目的地。
+  if (url.protocol !== "https:") return null;
+  if (UNREACHABLE_HOSTS.has(url.hostname) || url.hostname.endsWith(".local")) return null;
   url.searchParams.set("k", secret);
   const out = url.toString();
   return out.length <= 250 ? out : null;
