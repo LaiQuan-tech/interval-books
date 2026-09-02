@@ -44,7 +44,7 @@ const PAGE = {
 };
 
 /** "all" filter pill — a page_block on the events page. */
-const ALL = { zh: "全部", en: "All", ja: "すべて" };
+const UPCOMING_LABEL = { zh: "報名中", en: "Open", ja: "受付中" };
 const PAST_LABEL = { zh: "已結束", en: "Past", ja: "終了" };
 const PAST_BADGE = { zh: "已結束", en: "Ended", ja: "終了" };
 
@@ -99,22 +99,26 @@ function Events() {
   const labelById = new Map(categories.map((c) => [c.id, c.label] as const));
   // 「已結束」不是一個 event_categories 的分類，是一個時間狀態，所以它是一個
   // 寫死的哨兵 id 而不是從 categories 來的。放在最後一格。
+  // 篩選只有兩格：報名中 / 已結束。
+  //
+  // 這裡原本還有六到七個分類（讀書會、療癒生活節、陶藝工作坊…），但那些對訪客
+  // 不是有用的切法 —— 一家書店同時開放報名的活動通常只有個位數，分類篩完往往
+  // 只剩一則，而按下去之前沒人知道會不會是空的。真正會影響行為的問題只有一個：
+  // 「這場我還報得到名嗎」。所以留下的兩格就是那個問題的兩個答案。
+  //
+  // 分類本身沒有消失 —— 每張卡片的 eyebrow 仍然印著它，那是**描述**這場活動是
+  // 什麼，與**篩選**是兩回事。categories 因此仍然要載入（labelById 要用）。
+  const UPCOMING_FILTER = "__upcoming__";
   const PAST_FILTER = "__past__";
-  const filterIds = ["all", ...categories.map((c) => c.id), PAST_FILTER];
+  const filterIds = [UPCOMING_FILTER, PAST_FILTER];
 
-  const [filter, setFilter] = useState<string>("all");
+  const [filter, setFilter] = useState<string>(UPCOMING_FILTER);
 
-  // 🔴 已結束的活動**只有在「已結束」那一格才找得到**。其餘每一格（含「全部」）
-  //    都把它們排除掉 —— 「全部」的意思是「所有還在進行的活動」，不是「所有列」。
-  //    辦過的活動留在站上是為了讓人看得到我們辦過什麼，不是為了讓人以為還能報名。
+  // 🔴 已結束的活動**只有在「已結束」那一格才找得到**。辦過的活動留在站上是為了
+  //    讓人看得到我們辦過什麼，不是為了讓人以為還能報名。
   const upcoming = events.filter((e) => !isPastEvent(e.isoDate));
   const past = events.filter((e) => isPastEvent(e.isoDate));
-  const list =
-    filter === PAST_FILTER
-      ? past
-      : filter === "all"
-        ? upcoming
-        : upcoming.filter((e) => e.category === filter);
+  const list = filter === PAST_FILTER ? past : upcoming;
 
   return (
     <PageShell>
@@ -138,11 +142,9 @@ function Events() {
       <section className="container-editorial pb-12 flex flex-wrap gap-3 text-xs tracking-widest">
         {filterIds.map((f) => {
           const label =
-            f === "all"
-              ? t(p.block("filters.all", ALL))
-              : f === PAST_FILTER
-                ? t(p.block("filters.past", PAST_LABEL))
-                : t(labelById.get(f) ?? { zh: f, en: f, ja: f });
+            f === PAST_FILTER
+              ? t(p.block("filters.past", PAST_LABEL))
+              : t(p.block("filters.upcoming", UPCOMING_LABEL));
           const active = filter === f;
           return (
             <button
@@ -178,10 +180,13 @@ function Events() {
             <h3 className="display mt-4 text-2xl md:text-3xl leading-snug">{t(e.title)}</h3>
             <p className="mt-4 text-sm text-muted-foreground">{e.date}</p>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(e.summary)}</p>
-            {/* 詳情頁擺在外部連結前面：這一則活動在**這個站上**的那一頁，才是
-                我們自己說得清楚的地方。外部連結原樣留著 —— 主辦方的報名表單、
-                售票頁通常都還在那裡。 */}
-            <div className="mt-8 flex flex-wrap items-center gap-4">
+            {/* 只留站內的詳情頁。原本旁邊還有一顆「前往活動網站」連到
+                events.external_url —— 但正式庫七場活動裡有五場的那一欄還是
+                https://example.com/event-N（0001 的種子資料，從未替換），所以
+                那顆按鈕多半是把人送去一個不存在的地方。活動詳情頁存在之後，
+                站內那一頁本來就是我們說得最清楚的地方；真的有外部售票連結時，
+                由詳情頁自己決定要不要顯示。 */}
+            <div className="mt-8">
               <Link
                 to="/events/$slug"
                 params={{ slug: e.slug }}
@@ -189,14 +194,6 @@ function Events() {
               >
                 {t(p.block("detail", DETAIL))}
               </Link>
-              <a
-                href={e.externalUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm tracking-widest text-muted-foreground hover-underline hover:text-foreground transition-colors"
-              >
-                {t(ui.buttons.toEvent)}
-              </a>
             </div>
           </article>
         ))}

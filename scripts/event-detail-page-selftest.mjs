@@ -503,7 +503,17 @@ checkTrue("列表頁連到 /events/$slug", /to="\/events\/\$slug"/.test(indexCod
 // 自己連出去的 404 —— 比外部連結失效更難發現，因為沒有人會回報自家列表頁。
 checkTrue("列表頁帶的是 events.slug（不是 id）", /params=\{\{ slug: e\.slug \}\}/.test(indexCode));
 checkFalse("列表頁沒有留著 slug: e.id", /params=\{\{ slug: e\.id \}\}/.test(indexCode));
-checkTrue("列表頁仍保留外部連結", /href=\{e\.externalUrl\}/.test(indexCode));
+// 🔴 這一條原本是 checkTrue（「列表頁仍保留外部連結」），2026-09 反轉了。
+//
+// events.external_url 在正式庫七場活動裡**有五場還是 https://example.com/event-N**
+// —— 0001 的種子資料，從未替換。也就是那顆「前往活動網站」多半是把客人送去一個
+// 不存在的地方。活動詳情頁存在之後，站內那一頁本來就是說得最清楚的地方。
+//
+// 反轉方向要說清楚：這不是「放寬」。原本守的是「不要弄丟外部連結」，現在守的是
+// 「列表頁不准再有那顆按鈕」—— 兩者都是精確的、都會因為改回去而轉紅。真的有
+// 外部售票連結要顯示時，那是詳情頁的決定（events.$slug.tsx 仍然有那條路）。
+checkFalse("🔴 列表頁不再有「前往活動網站」的外部連結", /href=\{e\.externalUrl\}/.test(indexCode));
+checkFalse("列表頁也沒有改用別的寫法連出去", /ui\.buttons\.toEvent/.test(indexCode));
 
 const migrations = readdirSync(join(ROOT, "supabase/migrations"))
   .filter((f) => f.endsWith(".sql"))
