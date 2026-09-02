@@ -105,6 +105,13 @@ export type EventEntry = {
   title: Localized;
   summary: Localized;
   description: Localized;
+  /**
+   * 封面圖 key（0026）。null = 沒設。
+   *
+   * ⚠️ 呼叫端**必須先判斷它非空再呼叫 imageFor()** —— imageFor(key, fallback)
+   *    永遠會回一張圖，順序反過來就是「每一場活動都長同一張不相干的照片」。
+   */
+  imageKey: string | null;
   date: string;
   category: string;
   externalUrl: string;
@@ -119,10 +126,14 @@ export type EventRegistrationType = "external" | "internal";
  * One event, as the detail page needs it. Adds the one column the list page
  * has no use for: `registrationType`, which decides where the 報名 button goes.
  *
- * ⚠️ 0026 之後 public.events **有** image_key 了，但這個型別刻意不帶它：詳情頁
- *    仍然不畫封面。imageFor() 永遠會回*某一張*圖，所以對還沒設圖的活動渲染封面，
- *    畫面上多的是一個每場活動都長一樣的灰框佔位，不是「沒有封面」。理由的完整版
- *    在 src/routes/events.$slug.tsx 的檔頭。
+ * ⚠️ imageKey 這一欄在 EventEntry 上是真的（首頁的活動卡片會畫封面），但
+ *    **詳情頁刻意不畫**，所以 fetchEventBySlug() 連 select 都不帶 image_key，
+ *    mapping 直接給 null。理由：imageFor(key, fallback) 永遠會回*某一張*圖，
+ *    對還沒設圖的活動渲染封面，得到的不是「沒有封面」，是每場活動都長一樣的
+ *    灰框佔位。scripts/event-detail-page-selftest.mjs 的 [5] 有斷言在守。
+ *
+ *    要在詳情頁加封面是可以的，但那是一個**要連同那組斷言一起改**的決定 ——
+ *    正確的做法是「先判斷 imageKey 非空再呼叫 imageFor()」，不是把判斷拿掉。
  */
 export type EventDetailEntry = EventEntry & {
   registrationType: EventRegistrationType;
@@ -236,6 +247,8 @@ export const FALLBACK_EVENTS: EventEntry[] = staticEvents.map((e) => ({
   id: e.id,
   // bundled 種子沒有 slug 欄位。退回 id 是對的：0026 就是這樣回填正式庫的。
   slug: e.id,
+  // bundled 種子也沒有封面。null 的意思是「不要畫封面」，不是「畫一張預設圖」。
+  imageKey: null,
   title: e.title,
   summary: e.summary,
   description: e.description,
@@ -562,7 +575,7 @@ export function eyebrowOf(page: PageContent | null, prefix: string, suffix: stri
 export async function fetchEvents(): Promise<EventEntry[]> {
   const rows = await select(
     "events",
-    "id,slug,title,summary,description,display_date,category,external_url,sort_order",
+    "id,slug,title,summary,description,display_date,category,external_url,image_key,sort_order",
     { order: "sort_order" },
   );
   if (!rows || !rows.length) return FALLBACK_EVENTS;
@@ -584,6 +597,7 @@ export async function fetchEvents(): Promise<EventEntry[]> {
       date: str(r.display_date),
       category: str(r.category),
       externalUrl: str(r.external_url),
+      imageKey: nullableStr(r.image_key),
     });
   }
   return mapped.length ? mapped : FALLBACK_EVENTS;
@@ -659,6 +673,11 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
         date: str(r.display_date),
         category: str(r.category),
         externalUrl: str(r.external_url),
+        // ⚠️ 刻意是 null，不是讀出來的值：**這一頁不畫封面**，所以連 select 都不帶
+        //    image_key。理由見 scripts/event-detail-page-selftest.mjs 的 [5] ——
+        //    imageFor(key, fallback) 永遠會回一張圖，對還沒設圖的活動渲染封面得到的
+        //    不是「沒有封面」，是每場活動都長一樣的灰框。那一支有斷言在守這件事。
+        imageKey: null,
         registrationType: r.registration_type === "internal" ? "internal" : "external",
       },
       unavailable: false,

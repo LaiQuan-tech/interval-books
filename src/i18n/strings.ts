@@ -40,6 +40,9 @@ export const UI = {
 
   buttons: {
     toEvent: { zh: "前往活動網站", en: "Visit event site", ja: "イベントサイトへ" },
+    // 站內的活動詳情頁。與 toEvent 是兩件事：toEvent 真的把人送去別人的網站
+    // （售票頁、主辦單位官網），viewEvent 是留在這個站上。
+    viewEvent: { zh: "查看活動", en: "View event", ja: "イベントを見る" },
     toJourney: { zh: "前往旅程網站", en: "Visit journey site", ja: "旅のサイトへ" },
     toExhibition: { zh: "看展覽詳情", en: "View exhibition", ja: "展覧の詳細" },
     navigate: { zh: "點此導航", en: "Open in Maps", ja: "地図を開く" },

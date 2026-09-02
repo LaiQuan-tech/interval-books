@@ -199,22 +199,43 @@ function Index() {
         title={t(ui.sections.featuredEvents)}
         link={{ to: "/events", label: t(ui.buttons.viewAll) }}
       />
-      <div className="container-editorial pb-20 grid gap-10 md:grid-cols-3">
+      {/* ⚠️ 這裡連的是**站內**的 /events/$slug，不是 e.externalUrl。
+          externalUrl 有 5 筆還是 https://example.com/event-N 的佔位符（0001 的種子
+          資料），所以首頁曾經有三顆按鈕直接把客人送去 example.com。活動詳情頁
+          存在之後，站內那一頁才是正確的目的地；外部售票連結留在詳情頁上，由那一頁
+          自己決定要不要顯示。 */}
+      <div className="container-editorial pb-20 grid gap-8 md:grid-cols-3">
         {events.slice(0, 3).map((e) => (
-          <article key={e.id} className="flex flex-col">
-            <p className="eyebrow text-2xl">{e.category}</p>
-            <h3 className="display mt-3 text-2xl leading-snug">{t(e.title)}</h3>
-            <p className="mt-3 text-sm text-muted-foreground">{e.date}</p>
-            <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(e.summary)}</p>
-            <a
-              href={e.externalUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 inline-block tracking-widest text-clay hover-underline self-start text-base"
-            >
-              {t(ui.buttons.toEvent)} →
-            </a>
-          </article>
+          <Link
+            key={e.id}
+            to="/events/$slug"
+            params={{ slug: e.slug }}
+            className="group flex flex-col border border-border bg-background/40 hover:border-foreground/40 transition-colors"
+          >
+            {/* ⚠️ 先判斷 imageKey 非空**再**呼叫 imageFor()。imageFor(key, fallback)
+                永遠會回一張圖，順序反過來就是每一張卡片都長同一張不相干的照片。 */}
+            {e.imageKey ? (
+              <div className="aspect-[4/3] overflow-hidden">
+                <img
+                  src={imageFor(e.imageKey, storefrontImg)}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                />
+              </div>
+            ) : null}
+            <div className="flex flex-1 flex-col p-6">
+              <p className="eyebrow text-2xl">{e.category}</p>
+              <h3 className="display mt-3 text-2xl leading-snug">{t(e.title)}</h3>
+              <p className="mt-3 text-sm text-muted-foreground">{e.date}</p>
+              <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">
+                {t(e.summary)}
+              </p>
+              <span className="mt-6 inline-block tracking-widest text-clay group-hover:underline self-start text-base">
+                {t(ui.buttons.viewEvent)} →
+              </span>
+            </div>
+          </Link>
         ))}
       </div>
 
