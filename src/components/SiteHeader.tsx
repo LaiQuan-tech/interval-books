@@ -16,7 +16,6 @@ export function SiteHeader() {
     { to: "/", label: t(ui.nav.home), exact: true },
     { to: "/shop", label: t(ui.nav.shop), exact: false },
     { to: "/events", label: t(ui.nav.events), exact: false },
-    { to: "/exhibitions", label: t(ui.nav.exhibitions), exact: false },
     { to: "/publications", label: t(ui.nav.publications), exact: false },
     { to: "/journeys", label: t(ui.nav.journeys), exact: false },
     { to: "/curated", label: t(ui.nav.curated), exact: false },

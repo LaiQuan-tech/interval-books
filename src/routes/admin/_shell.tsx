@@ -15,7 +15,6 @@ import {
   ClipboardList,
   FileText,
   Handshake,
-  ImageIcon,
   LayoutDashboard,
   LogOut,
   Mic,
@@ -127,7 +126,6 @@ const NAV_GROUPS = [
       // 資料 —— 同一張表的 vendor_id 那一半（統編、匯款）在「廠商」頁，
       // 那是另一個授權面，見 src/server/repos/artists.ts 檔頭。
       { to: "/admin/artists", label: "講者", icon: Mic, staff: false },
-      { to: "/admin/exhibitions", label: "展覽", icon: ImageIcon, staff: false },
       { to: "/admin/publications", label: "地方刊物展", icon: BookOpen, staff: false },
       // lucide's `Route` icon would collide with this file's `export const Route`.
       { to: "/admin/journeys", label: "策旅", icon: Tent, staff: false },

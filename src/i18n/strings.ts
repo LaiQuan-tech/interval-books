@@ -8,7 +8,6 @@ export const UI = {
   nav: {
     home: { zh: "首頁", en: "Home", ja: "ホーム" },
     events: { zh: "活動", en: "Events", ja: "イベント" },
-    exhibitions: { zh: "展覽", en: "Exhibitions", ja: "展覧" },
     publications: { zh: "地方刊物展", en: "Publications", ja: "地域の刊行物" },
     journeys: { zh: "策旅", en: "Journeys", ja: "旅" },
     curated: { zh: "主理人的選品", en: "Curated", ja: "店主の選品" },
@@ -44,7 +43,6 @@ export const UI = {
     // （售票頁、主辦單位官網），viewEvent 是留在這個站上。
     viewEvent: { zh: "查看活動", en: "View event", ja: "イベントを見る" },
     toJourney: { zh: "前往旅程網站", en: "Visit journey site", ja: "旅のサイトへ" },
-    toExhibition: { zh: "看展覽詳情", en: "View exhibition", ja: "展覧の詳細" },
     navigate: { zh: "點此導航", en: "Open in Maps", ja: "地図を開く" },
     emailUs: { zh: "Email 聯繫", en: "Email us", ja: "メールで問合せ" },
     line: { zh: "LINE 私訊", en: "Message on LINE", ja: "LINE で連絡" },
@@ -62,7 +60,6 @@ export const UI = {
   sections: {
     thisMonth: { zh: "本月精選", en: "This Month", ja: "今月の特集" },
     featuredEvents: { zh: "精選活動", en: "Featured Events", ja: "特選イベント" },
-    featuredExhibitions: { zh: "精選展覽", en: "Featured Exhibitions", ja: "特選展覧" },
     featuredJourney: { zh: "精選策旅", en: "Featured Journey", ja: "特選の旅" },
     latestNews: { zh: "最新消息", en: "Latest News", ja: "お知らせ" },
   },

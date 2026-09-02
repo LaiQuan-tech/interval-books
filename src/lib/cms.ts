@@ -26,7 +26,6 @@ import {
 } from "@/i18n/strings";
 import {
   events as staticEvents,
-  exhibitions as staticExhibitions,
   journeys as staticJourneys,
   news as staticNews,
   curatedThemes as staticCuratedThemes,
@@ -158,17 +157,6 @@ export type EventDetailResult = {
   unavailable: boolean;
 };
 
-export type ExhibitionEntry = {
-  id: string;
-  slug: string;
-  title: Localized;
-  summary: Localized;
-  description: Localized;
-  period: string;
-  location: Localized;
-  imageKey: string | null;
-};
-
 export type JourneyEntry = {
   id: string;
   title: Localized;
@@ -245,12 +233,6 @@ export const FALLBACK_SITE_CONTENT: SiteContent = {
   },
 };
 
-/** exhibitions.image_key equivalents for the bundled fallback data. */
-const EXHIBITION_IMAGE_FALLBACK: Record<string, string> = {
-  "soil-and-page": "exhibition-corner.jpg",
-  "quiet-objects": "storefront.jpg",
-};
-
 export const FALLBACK_EVENTS: EventEntry[] = staticEvents.map((e) => ({
   id: e.id,
   // bundled 種子沒有 slug 欄位。退回 id 是對的：0026 就是這樣回填正式庫的。
@@ -281,17 +263,6 @@ export const FALLBACK_EVENT_CATEGORIES: EventCategoryEntry[] = [
   },
   { id: "好書交流", label: { zh: "好書交流", en: "Book Exchange", ja: "本の交流" } },
 ];
-
-export const FALLBACK_EXHIBITIONS: ExhibitionEntry[] = staticExhibitions.map((ex) => ({
-  id: ex.id,
-  slug: ex.slug,
-  title: ex.title,
-  summary: ex.summary,
-  description: ex.description,
-  period: ex.period,
-  location: ex.location,
-  imageKey: EXHIBITION_IMAGE_FALLBACK[ex.slug] ?? null,
-}));
 
 export const FALLBACK_JOURNEYS: JourneyEntry[] = staticJourneys.map((j) => ({
   id: j.id,
@@ -711,34 +682,6 @@ export async function fetchEventCategories(): Promise<EventCategoryEntry[]> {
     mapped.push({ id: str(r.id), label });
   }
   return mapped.length ? mapped : FALLBACK_EVENT_CATEGORIES;
-}
-
-export async function fetchExhibitions(): Promise<ExhibitionEntry[]> {
-  const rows = await select(
-    "exhibitions",
-    "id,slug,title,summary,description,period,location,image_key,sort_order",
-    { order: "sort_order" },
-  );
-  if (!rows || !rows.length) return FALLBACK_EXHIBITIONS;
-  const mapped: ExhibitionEntry[] = [];
-  for (const r of rows) {
-    const title = loc(r.title);
-    const summary = loc(r.summary);
-    const description = loc(r.description);
-    const location = loc(r.location);
-    if (!title || !summary || !description || !location) continue;
-    mapped.push({
-      id: str(r.id),
-      slug: str(r.slug),
-      title,
-      summary,
-      description,
-      period: str(r.period),
-      location,
-      imageKey: nullableStr(r.image_key),
-    });
-  }
-  return mapped.length ? mapped : FALLBACK_EXHIBITIONS;
 }
 
 export async function fetchJourneys(): Promise<JourneyEntry[]> {

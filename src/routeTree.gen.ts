@@ -14,7 +14,6 @@ import { Route as PublicationsRouteImport } from './routes/publications'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as JourneysRouteImport } from './routes/journeys'
-import { Route as ExhibitionsRouteImport } from './routes/exhibitions'
 import { Route as CurationRouteImport } from './routes/curation'
 import { Route as CuratedRouteImport } from './routes/curated'
 import { Route as ContactRouteImport } from './routes/contact'
@@ -55,7 +54,6 @@ import { Route as AdminShellInventoryListingRouteImport } from './routes/admin/_
 import { Route as AdminShellInventoryCountRouteImport } from './routes/admin/_shell.inventory-count'
 import { Route as AdminShellInventoryCombosRouteImport } from './routes/admin/_shell.inventory-combos'
 import { Route as AdminShellInventoryAdjustmentsRouteImport } from './routes/admin/_shell.inventory-adjustments'
-import { Route as AdminShellExhibitionsRouteImport } from './routes/admin/_shell.exhibitions'
 import { Route as AdminShellEventsRouteImport } from './routes/admin/_shell.events'
 import { Route as AdminShellCuratedRouteImport } from './routes/admin/_shell.curated'
 import { Route as AdminShellCollaborationsRouteImport } from './routes/admin/_shell.collaborations'
@@ -87,11 +85,6 @@ const NewsRoute = NewsRouteImport.update({
 const JourneysRoute = JourneysRouteImport.update({
   id: '/journeys',
   path: '/journeys',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ExhibitionsRoute = ExhibitionsRouteImport.update({
-  id: '/exhibitions',
-  path: '/exhibitions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CurationRoute = CurationRouteImport.update({
@@ -301,11 +294,6 @@ const AdminShellInventoryAdjustmentsRoute =
     path: '/inventory-adjustments',
     getParentRoute: () => AdminShellRoute,
   } as any)
-const AdminShellExhibitionsRoute = AdminShellExhibitionsRouteImport.update({
-  id: '/exhibitions',
-  path: '/exhibitions',
-  getParentRoute: () => AdminShellRoute,
-} as any)
 const AdminShellEventsRoute = AdminShellEventsRouteImport.update({
   id: '/events',
   path: '/events',
@@ -350,7 +338,6 @@ export interface FileRoutesByFullPath {
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
   '/curation': typeof CurationRoute
-  '/exhibitions': typeof ExhibitionsRoute
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
@@ -373,7 +360,6 @@ export interface FileRoutesByFullPath {
   '/admin/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/curated': typeof AdminShellCuratedRoute
   '/admin/events': typeof AdminShellEventsRouteWithChildren
-  '/admin/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
   '/admin/inventory-combos': typeof AdminShellInventoryCombosRoute
   '/admin/inventory-count': typeof AdminShellInventoryCountRoute
@@ -406,7 +392,6 @@ export interface FileRoutesByTo {
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
   '/curation': typeof CurationRoute
-  '/exhibitions': typeof ExhibitionsRoute
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
@@ -427,7 +412,6 @@ export interface FileRoutesByTo {
   '/admin/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/curated': typeof AdminShellCuratedRoute
   '/admin/events': typeof AdminShellEventsRouteWithChildren
-  '/admin/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
   '/admin/inventory-combos': typeof AdminShellInventoryCombosRoute
   '/admin/inventory-count': typeof AdminShellInventoryCountRoute
@@ -461,7 +445,6 @@ export interface FileRoutesById {
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
   '/curation': typeof CurationRoute
-  '/exhibitions': typeof ExhibitionsRoute
   '/journeys': typeof JourneysRoute
   '/news': typeof NewsRoute
   '/privacy': typeof PrivacyRoute
@@ -484,7 +467,6 @@ export interface FileRoutesById {
   '/admin/_shell/collaborations': typeof AdminShellCollaborationsRoute
   '/admin/_shell/curated': typeof AdminShellCuratedRoute
   '/admin/_shell/events': typeof AdminShellEventsRouteWithChildren
-  '/admin/_shell/exhibitions': typeof AdminShellExhibitionsRoute
   '/admin/_shell/inventory-adjustments': typeof AdminShellInventoryAdjustmentsRoute
   '/admin/_shell/inventory-combos': typeof AdminShellInventoryCombosRoute
   '/admin/_shell/inventory-count': typeof AdminShellInventoryCountRoute
@@ -519,7 +501,6 @@ export interface FileRouteTypes {
     | '/contact'
     | '/curated'
     | '/curation'
-    | '/exhibitions'
     | '/journeys'
     | '/news'
     | '/privacy'
@@ -542,7 +523,6 @@ export interface FileRouteTypes {
     | '/admin/collaborations'
     | '/admin/curated'
     | '/admin/events'
-    | '/admin/exhibitions'
     | '/admin/inventory-adjustments'
     | '/admin/inventory-combos'
     | '/admin/inventory-count'
@@ -575,7 +555,6 @@ export interface FileRouteTypes {
     | '/contact'
     | '/curated'
     | '/curation'
-    | '/exhibitions'
     | '/journeys'
     | '/news'
     | '/privacy'
@@ -596,7 +575,6 @@ export interface FileRouteTypes {
     | '/admin/collaborations'
     | '/admin/curated'
     | '/admin/events'
-    | '/admin/exhibitions'
     | '/admin/inventory-adjustments'
     | '/admin/inventory-combos'
     | '/admin/inventory-count'
@@ -629,7 +607,6 @@ export interface FileRouteTypes {
     | '/contact'
     | '/curated'
     | '/curation'
-    | '/exhibitions'
     | '/journeys'
     | '/news'
     | '/privacy'
@@ -652,7 +629,6 @@ export interface FileRouteTypes {
     | '/admin/_shell/collaborations'
     | '/admin/_shell/curated'
     | '/admin/_shell/events'
-    | '/admin/_shell/exhibitions'
     | '/admin/_shell/inventory-adjustments'
     | '/admin/_shell/inventory-combos'
     | '/admin/_shell/inventory-count'
@@ -686,7 +662,6 @@ export interface RootRouteChildren {
   ContactRoute: typeof ContactRoute
   CuratedRoute: typeof CuratedRoute
   CurationRoute: typeof CurationRoute
-  ExhibitionsRoute: typeof ExhibitionsRoute
   JourneysRoute: typeof JourneysRoute
   NewsRoute: typeof NewsRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -741,13 +716,6 @@ declare module '@tanstack/react-router' {
       path: '/journeys'
       fullPath: '/journeys'
       preLoaderRoute: typeof JourneysRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/exhibitions': {
-      id: '/exhibitions'
-      path: '/exhibitions'
-      fullPath: '/exhibitions'
-      preLoaderRoute: typeof ExhibitionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/curation': {
@@ -1030,13 +998,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellInventoryAdjustmentsRouteImport
       parentRoute: typeof AdminShellRoute
     }
-    '/admin/_shell/exhibitions': {
-      id: '/admin/_shell/exhibitions'
-      path: '/exhibitions'
-      fullPath: '/admin/exhibitions'
-      preLoaderRoute: typeof AdminShellExhibitionsRouteImport
-      parentRoute: typeof AdminShellRoute
-    }
     '/admin/_shell/events': {
       id: '/admin/_shell/events'
       path: '/events'
@@ -1118,7 +1079,6 @@ interface AdminShellRouteChildren {
   AdminShellCollaborationsRoute: typeof AdminShellCollaborationsRoute
   AdminShellCuratedRoute: typeof AdminShellCuratedRoute
   AdminShellEventsRoute: typeof AdminShellEventsRouteWithChildren
-  AdminShellExhibitionsRoute: typeof AdminShellExhibitionsRoute
   AdminShellInventoryAdjustmentsRoute: typeof AdminShellInventoryAdjustmentsRoute
   AdminShellInventoryCombosRoute: typeof AdminShellInventoryCombosRoute
   AdminShellInventoryCountRoute: typeof AdminShellInventoryCountRoute
@@ -1147,7 +1107,6 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellCollaborationsRoute: AdminShellCollaborationsRoute,
   AdminShellCuratedRoute: AdminShellCuratedRoute,
   AdminShellEventsRoute: AdminShellEventsRouteWithChildren,
-  AdminShellExhibitionsRoute: AdminShellExhibitionsRoute,
   AdminShellInventoryAdjustmentsRoute: AdminShellInventoryAdjustmentsRoute,
   AdminShellInventoryCombosRoute: AdminShellInventoryCombosRoute,
   AdminShellInventoryCountRoute: AdminShellInventoryCountRoute,
@@ -1195,7 +1154,6 @@ const rootRouteChildren: RootRouteChildren = {
   ContactRoute: ContactRoute,
   CuratedRoute: CuratedRoute,
   CurationRoute: CurationRoute,
-  ExhibitionsRoute: ExhibitionsRoute,
   JourneysRoute: JourneysRoute,
   NewsRoute: NewsRoute,
   PrivacyRoute: PrivacyRoute,

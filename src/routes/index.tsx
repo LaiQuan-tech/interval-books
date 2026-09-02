@@ -2,21 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageShell } from "@/components/PageShell";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import {
-  fetchEvents,
-  fetchExhibitions,
-  fetchJourneys,
-  fetchNews,
-  fetchPage,
-  pageText,
-} from "@/lib/cms";
+import { fetchEvents, fetchJourneys, fetchNews, fetchPage, pageText } from "@/lib/cms";
 import { useSiteContent } from "@/lib/site-content";
 import { isPastEvent } from "@/lib/event-status";
 import { imageFor } from "@/lib/images";
 import heroImg from "@/assets/hero-mountain.jpg";
 import storefrontImg from "@/assets/storefront.jpg";
 import curatedImg from "@/assets/curated-objects.jpg";
-import exhibitionImg from "@/assets/exhibition-corner.jpg";
 import journeyImg from "@/assets/journey-mist.jpg";
 
 /** Fallback copy — used only when the Supabase read fails. */
@@ -92,21 +84,19 @@ const ENTRY_LINKS = ["/events", "/journeys", "/visit"] as const;
 
 /** Latin section eyebrows — same string in all three languages, matching current output. */
 const SECTION_EYEBROWS = {
-  exhibitions: { zh: "Exhibitions", en: "Exhibitions", ja: "Exhibitions" },
   journeys: { zh: "Journeys", en: "Journeys", ja: "Journeys" },
   news: { zh: "News", en: "News", ja: "News" },
 };
 
 export const Route = createFileRoute("/")({
   loader: async () => {
-    const [page, events, exhibitions, journeys, news] = await Promise.all([
+    const [page, events, journeys, news] = await Promise.all([
       fetchPage("index"),
       fetchEvents(),
-      fetchExhibitions(),
       fetchJourneys(),
       fetchNews(),
     ]);
-    return { page, events, exhibitions, journeys, news };
+    return { page, events, journeys, news };
   },
   head: ({ loaderData }) => {
     const p = pageText(loaderData?.page ?? null);
@@ -127,7 +117,7 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const t = useT();
-  const { page, events, exhibitions, journeys, news } = Route.useLoaderData();
+  const { page, events, journeys, news } = Route.useLoaderData();
   const p = pageText(page);
   const { ui, site, map } = useSiteContent();
   const heroSrc = imageFor(page?.ogImageKey, heroImg);
@@ -223,37 +213,6 @@ function Index() {
               </div>
             </Link>
           ))}
-      </div>
-
-      {/* 精選展覽 */}
-      <SectionHeader
-        eyebrow={t(p.block("sections.exhibitionsEyebrow", SECTION_EYEBROWS.exhibitions))}
-        title={t(ui.sections.featuredExhibitions)}
-        link={{ to: "/exhibitions", label: t(ui.buttons.viewAll) }}
-      />
-      <div className="container-editorial pb-24 grid gap-10 md:grid-cols-2">
-        {exhibitions.slice(0, 2).map((ex, i) => (
-          <article key={ex.id} className="group">
-            <div className="aspect-[5/4] overflow-hidden bg-muted">
-              <img
-                src={imageFor(ex.imageKey, i === 0 ? exhibitionImg : storefrontImg)}
-                alt={t(ex.title)}
-                loading="lazy"
-                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]"
-              />
-            </div>
-            <p className="eyebrow text-2xl mt-6">{ex.period}</p>
-            <h3 className="display mt-3 text-3xl">{t(ex.title)}</h3>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{t(ex.summary)}</p>
-            <Link
-              to="/exhibitions"
-              hash={ex.slug}
-              className="mt-5 inline-block text-xs tracking-widest text-clay hover-underline"
-            >
-              {t(ui.buttons.toExhibition)} →
-            </Link>
-          </article>
-        ))}
       </div>
 
       {/* 精選策旅 */}
@@ -379,7 +338,7 @@ function SectionHeader({
 }: {
   eyebrow: string;
   title: string;
-  link?: { to: "/events" | "/exhibitions" | "/journeys" | "/news"; label: string };
+  link?: { to: "/events" | "/journeys" | "/news"; label: string };
 }) {
   return (
     <div className="container-editorial pt-12 pb-10 flex items-end justify-between border-t border-border">

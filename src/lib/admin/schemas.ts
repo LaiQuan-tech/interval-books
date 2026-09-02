@@ -362,19 +362,6 @@ export const eventCategorySchema = z.object({
 });
 export type EventCategoryFormValues = z.infer<typeof eventCategorySchema>;
 
-export const exhibitionSchema = z.object({
-  ...publishFields,
-  slug: z.string().trim().min(1, "請輸入網址代稱"),
-  title: localizedSchema,
-  summary: localizedSchema,
-  description: localizedSchema,
-  // Plain text, not localized — the source data stores a date range string.
-  period: z.string().trim().min(1, "請輸入展期"),
-  location: localizedSchema,
-  image_key: z.string().trim().optional().nullable(),
-});
-export type ExhibitionFormValues = z.infer<typeof exhibitionSchema>;
-
 export const journeySchema = z.object({
   ...publishFields,
   title: localizedSchema,

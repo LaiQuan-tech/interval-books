@@ -22,17 +22,6 @@ export interface EventItem {
   paymentEnabled: boolean; // 二期擴充
 }
 
-export interface ExhibitionItem {
-  id: string;
-  slug: string;
-  title: Localized;
-  summary: Localized;
-  description: Localized;
-  period: string;
-  location: Localized;
-  image?: string;
-}
-
 export interface JourneyItem {
   id: string;
   title: Localized;
@@ -205,59 +194,6 @@ export const events: EventItem[] = [
     externalUrl: "https://example.com/event-6", // 待替換
     registrationType: "external",
     paymentEnabled: false,
-  },
-];
-
-export const exhibitions: ExhibitionItem[] = [
-  {
-    id: "ex-1",
-    slug: "soil-and-page",
-    title: {
-      zh: "土壤與書頁",
-      en: "Soil and Page",
-      ja: "土と頁",
-    },
-    summary: {
-      zh: "六位地方書寫者與三位陶藝家，共構一場關於土地的閱讀。",
-      en: "Six place-based writers and three ceramicists, on the reading of land.",
-      ja: "六人の地方執筆者と三人の陶芸家による、土地をめぐる読書。",
-    },
-    description: {
-      zh: "本展以「風土」為線索，邀請文字與器物對話。書頁是被捻平的土地，陶土則是被烘烤的時間。我們希望觀者在閱讀與觸摸之間，重新感受腳下這片島嶼的紋理。",
-      en: "Following the thread of terroir, words and vessels enter into conversation. The page is flattened earth, clay is fired time. We hope visitors feel, between reading and touching, the texture of this island anew.",
-      ja: "「風土」を糸口に、言葉と器が静かに対話します。頁は均された大地、陶土は焼かれた時間。読み、触れるあいだに、この島の肌理をもう一度感じていただければ。",
-    },
-    period: "2025.04.20 – 2025.06.15",
-    location: {
-      zh: "小時光書店．主展區",
-      en: "Interval Books — Main Hall",
-      ja: "小時光書店 メイン展示室",
-    },
-  },
-  {
-    id: "ex-2",
-    slug: "quiet-objects",
-    title: {
-      zh: "安靜的物件",
-      en: "Quiet Objects",
-      ja: "静かな物たち",
-    },
-    summary: {
-      zh: "選物與作品，在留白之中各自發聲。",
-      en: "Curated objects and works, each speaking softly within white space.",
-      ja: "選び抜かれた品々が、余白のなかで静かに語りはじめる。",
-    },
-    description: {
-      zh: "策展團隊與三位設計師合作，挑選日用之器、文具與紙品。展期間每週末舉辦器物導讀，邀請觀者放慢腳步。",
-      en: "In collaboration with three designers, selecting daily wares, stationery, and paper goods. Weekend object-readings throughout the run.",
-      ja: "三人のデザイナーと協働し、日用の器、文具、紙ものを選びました。会期中は週末ごとに「物の読み聞かせ」を開催します。",
-    },
-    period: "2025.07.05 – 2025.08.31",
-    location: {
-      zh: "小時光書店．東側書房",
-      en: "Interval Books — East Reading Room",
-      ja: "小時光書店 東側ブックルーム",
-    },
   },
 ];
 
