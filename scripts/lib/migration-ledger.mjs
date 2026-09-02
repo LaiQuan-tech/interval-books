@@ -465,6 +465,22 @@ export const MIGRATION_LEDGER = Object.freeze([
     //    所以不標 cms。
     touches: ["events_shape", "localized_list", "products_availability", "session_seats"],
   },
+  {
+    file: "0032_admin_order_notify.sql",
+    note: "店家通知信：site_settings.notify_emails（收件人，逗號分隔）＋ enqueue_admin_order_email() 把摘要信排進既有的 email_outbox，沿用 claim_order_notify 的 claim 與 dedupe_key",
+    // ⚠️ cms 標籤是 site_settings 帶進來的，而且這一支對它做的**不只是加欄位**：
+    //    0001:484 對 anon / authenticated 是整張表的 blanket `grant select`，
+    //    notify_emails 直接加進去等於店家信箱可以被任何人用公開的 anon key 從
+    //    PostgREST 讀走。所以這一支把那筆 table-level select 收掉，改成逐欄
+    //    列出的 column-level grant，刻意漏掉 notify_emails。
+    //    → 日後**再往 site_settings 加任何欄位，都必須同時決定它進不進那份
+    //      grant 清單**；漏掉的話前台會讀不到（PostgREST 直接 42501），
+    //      多加的話就是把內部欄位公開出去。
+    // ⚠️ orders_payments 是 enqueue_admin_order_email() 讀 public.orders 帶進來的
+    //    （只讀，組信件摘要用）；它沒有 ALTER orders、沒有改任何既有的
+    //    enqueue/claim 函式，客人那兩封信的路徑一個字都沒動。
+    touches: ["cms", "orders_payments", "email_outbox"],
+  },
 ]);
 
 /** 磁碟上的 migration 檔名，排序過。空目錄 = 丟例外（那不是「沒有違規」）。 */
