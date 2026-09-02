@@ -136,6 +136,35 @@ export function directAnySeatsLeft(product: ShopProduct): boolean {
 }
 
 /**
+ * 「這件商品剛好只有一場、而且那一場還有位子」時回傳那一場，否則回 null。
+ *
+ * 給活動頁拿來決定要不要**預選**場次用。兩個條件都是必要的：
+ *
+ *  · **剛好一場**：多場之中幫客人挑一場，會讓「我選過了」與「系統幫我選了」在畫面上
+ *    長得一樣，而下一步就是收錢。只有一場時沒有第二個選項，那個歧義不成立。
+ *  · **那一場沒額滿**：預選一個按不下去的場次，畫面會變成「已經選好了卻不能報名」，
+ *    比沒選更難懂。額滿就回 null，讓客人看到場次上的「已額滿」。
+ *
+ * 🔴 放在這裡而不是寫進路由：`events.$slug.tsx` 不准出現 remainingForSession /
+ *    seatsTaken / capacity（event-detail-page-selftest 有斷言在守），名額怎麼算只能有
+ *    一份。而這個檔案自己也不准算（見檔頭第 1 點），所以「還有沒有位子」是問
+ *    directSeatLimit() —— 跟 directAnySeatsLeft() 同一條路，只是問的是指定的那一場。
+ *
+ * ⚠️ `?? 0` 只是為了滿足型別（directSeatLimit 宣告回 number | null），**執行時走不到**：
+ *    傳了場次進去時 cart.ts:395 走的是 remainingForSession()，那支一定回數字。所以不要
+ *    照 directAnySeatsLeft() 寫成 `limit === null || limit > 0` —— 那個 fail-open 分支在
+ *    這條路上沒有意義，而且方向是錯的（算不出名額時不該替客人選）。
+ *
+ *    真正擋住壞資料的是 `> 0` 本身：capacity 是 null 時 `null - 0` 在 JS 裡等於 0（不是
+ *    NaN），remainingForSession() 回 0，於是不預選。這條有測試守著，也做過突變測試。
+ */
+export function directSoleSession(product: ShopProduct): ShopSession | null {
+  if (product.sessions.length !== 1) return null;
+  const only = product.sessions[0];
+  return (directSeatLimit(product, only) ?? 0) > 0 ? only : null;
+}
+
+/**
  * 把「商品 + 場次 + 數量」變成一筆可以送進 /checkout 的品項。
  *
  * 數量的處理是**夾**不是拒絕，與購物車的 clampToLimit() 同一個決定：客人打 0、打負數、

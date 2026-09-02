@@ -8,7 +8,12 @@ import { useT } from "@/i18n/LanguageContext";
 import type { Localized } from "@/i18n/types";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { fetchEventBySlug, fetchEventCategories } from "@/lib/cms";
-import { directAnySeatsLeft, directCheckoutSearch, directSeatLimit } from "@/lib/direct-checkout";
+import {
+  directAnySeatsLeft,
+  directCheckoutSearch,
+  directSeatLimit,
+  directSoleSession,
+} from "@/lib/direct-checkout";
 import { imageFor } from "@/lib/images";
 import { fetchActiveProductForEventSlug, type ShopProduct } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
@@ -398,13 +403,21 @@ function EventDetail() {
  *    @/lib/cart 都沒有 import（見 registrationCta 上面那段），所以它不可能把任何東西
  *    留在瀏覽器上 —— 客人按下按鈕之前，這一頁對世界沒有任何副作用。
  *
- * 場次**不預選**。預選第一場會讓「我選過了」與「系統幫我選了」在畫面上長得一樣，而這
- * 一頁下一步就是收錢。沒選場次時按鈕是一顆不能按的 <button>（不是一個 <Link>），所以
- * 「沒選場次 → 進得了結帳」這件事在 DOM 上就沒有那條路可走。
+ * 場次**有多場時不預選**。從多場裡幫客人挑一場，會讓「我選過了」與「系統幫我選了」在
+ * 畫面上長得一樣，而這一頁下一步就是收錢。沒選場次時按鈕是一顆不能按的 <button>
+ * （不是一個 <Link>），所以「沒選場次 → 進得了結帳」這件事在 DOM 上就沒有那條路可走。
+ *
+ * **剛好一場**是例外，直接預選：沒有第二個選項時「幫你挑」不成立，客人也不會誤以為
+ * 自己選到了別的東西；讓他為了唯一的選項多點一下只是多一道關卡。⚠️ 但額滿的那一場
+ * **不預選** —— 預選一個按不下去的場次，畫面會變成「已經選好了卻不能報名」，那比沒選
+ * 更難懂。額滿時維持 null，客人看到的是場次上的「已額滿」。
  */
 function RegistrationPanel({ product }: { product: ShopProduct }) {
   const t = useT();
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  // 只在第一次 render 算一次。sessions 來自 loader，不會在這個元件的生命週期裡變。
+  const [sessionId, setSessionId] = useState<string | null>(
+    () => directSoleSession(product)?.id ?? null,
+  );
   const [qty, setQty] = useState(1);
 
   const selectedSession = product.sessions.find((s) => s.id === sessionId) ?? null;

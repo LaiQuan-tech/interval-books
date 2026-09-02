@@ -245,6 +245,7 @@ const {
   isDirectCheckout,
   directSeatLimit,
   directAnySeatsLeft,
+  directSoleSession,
   directCheckoutSearch,
   rememberCartKept,
   cartKeptForOrder,
@@ -866,6 +867,54 @@ checkTrue(
 // -----------------------------------------------------------------------------
 console.log(`\n${"─".repeat(52)}`);
 console.log(`##SELFTEST## file=${SELF} pass=${pass} fail=${fail}`);
+
+// =============================================================================
+// [12] 只有一場就預選 —— directSoleSession()
+// =============================================================================
+// 由來：活動頁只有一場時，客人還要先點一下那唯一的選項才能按報名，多一道沒有意義的關卡。
+// 但「幫客人選」在收錢前一步是敏感的，所以條件收得很緊：**剛好一場、而且沒額滿**。
+console.log("\n[12] 只有一場就預選（directSoleSession）");
+
+const SOLO_OPEN = session("s-solo", 10, 3, 0);
+const SOLO_FULL = session("s-full", 5, 5, 0);
+
+check(
+  "剛好一場又有位子 → 回那一場",
+  directSoleSession(product({ sessions: [SOLO_OPEN] }))?.id,
+  "s-solo",
+);
+// 🔴 這一條是重點：兩場以上絕不預選。從多場裡挑一場，會讓「我選過了」與「系統幫我選了」
+//    在畫面上長得一樣，而下一步就是收錢。
+check("兩場 → 不預選", directSoleSession(EVENT), null);
+// 🔴 額滿那一場預選了也按不下去，畫面會變成「已經選好卻不能報名」，比沒選更難懂。
+check("剛好一場但額滿 → 不預選", directSoleSession(product({ sessions: [SOLO_FULL] })), null);
+check("沒有場次 → 不預選", directSoleSession(product({ sessions: [] })), null);
+check("書（本來就沒有場次）→ 不預選", directSoleSession(BOOK), null);
+// 🔴 capacity 是壞資料（null）時不預選。機制是 `> 0`，不是 `?? 0`：JS 裡 `null - 0`
+//    等於 0（不是 NaN），所以 remainingForSession() 回 0 就被擋下來了。
+//    （這一條做過突變測試：拿掉 `> 0` 判斷它會轉紅；動 `?? 0` 不會——因為那段執行時
+//    走不到，它只是型別需要。）
+check(
+  "capacity 是壞資料 → 不預選",
+  directSoleSession(product({ sessions: [session("s-bad", null, 0, 0)] })),
+  null,
+);
+// 回傳的是**那一場物件本人**，不是複製品：呼叫端會拿它去 directSeatLimit()，
+// 拿到不同的物件會讓上限算在錯的場次上。
+checkTrue(
+  "回傳的是場次物件本人（同一個參考）",
+  directSoleSession(product({ sessions: [SOLO_OPEN] })) === SOLO_OPEN,
+);
+
+// 路由真的用了它 —— 不是宣告了一支沒人呼叫的函式。
+const detailSrc = readFile("src/routes/events.$slug.tsx");
+checkTrue(
+  "活動頁的 sessionId 初始值來自 directSoleSession()",
+  /useState<string \| null>\(\s*\(\) => directSoleSession\(product\)\?\.id \?\? null,?\s*\)/.test(
+    detailSrc,
+  ),
+);
+
 if (fail === 0) {
   console.log(green(`✓ 全部通過：${pass} passed, 0 failed\n`));
   process.exit(0);
