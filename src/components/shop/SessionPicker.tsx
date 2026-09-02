@@ -141,13 +141,38 @@ export function SessionList({ sessions }: { sessions: ShopSession[] }) {
   );
 }
 
+/** 店在台北。場次時間一律用這個時區呈現，與看的人在哪裡無關。 */
+const SESSION_TIME_ZONE = "Asia/Taipei";
+
 /**
- * 場次時間。用瀏覽器的時區與語系無關的固定格式：這個頁面是三語的，而
- * `toLocaleString` 會在三種語系之間給出三種長度差很多的字串，把卡片撐歪。
+ * 場次時間。與語系無關的固定格式：這個頁面是三語的，而 `toLocaleString` 會在
+ * 三種語系之間給出三種長度差很多的字串，把卡片撐歪。
+ *
+ * 🔴 **時區寫死 Asia/Taipei，不可以用 getHours()／getDate() 那一組。**
+ *    那一組讀的是「執行環境」的時區，而這個頁面是 SSR 的：伺服器跑在 UTC，
+ *    所以 10:00 的場次會先被畫成 02:00，等瀏覽器接手才跳成 10:00。客人看到的
+ *    第一眼是錯的，而這一頁在收錢。（實際發生過：2026-09-05 的陶藝工作坊
+ *    上架後，活動頁與商品頁都印出「2026.09.05 02:00」。）
+ *
+ *    寫死台北而不是「使用者的時區」也是刻意的：實體活動的時間屬於店，不屬於
+ *    看的人。人在東京看到的也該是台北時間 10:00，那才是他要出現的時刻。
  */
+const SESSION_TIME_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: SESSION_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 function formatSessionWhen(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const p: Record<string, string> = {};
+  for (const part of SESSION_TIME_FORMAT.formatToParts(d)) p[part.type] = part.value;
+  // en-CA 的 hour12:false 在午夜會給 "24"，這裡正規化回 "00"。
+  const hour = p.hour === "24" ? "00" : p.hour;
+  return `${p.year}.${p.month}.${p.day} ${hour}:${p.minute}`;
 }

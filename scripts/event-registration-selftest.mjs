@@ -720,6 +720,32 @@ const pickerCode = stripTs(pickerTsx);
 checkTrue("反空殼：shop.$slug.tsx 讀得到", slugRouteCode.length > 3000);
 checkTrue("反空殼：SessionPicker.tsx 讀得到", pickerCode.length > 800);
 
+// ---- 🔴 場次時間的時區 --------------------------------------------------
+// 這一組是為了一個真的發生過的事故：formatSessionWhen() 原本用 d.getHours()／
+// getDate()，而那一組讀的是「執行環境」的時區。這個站是 SSR 的 —— 伺服器跑在
+// UTC，所以 10:00 的場次會先被畫成 02:00，等瀏覽器 hydrate 完才跳成 10:00。
+// 客人看到的第一眼是錯的，而那一頁在收 NT$1,800。
+//
+// 2026-09-05 的陶藝工作坊上架後，活動頁與商品頁都印出「2026.09.05 02:00」，
+// 是實際抓 SSR 回來的 HTML 才發現的。
+checkTrue(
+  "🔴 場次時間寫死 Asia/Taipei（實體活動的時間屬於店，不屬於看的人）",
+  /timeZone:\s*SESSION_TIME_ZONE/.test(pickerCode) &&
+    /SESSION_TIME_ZONE\s*=\s*"Asia\/Taipei"/.test(pickerCode),
+);
+check(
+  "🔴 formatSessionWhen 不准用會跟著執行環境時區跑的取值器",
+  (pickerCode.match(/\bd\.(getHours|getMinutes|getDate|getMonth|getFullYear)\(/g) || []).join(
+    ",",
+  ) || "（無）",
+  "（無）",
+  "SSR 在 UTC，用這一組會讓第一次畫出來的時間差 8 小時",
+);
+checkTrue(
+  "formatSessionWhen 走 formatToParts（才拿得到指定時區的年月日時分）",
+  /formatToParts\(/.test(pickerCode),
+);
+
 // 路由確實換上了元件。
 checkTrue(
   "shop.$slug.tsx import 了 SessionPicker",
