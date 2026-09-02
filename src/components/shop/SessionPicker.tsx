@@ -12,6 +12,22 @@
  * 「還剩幾位」一律走 src/lib/shop.ts 的 remainingForSession()，不在這裡自己算。
  * 那個數字同時是購物車行的上限與伺服器端預檢的依據，多一份實作就是多一個會跟
  * 它們慢慢長歪的地方。
+ *
+ * ── showSeatsRemaining：那句「尚餘名額 N」印不印 ────────────────────────────
+ * 0029 起這是**逐場活動**的編輯決定（events.show_seats_remaining → 投影到
+ * products，見 src/lib/shop.ts 的同名欄位）。名額設得寬鬆時（實務上就是「不限」），
+ * 「尚餘名額 999」對客人不是資訊、看起來還像壞掉；但名額真的緊的時候「尚餘名額 2」
+ * 是會影響決定的資訊，所以不能全站拿掉。
+ *
+ * 🔴 **「已額滿」不受這個旗標影響，永遠要顯示。** 那是「你報不了名」，跟「還剩
+ *    幾位」不是同一件事 —— 關掉名額顯示的活動額滿時，客人仍然必須看得出來，
+ *    否則畫面上只剩一張看起來正常、按下去卻沒反應的卡片。底下兩個元件都是
+ *    **先判 full、再判旗標**，順序反過來就是這個 bug。
+ *
+ * 🔴 這個 prop **沒有預設值，而且是必填的**。給它 `= true` 的預設看起來體貼，
+ *    實際效果是「新的呼叫端忘記傳」與「這場活動要顯示」在型別上長得一樣 ——
+ *    於是漏傳會靜默地退回舊行為，而那正是這個開關被加進來要修掉的東西。
+ *    必填之後，漏傳是一個 tsc 錯誤。
  */
 import { useT } from "@/i18n/LanguageContext";
 import type { Localized } from "@/i18n/types";
@@ -41,11 +57,17 @@ export function SessionPicker({
   sessions,
   selectedId,
   onSelect,
+  showSeatsRemaining,
 }: {
   sessions: ShopSession[];
   /** 目前選中的場次 id，還沒選就是 null。 */
   selectedId: string | null;
   onSelect: (sessionId: string) => void;
+  /**
+   * 這場活動要不要印「尚餘名額 N」（products.show_seats_remaining）。
+   * **必填、沒有預設值** —— 理由見檔頭。額滿不受它影響。
+   */
+  showSeatsRemaining: boolean;
 }) {
   const t = useT();
 
@@ -62,6 +84,13 @@ export function SessionPicker({
         const left = remainingForSession(session);
         const full = left <= 0;
         const selected = session.id === selectedId;
+        // 🔴 額滿優先，旗標只管「還剩幾位」那一句。null = 這一行整個不畫
+        //    （不是畫一個空的 <span>，那會留下一條 8px 的空白邊距）。
+        const note = full
+          ? t(COPY.sessionFull)
+          : showSeatsRemaining
+            ? `${t(SEATS_LEFT_LABEL)} ${left}`
+            : null;
         return (
           <button
             key={session.id}
@@ -79,9 +108,9 @@ export function SessionPicker({
               {" ・ "}
               {t(session.location)}
             </span>
-            <span className="mt-2 block text-xs text-muted-foreground">
-              {full ? t(COPY.sessionFull) : `${t(SEATS_LEFT_LABEL)} ${left}`}
-            </span>
+            {note === null ? null : (
+              <span className="mt-2 block text-xs text-muted-foreground">{note}</span>
+            )}
           </button>
         );
       })}
@@ -107,7 +136,17 @@ export function SessionPicker({
  * 空清單一律渲染一句話，不是 return null：活動頁沒有任何場次資訊等於斷頭，而
  * 「還沒公布」與「這一塊壞了」在畫面上必須長得不一樣。
  */
-export function SessionList({ sessions }: { sessions: ShopSession[] }) {
+export function SessionList({
+  sessions,
+  showSeatsRemaining,
+}: {
+  sessions: ShopSession[];
+  /**
+   * 這場活動要不要印「尚餘名額 N」（products.show_seats_remaining）。
+   * **必填、沒有預設值** —— 理由見檔頭。額滿不受它影響。
+   */
+  showSeatsRemaining: boolean;
+}) {
   const t = useT();
 
   return (
@@ -121,6 +160,13 @@ export function SessionList({ sessions }: { sessions: ShopSession[] }) {
         <ul className="mt-6 space-y-3">
           {sessions.map((session) => {
             const left = remainingForSession(session);
+            // 與 SessionPicker 同一條規則、同一個順序：額滿優先，旗標只管剩餘。
+            const note =
+              left <= 0
+                ? t(COPY.sessionFull)
+                : showSeatsRemaining
+                  ? `${t(SEATS_LEFT_LABEL)} ${left}`
+                  : null;
             return (
               <li key={session.id} className="border border-border p-4">
                 <span className="block text-sm">{t(session.title)}</span>
@@ -129,9 +175,9 @@ export function SessionList({ sessions }: { sessions: ShopSession[] }) {
                   {" ・ "}
                   {t(session.location)}
                 </span>
-                <span className="mt-2 block text-xs text-muted-foreground">
-                  {left <= 0 ? t(COPY.sessionFull) : `${t(SEATS_LEFT_LABEL)} ${left}`}
-                </span>
+                {note === null ? null : (
+                  <span className="mt-2 block text-xs text-muted-foreground">{note}</span>
+                )}
               </li>
             );
           })}

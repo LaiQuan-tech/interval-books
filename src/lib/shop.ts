@@ -117,6 +117,25 @@ export type ShopProduct = {
    * fall back to `stock` rather than treating null as "sold out".
    */
   availableCapped: number | null;
+  /**
+   * 前台要不要印出「尚餘名額 N」（supabase/migrations/0029_event_seats_visibility.sql）。
+   *
+   * ⚠️ **這一欄不是名額本身，也不影響任何上限。** remainingForSession() 照算，
+   *    購物車上限照夾，reserve_session_seat() 照擋 —— 關掉的只有那一句字。
+   *
+   * 🔴 **「已額滿」不受它影響。** 那是「你報不了名」，跟「還剩幾位」不是同一件事：
+   *    關掉名額顯示的活動額滿時，客人仍然必須看得出來，否則他會一直按一顆按不動
+   *    的按鈕。三個渲染點（SessionPicker / SessionList / shop.$slug 的 StockBadge）
+   *    都是先判額滿、再判這一欄。
+   *
+   * 編輯的位置在**活動後台**（events.show_seats_remaining）。這裡讀到的是它投影到
+   * products 的那一份：前台的讀取層從來沒有讀過 public.events（那張表的 RLS 是
+   * `using (is_published)`，而且 journey 型商品根本沒有 events 列），所以旗標要能
+   * 到得了前台就必須住在 products 上。兩邊由 0029 的兩個 trigger 保證不分岔。
+   *
+   * default true：0029 之前的行為就是一律顯示，既有的活動套用之後一個字都不會變。
+   */
+  showSeatsRemaining: boolean;
 };
 
 export type ShopListResult = {
@@ -140,7 +159,7 @@ export type ShopProductResult = {
  * CMS bookkeeping detail the shop has no use for.
  */
 const COLUMNS =
-  "id, slug, product_type, title, summary, description, price, compare_at_price, stock, capacity, seats_taken, image_key, requires_shipping, sort_order";
+  "id, slug, product_type, title, summary, description, price, compare_at_price, stock, capacity, seats_taken, image_key, requires_shipping, sort_order, show_seats_remaining";
 
 // -----------------------------------------------------------------------------
 // Row mapping
@@ -206,6 +225,10 @@ function toProduct(r: Row): ShopProduct | null {
     requiresShipping: r.requires_shipping !== false,
     sortOrder: int(r.sort_order, 0),
     availableCapped: null,
+    // 只有明著是 false 才關掉。0029 那一欄是 NOT NULL DEFAULT true，所以任何
+    // 「讀不到／型別不對」都該回到「顯示」——那是這一支之前的行為，而讓一個讀
+    // 失敗靜默地把名額藏起來，會讓「後台關過」與「查詢壞了」在畫面上長得一樣。
+    showSeatsRemaining: r.show_seats_remaining !== false,
   };
 }
 

@@ -156,6 +156,11 @@ function ProductDetail() {
   // 剩 1 個。沒選場次時退回商品層級的數字，那只是給徽章看的。
   const remaining = selectedSession ? remainingForSession(selectedSession) : remainingFor(product);
   const soldOut = isBooking ? (remaining ?? 0) <= 0 : isSoldOut(product);
+  /**
+   * 徽章那一行整個不畫的條件。**只對報名商品成立** —— goods/book 的徽章講的是
+   * 庫存不是名額，這個開關管不到它們。額滿另外處理（見下面），這裡不判。
+   */
+  const hideSeatsBadge = isBooking && !product.showSeatsRemaining;
 
   function handleAdd() {
     // `product` is narrowed above, but the closure needs its own guard.
@@ -204,23 +209,32 @@ function ProductDetail() {
             className="mt-8"
           />
 
-          <div className="mt-5">
-            {soldOut ? (
+          {/* 名額／庫存徽章。
+              🔴 **售罄（活動就是「已額滿」）永遠顯示**，不受 showSeatsRemaining 影響 ——
+                 那是「你買不到了」，跟「還剩幾件／幾位」不是同一件事。
+              旗標關掉時只有**報名商品**的剩餘那一句消失（連整個 <div> 一起，否則
+              會留下一條 mt-5 的空白）；書與選物的「僅剩 N 件」與它無關，那不是名額。 */}
+          {soldOut ? (
+            <div className="mt-5">
               <StockBadge tone="alert">{t(ui.buttons.soldOut)}</StockBadge>
-            ) : remaining === null ? (
-              <StockBadge>{t(PAGE.unlimited)}</StockBadge>
-            ) : remaining <= 5 ? (
-              <StockBadge tone="alert">
-                {isBooking
-                  ? `${t(SEATS_LEFT_LABEL)} ${remaining}`
-                  : `${t(PAGE.remainingCount)} ${remaining} ${t(PAGE.remainingUnit)}`}
-              </StockBadge>
-            ) : (
-              <StockBadge>
-                {isBooking ? `${t(SEATS_LEFT_LABEL)} ${remaining}` : t(PAGE.remaining)}
-              </StockBadge>
-            )}
-          </div>
+            </div>
+          ) : hideSeatsBadge ? null : (
+            <div className="mt-5">
+              {remaining === null ? (
+                <StockBadge>{t(PAGE.unlimited)}</StockBadge>
+              ) : remaining <= 5 ? (
+                <StockBadge tone="alert">
+                  {isBooking
+                    ? `${t(SEATS_LEFT_LABEL)} ${remaining}`
+                    : `${t(PAGE.remainingCount)} ${remaining} ${t(PAGE.remainingUnit)}`}
+                </StockBadge>
+              ) : (
+                <StockBadge>
+                  {isBooking ? `${t(SEATS_LEFT_LABEL)} ${remaining}` : t(PAGE.remaining)}
+                </StockBadge>
+              )}
+            </div>
+          )}
 
           <div className="rule my-8" />
 
@@ -229,6 +243,7 @@ function ProductDetail() {
           {isBooking ? (
             <SessionPicker
               sessions={product.sessions}
+              showSeatsRemaining={product.showSeatsRemaining}
               selectedId={sessionId}
               onSelect={(id) => {
                 setSessionId(id);

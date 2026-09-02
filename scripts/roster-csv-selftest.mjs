@@ -261,7 +261,19 @@ assertMigrationDependencies(check, MIG_DIR, {
   // ALTER 任何一張表 —— 唯一的 DDL 是 orders_payment_method_check 的 drop + add
   // （多一個允許值 'free'，既有四個原樣保留；那正是 0024 檔頭寫下的規定做法）。
   // 逐條重讀之後：0021 §3 的 admin_event_roster 與 on_roster 定義沒被 0028 碰到；免費訂單變成 paid 之後 on_roster 會是 true，那正是「免費報名的人本來就該在簽到表上」。「任何提到 event_registrations 的檔案不可以出現 \"paid\" 字面值」那一條也重新驗過：我改的 src/server/repos/orders.ts 剝掉註解之後不含 event_registrations，所以不在那條規則的掃描範圍內，而且沒有新增任何 \"paid\" 字面值。原樣成立。
-  reviewedThrough: "0028_free_order_settlement.sql",
+  // ── 0029_event_seats_visibility.sql 的重讀結論 ───────────────────────────
+  // 0029 讓「尚餘名額 N」變成逐場活動可以關掉：public.events 與 public.products 各加
+  // 一個 show_seats_remaining（boolean not null default true ＝ 維持既有行為），加兩個
+  // trigger 讓兩邊不分岔（events→products 推、products 寫入時反向拉），並用
+  // create or replace 讓 admin_upsert_event_with_session() 多讀一個 payload key。
+  // **沒有 ALTER 任何一張既有欄位、沒有 drop 任何函式、沒有動到任何一支 RPC 的邏輯**
+  // ——那支函式的本體是 0027 那一份逐字照抄，只多了三處 show_seats_remaining
+  // （0029 §5 寫了差異清單，scripts/event-blocks-selftest.mjs [7] 現在改成驗
+  //   **最後一支重新定義它的 migration**，所以那份抄寫走樣會轉紅）。
+  // 逐條重讀之後：0021 的 admin_event_roster、on_roster、pii_access_log 與那兩個會留痕
+  // 的明文出口，0029 一個字都沒提到。show_seats_remaining 是店家對「畫面上印不印一個
+  // 數字」的決定，跟名單、遮罩、個資出口沒有交集；它也沒有新增任何 grant。原樣成立。
+  reviewedThrough: "0029_event_seats_visibility.sql",
 });
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {

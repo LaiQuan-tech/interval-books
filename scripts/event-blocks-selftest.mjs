@@ -62,6 +62,7 @@ import {
   assertLedgerDeclarationsHonest,
   assertMigrationDependencies,
 } from "./lib/migration-ledger.mjs";
+import { latestDefinition } from "./lib/live-definition.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -293,7 +294,20 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 這支自檢從頭到尾在驗的就是 0027 建的那一套：events 的七個三語清單欄位
   // （events_shape）與守著它們形狀的 is_localized_list（localized_list）。
   dependsOn: ["events_shape", "localized_list"],
-  reviewedThrough: "0028_free_order_settlement.sql",
+  // ── 0029_event_seats_visibility.sql 的重讀結論 ───────────────────────────
+  // 0029 讓「尚餘名額 N」變成逐場活動可以關掉：public.events 與 public.products 各加
+  // 一個 show_seats_remaining（boolean not null default true ＝ 維持既有行為），加兩個
+  // trigger 讓兩邊不分岔（events→products 推、products 寫入時反向拉），並用
+  // create or replace 讓 admin_upsert_event_with_session() 多讀一個 payload key。
+  // **沒有 ALTER 任何一張既有欄位、沒有 drop 任何函式、沒有動到任何一支 RPC 的邏輯**
+  // ——那支函式的本體是 0027 那一份逐字照抄，只多了三處 show_seats_remaining
+  // （0029 §5 寫了差異清單，scripts/event-blocks-selftest.mjs [7] 現在改成驗
+  //   **最後一支重新定義它的 migration**，所以那份抄寫走樣會轉紅）。
+  // 逐條重讀之後：0027 的七個清單欄位（insert 欄位清單／on conflict／coalesce 到 v_prev）
+  // 三組斷言原樣成立 —— 0029 只是在同一份清單後面多接一欄，七欄一個都沒被移動或改寫。
+  // is_localized_list() 的形狀守衛與 v_prev 的讀取也原樣照抄。event_blocks 那張表與
+  // admin_reorder_event_blocks() 0029 一個字都沒提到。原樣成立。
+  reviewedThrough: "0029_event_seats_visibility.sql",
 });
 
 check(
@@ -602,12 +616,31 @@ checkTrue(
 // =============================================================================
 console.log("\n[7] admin_upsert_event_with_session");
 
-const upsertFn = sliceBetween(
-  sql27id,
-  "create or replace function public.admin_upsert_event_with_session",
-  "$$;",
+/**
+ * 🔴 **從「現在生效的那一份」切，不是從 0027 切。**
+ *
+ * 這一段原本寫的是 `sliceBetween(sql27id, "create or replace function …")`，也就是
+ * 0027 檔案裡的那一份。0027 是已套用的 migration，規約禁止再改它一個字 —— 所以那
+ * 條斷言從此**永遠是綠的**，而且在 0029 用 create or replace 又重寫一次這支函式
+ * 之後，它驗的已經是一份沒有任何資料庫在跑的死定義。畫面全綠，覆蓋是零。
+ * （event-product-selftest 更早就掉進同一個坑：它切的是 0026 的那一份。）
+ *
+ * latestDefinition() 去找**最後一支**重新定義它的 migration，所以下一期再重寫一次
+ * 時，底下每一條斷言會自動改去驗那一份新的；重寫時漏抄了哪一條，這裡就紅。
+ * 找不到定義會丟例外（不是回空字串）—— 空字串會讓下面的否定斷言靜默通過。
+ */
+const liveUpsert = latestDefinition(MIG_DIR, "admin_upsert_event_with_session", stripSqlStrings);
+const upsertFn = liveUpsert.body;
+checkTrue("切得到現在生效的那一份 admin_upsert_event_with_session", upsertFn.length > 1000);
+checkTrue(
+  "現在生效的那一份不早於 0027（0027 是七個清單欄位進來的那一支）",
+  liveUpsert.file >= MIG_0027_NAME,
+  `最後一支重新定義它的是 ${liveUpsert.file}`,
 );
-checkTrue("0027 用 create or replace 重寫這一支", upsertFn.length > 0);
+checkTrue(
+  "用 create or replace 重寫（不是 drop 再建）",
+  /^create or replace function/.test(upsertFn),
+);
 checkTrue(
   "🔴 簽名沒變，還是吃一個 payload jsonb（所以不需要 drop function）",
   /admin_upsert_event_with_session\s*\(\s*payload\s+jsonb\s*\)/i.test(upsertFn),
@@ -642,8 +675,10 @@ checkTrue(
 // 0026 訂下的兩條規則不可以在這次重寫時走鐘。
 checkTrue(
   "products.description 仍然取 events.summary（0026 訂的規則沒有在重寫時走鐘）",
+  // 同樣改讀現在生效的那一份 —— 這條規則要守的就是「每一次重寫都不准走鐘」，
+  // 從一支再也不會變的舊檔案裡讀它，等於只驗了它第一次沒走鐘。
   /v_event\.summary,?\s*\n\s*v_event\.summary/.test(
-    sliceBetween(sql27, "insert into public.products (", "on conflict"),
+    sliceBetween(upsertFn, "insert into public.products (", "on conflict"),
   ),
 );
 checkFalse("session 的 seats_taken 仍然不在這支函式裡被寫", /seats_taken\s*=/.test(upsertFn));

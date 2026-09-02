@@ -272,6 +272,16 @@ export const eventSchema = z.object({
    */
   image_key: z.string().trim().optional().nullable(),
   ...registrationFields,
+  /**
+   * 前台印不印這場活動的「尚餘名額 N」（0029_event_seats_visibility.sql）。
+   *
+   * ⚠️ **不在 registrationFields 裡。** 那一組是 events 與 journeys 共用的
+   *    （見上面兩個 spread），而 public.journeys 沒有這一欄 —— 放進去會讓策旅
+   *    表單多送一個資料庫不認得的欄位。
+   *
+   * 🔴 這一欄只管「還剩幾位」那一句。**「已額滿」不受它影響**，那是「你報不了名」。
+   */
+  show_seats_remaining: z.boolean(),
 });
 export type EventFormValues = z.infer<typeof eventSchema>;
 

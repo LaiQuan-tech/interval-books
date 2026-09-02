@@ -153,7 +153,19 @@ assertLedgerDeclarationsHonest(check, MIG_DIR);
 assertMigrationDependencies(check, MIG_DIR, {
   suite: "free-order-selftest",
   dependsOn: ["orders_payments", "order_expiry", "event_registrations", "session_seats", "invoice"],
-  reviewedThrough: "0028_free_order_settlement.sql",
+  // ── 0029_event_seats_visibility.sql 的重讀結論 ───────────────────────────
+  // 0029 讓「尚餘名額 N」變成逐場活動可以關掉：public.events 與 public.products 各加
+  // 一個 show_seats_remaining（boolean not null default true ＝ 維持既有行為），加兩個
+  // trigger 讓兩邊不分岔（events→products 推、products 寫入時反向拉），並用
+  // create or replace 讓 admin_upsert_event_with_session() 多讀一個 payload key。
+  // **沒有 ALTER 任何一張既有欄位、沒有 drop 任何函式、沒有動到任何一支 RPC 的邏輯**
+  // ——那支函式的本體是 0027 那一份逐字照抄，只多了三處 show_seats_remaining
+  // （0029 §5 寫了差異清單，scripts/event-blocks-selftest.mjs [7] 現在改成驗
+  //   **最後一支重新定義它的 migration**，所以那份抄寫走樣會轉紅）。
+  // 逐條重讀之後：settle_free_order()、orders_payment_method_check、invoice_backlog()
+  // 的 total > 0，0029 一個字都沒提到。它對 session_seats 的接觸只是函式本體裡照抄的
+  // event_sessions 段落。免費訂單的結清路徑與名額顯示是兩件無關的事。原樣成立。
+  reviewedThrough: "0029_event_seats_visibility.sql",
 });
 
 // =============================================================================

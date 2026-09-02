@@ -1050,6 +1050,23 @@ checkTrue(
   "🔴 repo 送 RPC 時，沒給值的欄位整個 key 都不放（＝那一欄不動）",
   /EVENT_LIST_FIELDS\.filter\(\(f\) => input\.lists\?\.\[f\] !== undefined\)/.test(repoSrc),
 );
+// 0029：後台要**讀得回**這一欄，否則表單永遠拿到 undefined，而 toFormValues 的
+// `?? true` 會把它畫成「開著」—— 店家關掉、重新整理、發現又開回來了，沒有錯誤訊息。
+checkTrue(
+  "repo 的 COLUMNS 讀得到 show_seats_remaining",
+  /COLUMNS =[\s\S]{0,900}\bshow_seats_remaining\b/.test(repoSrc),
+);
+// 只寫 events 的那條路徑（不上架的活動走它）也要寫這一欄 —— 它是 upsert 不是 patch，
+// 漏掉會撞 NOT NULL，而不是「沿用舊值」。
+checkTrue(
+  "upsertEvent()（只寫 events 的那條路）也帶了這一欄",
+  /show_seats_remaining: input\.show_seats_remaining \?\? true,/.test(repoSrc),
+);
+// 走 RPC 的那條路要遵守「沒給值就整個 key 不放」的同一條規則。
+checkTrue(
+  "🔴 走 RPC 的那條路，沒給值時整個 key 不放進 payload",
+  /input\.show_seats_remaining === undefined\s*\n?\s*\? \{\}/.test(repoSrc),
+);
 
 // =============================================================================
 // [13] 列表頁：表單搬走了，不是複製一份
@@ -1089,6 +1106,8 @@ for (const f of [
   "external_url",
   "registration_type",
   "payment_enabled",
+  // 0029：名額顯示的開關。它跟名額、售票是同一類設定，所以在 §4，不是活動內容那一段。
+  "show_seats_remaining",
   "is_published",
   "sort_order",
   "product.price",
@@ -1106,6 +1125,58 @@ for (const forbidden of [
 ]) {
   checkFalse(`🔴 組裝器沒有 ${forbidden}（那五樣是從活動投影過去的）`, fieldNames.has(forbidden));
 }
+// 0029：show_seats_remaining 也是投影欄位（events → products），所以商品那一段
+// **不准**再開一個同名欄位 —— 開了就是替同一個事實開第二個家，而且 0029 的
+// products_pull_seats_visibility trigger 會把使用者在那裡填的值蓋掉（一個改了沒用
+// 的欄位比沒有欄位更糟）。
+checkFalse(
+  "🔴 組裝器沒有 product.show_seats_remaining（那是從活動投影過去的衍生值）",
+  fieldNames.has("product.show_seats_remaining"),
+);
+// 這個開關必須落在「報名與售票」那一段，不是被塞到活動內容裡。段落是用
+// <Section title="…"> 分的，所以這裡切出那一段的 JSX 再看欄位在不在裡面。
+{
+  const at = assemblerSrc.indexOf('title="報名與售票"');
+  checkTrue("找得到「報名與售票」那一段", at > 0);
+  // 🔴 **先剝註解再比對。** 這一段旁邊就有一則 JSX 註解寫著「『已額滿』不受影響，
+  //    永遠會顯示」—— 不剝的話，下面那條「說明文字寫明已額滿不受影響」會被**註解**
+  //    餵飽：把真正給店家看的那句話從畫面上刪掉，斷言照樣是綠的。
+  //    （寫這條斷言時第一版就是這樣，做突變測試才抓出來。）
+  const sectionJsx = assemblerSrc
+    .slice(at, assemblerSrc.indexOf("</Section>", at))
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("//"))
+    .join("\n");
+  checkTrue("反空殼：那一段切得出內容", sectionJsx.length > 500);
+  checkFalse("反餵飽：剝完之後那一段裡沒有殘留的註解標記", /\/\*|\*\//.test(sectionJsx));
+  checkTrue(
+    "🔴 名額顯示開關在「報名與售票」那一段裡",
+    /name="show_seats_remaining"/.test(sectionJsx),
+  );
+  // 說明文字必須講出「關掉之後已額滿還是會顯示」—— 沒有這句話，店家會以為
+  // 關掉開關等於把整張卡片的狀態藏起來，而那正是這個開關**不做**的事。
+  checkTrue(
+    "🔴 說明文字寫明「已額滿」不受影響",
+    /已額滿[\s\S]{0,40}顯示|顯示[\s\S]{0,40}已額滿/.test(sectionJsx),
+  );
+}
+// 新增的活動預設**顯示**（＝ 0029 的欄位預設，也是這一期之前的行為）。
+// 寫成 `?? false` 會讓每一場新活動都安靜地把名額藏起來。
+checkTrue(
+  "🔴 toFormValues 對新活動回 true（預設顯示，不是預設藏起來）",
+  /show_seats_remaining: row\?\.show_seats_remaining \?\? true,/.test(assemblerSrc),
+);
+checkTrue(
+  "eventSchema 收得下 show_seats_remaining（server fn 的門）",
+  "show_seats_remaining" in schemas.eventSchema.shape,
+);
+// journeys 與 events 共用 registrationFields，而 public.journeys 沒有這一欄 ——
+// 掛在共用那一組上會讓策旅表單多送一個資料庫不認得的欄位。
+checkFalse(
+  "🔴 沒有掛到 journeySchema 上（那張表沒有這一欄）",
+  "show_seats_remaining" in schemas.journeySchema.shape,
+);
 // slug 那句 404 警告要跟著搬過來。
 checkTrue(
   "🔴 slug 的說明還寫著「改代稱會讓已經發出去的舊網址 404」",

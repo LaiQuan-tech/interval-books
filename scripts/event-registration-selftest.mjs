@@ -42,7 +42,7 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -254,7 +254,24 @@ assertMigrationDependencies(check, MIG_DIR, {
   // ALTER 任何一張表 —— 唯一的 DDL 是 orders_payment_method_check 的 drop + add
   // （多一個允許值 'free'，既有四個原樣保留；那正是 0024 檔頭寫下的規定做法）。
   // 逐條重讀之後：位置快照（0020 在第 20、0021 在第 21）不受影響 —— 0028 是往後接的第 28 支。reserve_session_seat 的七步、expire_unpaid_orders 的 RETURNS TABLE 形狀、event_registrations 的零 grant 都沒被 0028 碰到（它一個字都沒改那兩支函式）。原樣成立。
-  reviewedThrough: "0028_free_order_settlement.sql",
+  // ── 0029_event_seats_visibility.sql 的重讀結論 ───────────────────────────
+  // 0029 讓「尚餘名額 N」變成逐場活動可以關掉：public.events 與 public.products 各加
+  // 一個 show_seats_remaining（boolean not null default true ＝ 維持既有行為），加兩個
+  // trigger 讓兩邊不分岔（events→products 推、products 寫入時反向拉），並用
+  // create or replace 讓 admin_upsert_event_with_session() 多讀一個 payload key。
+  // **沒有 ALTER 任何一張既有欄位、沒有 drop 任何函式、沒有動到任何一支 RPC 的邏輯**
+  // ——那支函式的本體是 0027 那一份逐字照抄，只多了三處 show_seats_remaining
+  // （0029 §5 寫了差異清單，scripts/event-blocks-selftest.mjs [7] 現在改成驗
+  //   **最後一支重新定義它的 migration**，所以那份抄寫走樣會轉紅）。
+  // 逐條重讀之後：0020 的 reserve_session_seat 七步、expire_unpaid_orders 的
+  // RETURNS TABLE 形狀、event_registrations 的零 grant、event_sessions 的欄位形狀，
+  // 0029 一個字都沒碰（它對 session_seats 的唯一「接觸」是函式本體裡照抄的
+  // event_sessions insert/update，那一段與 0027 逐字相同）。products 那一側加的是一欄
+  // boolean 與一個 before-insert/update-of-三欄 的 trigger，capacity / seats_taken /
+  // stock / product_availability 都不在它的觸發欄位裡，結帳熱路徑不受影響。
+  // 這一期**有**動到這支自檢守的 SessionPicker：它多了一個必填的 showSeatsRemaining
+  // prop。下面 [12] 那一整段是為此新加的**真渲染**斷言（含額滿的對照組）。原樣成立。
+  reviewedThrough: "0029_event_seats_visibility.sql",
 });
 for (const f of [
   "0004_commerce_products.sql",
@@ -1821,6 +1838,245 @@ if (!PG_URL) {
     );
   }
 }
+
+// =============================================================================
+// [17] 🔴 「尚餘名額」逐場可關（0029）—— 真的把元件渲染出來看
+// =============================================================================
+console.log("\n[17] 名額顯示開關（真渲染）");
+
+/**
+ * 這一段**不是**讀原始碼字串，是把 SessionPicker / SessionList 用 esbuild 打包起來、
+ * 用 react-dom/server 真的渲染成 HTML，再看那句「尚餘名額 N」在不在。
+ *
+ * ── 為什麼這一條非得用真渲染 ────────────────────────────────────────────────
+ * 這一期加的是一個**條件顯示**，而條件顯示最典型的壞法有兩種，兩種都騙得過 regex：
+ *
+ *   (a) 判斷順序寫反 —— `showSeatsRemaining ? (full ? "已額滿" : …) : null`。
+ *       原始碼裡 `full`、`showSeatsRemaining`、`COPY.sessionFull` 三個字全都在，
+ *       每一條字串斷言都綠，但關掉名額顯示的活動額滿時客人**看不到「已額滿」**，
+ *       只剩一張看起來正常、按下去卻沒反應的卡片。
+ *   (b) 條件接錯變數（例如接成 `!full`），字面上一樣有那幾個 token。
+ *
+ * 渲染出來的 HTML 沒有這個模糊空間：那句話要嘛在裡面，要嘛不在。
+ *
+ * 🔴 **四個組合都跑**（旗標 true/false × 未額滿/已額滿），兩個元件各一組。只測
+ *    「關掉之後不顯示」會漏掉真正危險的那一格（關掉 + 額滿）；只測一個元件會讓
+ *    另一個沒有人守 —— 這兩種都是這個 repo 出過的假陽性形狀。
+ *
+ * 🔴 esbuild 打不起來就是**紅**，不是 skip。它是 vite 的相依，跑得動 `npm run build`
+ *    的機器上一定有；skip 掉等於讓這一整段在 CI 上靜默消失。
+ */
+const SEAT_RENDER_CASES = [];
+let renderMod = null;
+let renderErr = null;
+try {
+  const { build } = await import("esbuild");
+  const { mkdirSync } = await import("node:fs");
+  const cacheDir = join(ROOT, "node_modules/.cache/event-registration-selftest");
+  mkdirSync(cacheDir, { recursive: true });
+  const outfile = join(cacheDir, "session-picker.mjs");
+  await build({
+    stdin: {
+      contents: `
+        import { renderToStaticMarkup } from "react-dom/server";
+        import { LanguageProvider } from "@/i18n/LanguageContext";
+        import { SessionPicker, SessionList } from "@/components/shop/SessionPicker";
+        import { SEATS_LEFT_LABEL } from "@/components/shop/labels";
+        export const render = (node) =>
+          renderToStaticMarkup(<LanguageProvider>{node}</LanguageProvider>);
+        export { SessionPicker, SessionList, SEATS_LEFT_LABEL };`,
+      resolveDir: ROOT,
+      loader: "tsx",
+      sourcefile: "seat-visibility-selftest-entry.tsx",
+    },
+    outfile,
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    jsx: "automatic",
+    target: "node22",
+    logLevel: "silent",
+    absWorkingDir: ROOT,
+    alias: { "@": join(ROOT, "src") },
+    define: { "process.env.NODE_ENV": '"production"' },
+    // react / react-dom 留給 node 自己解析（打包 CJS 版的 react-dom 會炸在 require
+    // 墊片上）。輸出寫在 node_modules/.cache 底下，所以那兩個 bare specifier 解析得到。
+    external: ["react", "react-dom", "react/jsx-runtime", "react-dom/server"],
+  });
+  renderMod = await import(pathToFileURL(outfile).href);
+} catch (err) {
+  renderErr = err;
+}
+checkTrue(
+  "🔴 場次元件打包 + 渲染得起來（打不起來是紅，不是 skip）",
+  renderMod !== null && typeof renderMod.render === "function",
+);
+if (renderErr) console.log(red(`      ${String(renderErr).slice(0, 400)}`));
+
+if (renderMod) {
+  const { createElement: h } = await import("react");
+  // 「尚餘名額」這句字**從產線那一份常數拿**，不在這裡再寫一次字面值 ——
+  // 第二份字面值就是下一次改文案時會被漏掉的那一份。
+  const seatsLabel = renderMod.SEATS_LEFT_LABEL.zh;
+  const mkSession = (id, capacity, seatsTaken) => ({
+    id,
+    productId: "p-seat-vis",
+    title: { zh: `場次${id}`, en: `Sitting ${id}`, ja: `回${id}` },
+    location: { zh: "店內", en: "In store", ja: "店内" },
+    startsAt: "2026-09-05T02:00:00.000Z",
+    endsAt: null,
+    capacity,
+    seatsTaken,
+    sortOrder: 0,
+  });
+  // 999 / 1 是正式庫那場工作坊的實際數字（remaining = 998，就是「尚餘名額 999」
+  // 這個問題的來源）。5 / 5 是額滿的對照組。
+  const openSession = mkSession("open", 999, 1);
+  const fullSession = mkSession("full", 5, 5);
+  const REMAINING_TEXT = "998";
+
+  const renderPicker = (session, showSeatsRemaining) =>
+    renderMod.render(
+      h(renderMod.SessionPicker, {
+        sessions: [session],
+        selectedId: null,
+        onSelect: () => {},
+        showSeatsRemaining,
+      }),
+    );
+  const renderList = (session, showSeatsRemaining) =>
+    renderMod.render(h(renderMod.SessionList, { sessions: [session], showSeatsRemaining }));
+
+  for (const [name, renderOne] of [
+    ["SessionPicker", renderPicker],
+    ["SessionList", renderList],
+  ]) {
+    const openOn = renderOne(openSession, true);
+    const openOff = renderOne(openSession, false);
+    const fullOn = renderOne(fullSession, true);
+    const fullOff = renderOne(fullSession, false);
+    SEAT_RENDER_CASES.push(openOn, openOff, fullOn, fullOff);
+
+    // 反空殼：渲染出來的東西必須是一張真的卡片。空字串會讓底下每一條
+    // 「不該出現」的斷言靜默通過 —— 與這個檔案的 readFile() 是同一條理由。
+    for (const [label, html] of [
+      ["旗標開/未額滿", openOn],
+      ["旗標關/未額滿", openOff],
+      ["旗標開/已額滿", fullOn],
+      ["旗標關/已額滿", fullOff],
+    ]) {
+      checkTrue(
+        `${name} ${label}：渲染結果不是空殼（含場次標題）`,
+        html.length > 200 && html.includes("場次"),
+      );
+    }
+
+    // ── 旗標為 true：照舊顯示（這是對照組，沒有它下面每一條都可能是「元件壞了」）──
+    checkTrue(`${name} 旗標=true 未額滿：顯示「${seatsLabel}」`, openOn.includes(seatsLabel));
+    checkTrue(
+      `${name} 旗標=true 未額滿：連剩餘數字 ${REMAINING_TEXT} 一起顯示`,
+      openOn.includes(REMAINING_TEXT),
+    );
+
+    // ── 旗標為 false：那句話與那個數字都不見 ─────────────────────────────
+    check(
+      `${name} 旗標=false 未額滿：不顯示「${seatsLabel}」`,
+      openOff.includes(seatsLabel),
+      false,
+    );
+    check(
+      `${name} 旗標=false 未額滿：剩餘數字 ${REMAINING_TEXT} 也不出現`,
+      openOff.includes(REMAINING_TEXT),
+      false,
+    );
+
+    // ── 🔴 額滿不受旗標影響 —— 這一組是這一期最重要的守衛 ────────────────
+    checkTrue(`${name} 旗標=true 已額滿：顯示「已額滿」`, fullOn.includes("已額滿"));
+    checkTrue(
+      `🔴 ${name} 旗標=false 已額滿：**仍然**顯示「已額滿」（關掉的是名額，不是「你報不了名」）`,
+      fullOff.includes("已額滿"),
+    );
+    // 額滿時本來就不該印剩餘（0 個名額），旗標開著也一樣。
+    check(
+      `${name} 旗標=true 已額滿：不會同時印「${seatsLabel}」`,
+      fullOn.includes(seatsLabel),
+      false,
+    );
+    check(
+      `${name} 旗標=false 已額滿：也不會印「${seatsLabel}」`,
+      fullOff.includes(seatsLabel),
+      false,
+    );
+  }
+
+  // 🔴 這個 prop 必須是**必填**的。給它一個 `= true` 的預設看起來體貼，實際效果是
+  //    「新的呼叫端忘記傳」與「這場活動要顯示」在型別上長得一樣 —— 漏傳會安靜地退回
+  //    舊行為，而那正是這個開關被加進來要修掉的東西。必填之後漏傳是一個 tsc 錯誤，
+  //    這也是這一期不用「每個呼叫點都要有 prop」那種 regex 就守得住四個呼叫點的原因。
+  for (const comp of ["SessionPicker", "SessionList"]) {
+    checkTrue(
+      `${comp} 的 showSeatsRemaining 是必填（沒有 ?: 也沒有預設值）`,
+      /\n\s*showSeatsRemaining: boolean;/.test(pickerCode),
+    );
+  }
+  check(
+    "🔴 沒有把它宣告成選填（showSeatsRemaining?: boolean）",
+    /showSeatsRemaining\?:/.test(pickerCode),
+    false,
+  );
+  check(
+    "🔴 也沒有在解構時給預設值（showSeatsRemaining = true）",
+    /showSeatsRemaining\s*=\s*(true|false)/.test(pickerCode),
+    false,
+  );
+
+  // 八份 HTML 兩兩不同才代表真的有渲染到不同的東西（全部相同 = 參數根本沒被讀）。
+  checkTrue(
+    "八個組合沒有全部渲染成同一份 HTML（參數真的有被讀到）",
+    new Set(SEAT_RENDER_CASES).size >= 4,
+  );
+}
+
+// ── 商品頁的名額徽章（shop.$slug.tsx）───────────────────────────────────────
+// 這一顆徽章畫在路由裡（不是獨立元件），要真渲染就得連 router / cart / site-content
+// 一起立起來 —— 代價遠大於它守的東西。所以這裡守的是**結構**，而結構裡唯一會出事
+// 的就是判斷順序：售罄（活動＝已額滿）必須排在旗標前面。
+checkTrue(
+  "商品頁把「是否隱藏名額徽章」算成一個具名條件",
+  /const hideSeatsBadge = isBooking && !product\.showSeatsRemaining;/.test(slugRouteCode),
+);
+checkTrue(
+  "🔴 售罄／已額滿排在旗標**前面**（順序反過來就是「額滿卻看不出來」）",
+  /\{soldOut \? \([\s\S]{0,300}?\) : hideSeatsBadge \? null : \(/.test(slugRouteCode),
+);
+checkTrue(
+  "隱藏的是整個徽章區塊（不是只把字清掉留一條空白邊距）",
+  /hideSeatsBadge \? null :/.test(slugRouteCode),
+);
+check(
+  "旗標只夾報名商品 —— 書與選物的庫存徽章不受它影響",
+  /hideSeatsBadge = isBooking &&/.test(slugRouteCode),
+  true,
+);
+checkTrue(
+  "商品頁把旗標傳給 SessionPicker",
+  /<SessionPicker\b[^<]*?showSeatsRemaining=\{product\.showSeatsRemaining\}/.test(slugRouteCode),
+);
+// 前台讀得到這一欄的前提：shop.ts 真的把它 select 出來並映射到 camelCase。
+const shopLibCode = stripTs(readFile(join(ROOT, "src/lib/shop.ts")));
+checkTrue(
+  "shop.ts 的 COLUMNS 有 show_seats_remaining（沒有就永遠是 undefined）",
+  /const COLUMNS =\s*\n?\s*"[^"]*\bshow_seats_remaining\b[^"]*";/.test(shopLibCode),
+);
+checkTrue(
+  "🔴 讀不到／型別不對時回落到「顯示」（!== false），不是靜默把名額藏起來",
+  /showSeatsRemaining: r\.show_seats_remaining !== false,/.test(shopLibCode),
+);
+check(
+  "沒有用 Boolean() 或 === true 之類會把 undefined 變成「不顯示」的寫法",
+  /showSeatsRemaining: (Boolean\(|r\.show_seats_remaining === true)/.test(shopLibCode),
+  false,
+);
 
 // -----------------------------------------------------------------------------
 // 收尾

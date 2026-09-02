@@ -238,7 +238,19 @@ assertMigrationDependencies(check, MIG_DIR, {
   // ALTER 任何一張表 —— 唯一的 DDL 是 orders_payment_method_check 的 drop + add
   // （多一個允許值 'free'，既有四個原樣保留；那正是 0024 檔頭寫下的規定做法）。
   // 逐條重讀之後：0022 的 outbox / claim_order_notify / notify_backlog 一個字都沒被 0028 改。免費訂單現在會通過 claim_order_notify 的「真的付過錢」閘門 —— 那是刻意的（報名成功信本來就該寄，見 0028 檔頭），而且它走的是既有路徑，沒有新增狀態組合。原樣成立。
-  reviewedThrough: "0028_free_order_settlement.sql",
+  // ── 0029_event_seats_visibility.sql 的重讀結論 ───────────────────────────
+  // 0029 讓「尚餘名額 N」變成逐場活動可以關掉：public.events 與 public.products 各加
+  // 一個 show_seats_remaining（boolean not null default true ＝ 維持既有行為），加兩個
+  // trigger 讓兩邊不分岔（events→products 推、products 寫入時反向拉），並用
+  // create or replace 讓 admin_upsert_event_with_session() 多讀一個 payload key。
+  // **沒有 ALTER 任何一張既有欄位、沒有 drop 任何函式、沒有動到任何一支 RPC 的邏輯**
+  // ——那支函式的本體是 0027 那一份逐字照抄，只多了三處 show_seats_remaining
+  // （0029 §5 寫了差異清單，scripts/event-blocks-selftest.mjs [7] 現在改成驗
+  //   **最後一支重新定義它的 migration**，所以那份抄寫走樣會轉紅）。
+  // 逐條重讀之後：0022 的 email_outbox / claim_order_notify / notify_backlog /
+  // enqueue_registration_emails、0023 補回的排程，0029 一個字都沒提到，也沒有新增任何
+  // 排程。名額顯示是純渲染層的決定，不會改變任何一封信該不該寄、寄給誰。原樣成立。
+  reviewedThrough: "0029_event_seats_visibility.sql",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

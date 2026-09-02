@@ -429,6 +429,17 @@ export const MIGRATION_LEDGER = Object.freeze([
     //    這是刻意的多標；帳本的設計說多標是安全的方向，這一列就是那個方向的用途。
     touches: ["orders_payments", "order_expiry", "event_registrations", "session_seats", "invoice"],
   },
+  {
+    file: "0029_event_seats_visibility.sql",
+    note: "「尚餘名額」逐場可關：events / products 各加一個 show_seats_remaining，兩個 trigger 讓兩邊不分岔，RPC 多讀一個 key",
+    // ⚠️ session_seats 與 localized_list 這兩個標籤是**函式重建帶進來的**，不是這一支
+    //    新動了名額或三語形狀：0029 用 create or replace 重建
+    //    admin_upsert_event_with_session()，而那支函式的本體裡本來就寫著
+    //    event_sessions 的 insert/update 與 is_localized() 的驗證。逐字照抄 0027 的
+    //    那一份、只多了三處 show_seats_remaining（差異見 0029 §5 的說明）。
+    //    標上它們是對的：任何依賴那兩區的自檢都該回來確認那份抄寫沒有走樣。
+    touches: ["products_availability", "session_seats", "events_shape", "localized_list"],
+  },
 ]);
 
 /** 磁碟上的 migration 檔名，排序過。空目錄 = 丟例外（那不是「沒有違規」）。 */

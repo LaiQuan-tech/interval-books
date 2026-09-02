@@ -30,9 +30,14 @@ import type { Localized, LocalizedList } from "@/i18n/types";
  *    清單欄位是 0027 加的；欄位還不存在時 PostgREST 回 42703，整個活動後台打不開。
  *    與檔頭那一段（0026 的 slug / image_key）是同一件事，而且同樣**不做降級路徑** ——
  *    降級會讓「migration 沒套上」變成一個安靜的次等狀態。
+ *
+ * ⚠️ **部署順序（第三次）：0029 要先套上 live DB，才能推這一行。** 底下的
+ *    show_seats_remaining 是 0029 加的，同一個 42703、同一個後果、同一個不做降級的
+ *    決定。這是這個檔案第三次踩到同一條規則了 —— 加欄位的 migration 一律**先套庫、
+ *    後推碼**。
  */
 const COLUMNS =
-  "id, slug, title, summary, description, display_date, iso_date, category, speaker_id, image_key, external_url, registration_type, payment_enabled, is_published, sort_order, highlights, suitable_for, not_suitable_for, takeaways, outline, includes, notes, created_at, updated_at";
+  "id, slug, title, summary, description, display_date, iso_date, category, speaker_id, image_key, external_url, registration_type, payment_enabled, is_published, sort_order, highlights, suitable_for, not_suitable_for, takeaways, outline, includes, notes, show_seats_remaining, created_at, updated_at";
 
 /** products 的欄位，只取活動後台要顯示的那幾個。 */
 const PRODUCT_COLUMNS = "id, slug, source_id, price, compare_at_price, status, sort_order";
@@ -74,6 +79,16 @@ export type EventRow = {
   is_published: boolean;
   sort_order: number;
   /**
+   * 前台要不要印出這場活動的「尚餘名額 N」（0029）。not null default true，所以讀
+   * 出來永遠是一個 boolean；預設 true ＝ 維持 0029 之前的行為。
+   *
+   * 🔴 「已額滿」不受它影響 —— 那是「你報不了名」，跟「還剩幾位」不是同一件事。
+   *
+   * 這一欄會被投影到 products.show_seats_remaining（前台的讀取層只讀 products），
+   * 兩邊由 0029 的兩個 trigger 保證不分岔。所以**不要**在商品後台再開一個同名欄位。
+   */
+  show_seats_remaining: boolean;
+  /**
    * 活動頁的七個「一行一項」三語清單（0027）。**順序就是前台由上到下的順序**，
    * 唯一的名單在 src/lib/event-blocks.ts 的 EVENT_LIST_FIELDS。
    *
@@ -109,6 +124,8 @@ export type EventUpsertInput = {
   payment_enabled: boolean;
   is_published: boolean;
   sort_order: number;
+  /** 前台印不印「尚餘名額 N」（0029）。省略時：新增用 true，更新沿用舊值。 */
+  show_seats_remaining?: boolean;
   /**
    * 七個清單欄位（0027）。**省略某一欄 = 那一欄不動**，與 SQL 那一側的
    * `coalesce(v_ev -> '…', v_prev.…, c_empty_list)` 是同一條規則。要清空就送三個
@@ -224,6 +241,11 @@ export async function upsertEvent(input: EventUpsertInput): Promise<EventRow> {
         payment_enabled: input.payment_enabled,
         is_published: input.is_published,
         sort_order: input.sort_order,
+        // 0029：省略時 true（＝欄位預設）。這條路徑是 upsert 而不是 patch，漏掉這一欄
+        // 會讓「沒送」變成 NULL 而撞上 NOT NULL，不是「沿用舊值」。
+        // ⚠️ 這一支只寫 events；products 那一份由 0029 的
+        //    events_seats_visibility_sync_product trigger 跟著改。
+        show_seats_remaining: input.show_seats_remaining ?? true,
       },
       { onConflict: "id" },
     )
@@ -274,6 +296,12 @@ export async function upsertEventWithProduct(
       payment_enabled: input.payment_enabled,
       is_published: input.is_published,
       sort_order: input.sort_order,
+      // 0029。**沒給值的時候整個 key 都不放進去**（`...(cond ? {k:v} : {})`），與底下
+      // 七個清單欄位同一條規則：SQL 那邊「payload 沒帶這個 key ＝ 這一欄不動」要在
+      // 這裡就是字面上成立的，不是靠 JSON.stringify 順手丟掉 undefined 的副作用。
+      ...(input.show_seats_remaining === undefined
+        ? {}
+        : { show_seats_remaining: input.show_seats_remaining }),
       // 0027 的七個清單欄位。**照 EVENT_LIST_FIELDS 逐欄展開，不是把整個 lists 物件
       // 攤進去** —— 攤進去的話，呼叫端多送一個不存在的 key 會安靜地跟著飛到 SQL 那邊，
       // 而那支 RPC 對它不認得的 key 是完全沉默的。

@@ -56,6 +56,8 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+import { latestDefinition } from "./lib/live-definition.mjs";
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SELF = "scripts/event-product-selftest.mjs";
 const MIG_DIR = join(ROOT, "supabase/migrations");
@@ -489,13 +491,26 @@ console.log("\n[8] seats_taken 是誰的");
 // 0020 §7：seats_taken 只由 reserve_session_seat / release_session_seat /
 // expire_unpaid_orders 在持有列鎖時維護。從表單寫回一個幾分鐘前讀到的計數器，
 // 就是與那三支 RPC 對撞 —— 而對撞的結果是超賣，不是錯誤訊息。
-const fnBodySql = sliceBetween(
-  sql0026,
-  "create or replace function public.admin_upsert_event_with_session",
-  "comment on function public.admin_upsert_event_with_session",
+/**
+ * 🔴 **從「現在生效的那一份」切，不是從 0026 切。**
+ *
+ * 這一行原本是 `sliceBetween(sql0026, …)`。0026 是已套用的 migration，規約禁止再改
+ * 它一個字 —— 所以從 0027 用 create or replace 重寫這支函式的那一刻起，這條斷言驗
+ * 的就是一份**沒有任何資料庫在跑的死定義**，而且它會永遠是綠的。0029 又重寫了一次。
+ * 這正是這個 repo 反覆出現的「釘死單一檔案路徑，搬家後靜默失去覆蓋」。
+ *
+ * latestDefinition() 去找最後一支重新定義它的 migration；找不到就丟例外（回空字串
+ * 會讓底下那條 checkFalse 靜默通過）。
+ */
+const liveRpc = latestDefinition(MIG_DIR, "admin_upsert_event_with_session", stripSqlComments);
+const fnBodySql = liveRpc.body;
+checkTrue("切得出**現在生效的**那一份 RPC 本體", fnBodySql.length > 1000);
+checkTrue(
+  "現在生效的那一份不早於 0026（它是這支函式的出生地）",
+  liveRpc.file >= MIG_0026_NAME,
+  `最後一支重新定義它的是 ${liveRpc.file}`,
 );
-checkTrue("切得出 RPC 的本體", fnBodySql.length > 1000);
-checkFalse("🔴 RPC 完全沒有寫 seats_taken", /seats_taken\s*=/.test(stripSqlComments(fnBodySql)));
+checkFalse("🔴 RPC 完全沒有寫 seats_taken", /seats_taken\s*=/.test(fnBodySql));
 // capacity 同理：0020 的 CHECK 要求 products.capacity is null，名額在場次上。
 checkTrue(
   "products 的 insert 把 capacity 寫成 null（名額在場次上）",
@@ -672,7 +687,15 @@ delete from public.event_categories where id like 'evprod-%';
 const L = (s) => `'{"zh":"${s}","en":"${s}","ja":"${s}"}'::jsonb`;
 
 /** 一份最小可用的 event payload，給 RPC 用。 */
-const eventPayload = (id, extra = "") => `{
+/**
+ * @param extra      **payload 頂層**的額外 key（"product" / "session" 就是從這裡進來的）
+ * @param eventExtra **event 物件裡面**的額外 key（0029 的 show_seats_remaining 用這個）
+ *
+ * ⚠️ 兩個位置不可以搞混，而且搞混**不會有任何錯誤訊息**：這支 RPC 對它不認得的
+ *    key 是完全沉默的，所以把 event 的欄位放到頂層去，結果會是「那個欄位被安靜地
+ *    忽略」——寫這段測試時就先踩過一次（assertion 紅了才發現）。
+ */
+const eventPayload = (id, extra = "", eventExtra = "") => `{
   "event": {
     "id": "${id}",
     "title":       {"zh":"標題","en":"Title","ja":"タイトル"},
@@ -686,9 +709,117 @@ const eventPayload = (id, extra = "") => `{
     "registration_type": "internal",
     "payment_enabled": true,
     "is_published": true,
-    "sort_order": 3
+    "sort_order": 3${eventExtra}
   }${extra}
 }`;
+
+// =============================================================================
+// [11b] 0029：名額顯示旗標的投影，以及擋分岔的兩個 trigger
+// =============================================================================
+console.log("\n[11b] 名額顯示旗標（0029）");
+
+// 前台的讀取層（src/lib/shop.ts）只讀 public.products 與 public.event_sessions，
+// 一個字都沒讀過 public.events —— 所以「這場活動要不要印尚餘名額」這個決定要能到
+// 得了前台，就必須從 events 投影到 products。投影 = 兩份會分岔的資料，0029 用兩個
+// trigger 把兩個方向都堵起來。這一段守的就是那兩個 trigger 還在、方向沒有寫反。
+const MIG_0029_NAME = "0029_event_seats_visibility.sql";
+checkTrue(`${MIG_0029_NAME} 存在`, migrations.includes(MIG_0029_NAME));
+const sql0029 = stripSqlComments(readFile(join(MIG_DIR, MIG_0029_NAME)));
+checkTrue("0029 不是空檔", sql0029.trim().length > 500);
+checkTrue("0029 有 begin; / commit;", /\bbegin;/.test(sql0029) && /\bcommit;/.test(sql0029));
+
+// 兩張表都要有這一欄，而且**都是 not null default true** —— default false 會讓套用
+// 的那一秒起所有既有活動的名額安靜地消失，而那不是任何人做過的決定。
+for (const table of ["events", "products"]) {
+  checkTrue(
+    `public.${table} 加了 show_seats_remaining`,
+    new RegExp(
+      `alter table public\\.${table}\\s*\\n\\s*add column if not exists show_seats_remaining boolean not null default true`,
+      "i",
+    ).test(sql0029),
+  );
+}
+checkFalse(
+  "🔴 沒有任何一處把預設寫成 false（那會讓既有活動的名額在套用當下就消失）",
+  /show_seats_remaining boolean not null default false/i.test(sql0029),
+);
+
+// trigger A：events → products。與 0026 的 events_slug_sync_product 同一個形狀、
+// 同一個理由（活動後台有一條只寫 public.events 的儲存路徑）。
+checkTrue(
+  "有 events → products 的同步 trigger",
+  /create\s+trigger\s+events_seats_visibility_sync_product\s*\n?\s*after\s+update\s+of\s+show_seats_remaining\s+on\s+public\.events/i.test(
+    sql0029,
+  ),
+);
+// trigger B：products 被寫入時反向拉回。/admin/products 可以直接建立或編輯一件
+// source_type='event' 的商品，那條路不經過 RPC 也不碰 events。
+checkTrue(
+  "有 products 寫入時反向拉回的 trigger",
+  /create\s+trigger\s+products_pull_seats_visibility\s*\n?\s*before\s+insert\s+or\s+update\s+of\s+source_type,\s*source_id,\s*show_seats_remaining/i.test(
+    sql0029,
+  ),
+);
+checkTrue(
+  "🔴 反向那一支是 before（after 改不動 NEW，等於沒攔）",
+  /before\s+insert\s+or\s+update\s+of[\s\S]{0,80}?on\s+public\.products/i.test(sql0029),
+);
+// 兩支 trigger 函式都不可以留給前台的 key。
+for (const fn of ["events_sync_product_seats_visibility", "products_pull_seats_visibility"]) {
+  checkTrue(
+    `${fn}() 對 public/anon/authenticated revoke execute`,
+    new RegExp(
+      `revoke execute on function public\\.${fn}\\(\\)\\s*\\n?\\s*from public, anon, authenticated`,
+      "i",
+    ).test(sql0029),
+  );
+}
+
+// RPC 也要投影這一欄（沒有它，「上架成商品」那一步會讓商品拿到欄位預設而不是活動
+// 的決定）。這裡對的是**現在生效的那一份**，不是 0029 這個檔案本身。
+checkTrue(
+  "現在生效的 RPC 就是 0029 那一份",
+  liveRpc.file === MIG_0029_NAME,
+  `實際是 ${liveRpc.file}`,
+);
+checkTrue(
+  "RPC 把活動的旗標寫進 products（v_event.show_seats_remaining）",
+  /v_event\.show_seats_remaining/.test(fnBodySql),
+);
+checkTrue(
+  "🔴 payload 沒帶那個 key 時沿用舊值（coalesce 到 v_prev，不是蓋成 true）",
+  /coalesce\(\(v_ev ->> 'show_seats_remaining'\)::boolean, v_prev\.show_seats_remaining, true\)/.test(
+    fnBodySql,
+  ),
+);
+checkTrue(
+  "on conflict 時 events 那一欄也會被更新",
+  /show_seats_remaining = excluded\.show_seats_remaining/.test(fnBodySql),
+);
+// 「payload 沒帶 product、但活動已經有商品」那條分支也要跟著投影，否則改了旗標
+// 又剛好走那條路，商品那一份就停在舊值上（trigger A 會補，但兩邊都對才是規則）。
+checkTrue(
+  "沒帶 product 的那條 update 分支也投影了旗標",
+  /update public\.products p[\s\S]{0,400}?show_seats_remaining = v_event\.show_seats_remaining/.test(
+    fnBodySql,
+  ),
+);
+
+// 0026 的規約：加東西要開新 migration。這幾個名字只可能屬於 0029。
+for (const name of [
+  "show_seats_remaining",
+  "events_seats_visibility_sync_product",
+  "products_pull_seats_visibility",
+]) {
+  const older = migrations
+    .filter((f) => f < MIG_0029_NAME)
+    .filter((f) => readFile(join(MIG_DIR, f)).includes(name));
+  check(
+    `"${name}" 沒有出現在 0029 之前的任何一支 migration`,
+    older.join(",") || "（無）",
+    "（無）",
+  );
+}
 
 if (!PG_URL) {
   skipped.push("[連線] 段（缺 EVENT_PRODUCT_SELFTEST_PG_URL）");
@@ -915,6 +1046,35 @@ if (!PG_URL) {
       again2.ok ? "" : again2.error.slice(0, 300),
     );
 
+    // 🔴 **把 0026 之後的每一支再套一次，把測試庫還原成「現在生效」的狀態。**
+    //
+    //    上面那三次重套 0026 有一個沒人注意到的副作用：0026 用 create or replace
+    //    重建 admin_upsert_event_with_session()，於是**測試庫裡那支函式被降級回
+    //    0026 那一版**。0027 加的七個清單欄位、0029 加的 show_seats_remaining，
+    //    從這一行之後就都不在了 —— 而 [16] 與 [18] 都排在後面，也就是說它們從
+    //    0027 上線那天起驗的一直是一支舊函式。畫面全綠。
+    //
+    //    這是寫 [18b] 時才被撞出來的（那一段需要 0029 的行為，於是紅了）。修法不是
+    //    把 [18b] 挪到前面 —— 那只會把同一顆地雷留給下一個人。修法是重套之後把後面
+    //    每一支都再跑一遍，讓測試庫回到跟正式庫同一個狀態。
+    for (const f of migrations.filter((f) => f > MIG_0026_NAME && !f.startsWith("0008_"))) {
+      const r = await q(readFile(join(MIG_DIR, f)));
+      checkTrue(`重套 0026 之後把 ${f} 補回來（否則後面驗的是被降級的函式）`, r.ok);
+      if (!r.ok) console.log(red(`      ${r.error.slice(0, 300)}`));
+    }
+    check(
+      "🔴 還原之後，測試庫裡的 RPC 認得最新的欄位（0027 的清單 + 0029 的旗標）",
+      Boolean(
+        one(
+          await must(`select (prosrc like '%show_seats_remaining%'
+                          and prosrc like '%v_prev.highlights%')::text v
+                        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                       where n.nspname='public' and p.proname='admin_upsert_event_with_session'`),
+        )?.v === "true",
+      ),
+      true,
+    );
+
     // ---- 🔴 RPC 的投影 ----------------------------------------------------
     console.log("\n[16] RPC 寫出來的商品");
     const created = one(
@@ -1059,6 +1219,94 @@ if (!PG_URL) {
       ),
       0,
     );
+
+    // -------------------------------------------------------------------
+    console.log("\n[18b] 名額顯示旗標不會分岔（0029）");
+    // 這一段是 [11b] 的行為版：那邊驗 SQL 長什麼樣子，這邊驗它**真的**做到了。
+    const flagOf = async (what) =>
+      String(
+        one(
+          await must(
+            what === "event"
+              ? `select show_seats_remaining::text v from public.events where id='${E1}'`
+              : `select show_seats_remaining::text v from public.products where source_type='event' and source_id='${E1}'`,
+          ),
+        )?.v,
+      );
+
+    check("新建的活動預設顯示名額（欄位預設 true）", await flagOf("event"), "true");
+    check("它的商品也是 true（RPC 投影過去的）", await flagOf("product"), "true");
+
+    // ① 只寫 events（＝ repos/events.ts#upsertEvent 那條不碰商品的路徑）。
+    await must(`update public.events set show_seats_remaining = false where id='${E1}'`);
+    check("🔴 只改活動，商品那一份也跟著變 false（trigger A）", await flagOf("product"), "false");
+
+    // ② 從商品那一側寫回 true（＝ /admin/products 那條不碰 events 的路徑）。
+    await must(
+      `update public.products set show_seats_remaining = true where source_type='event' and source_id='${E1}'`,
+    );
+    check(
+      "🔴 從商品那一側改不動 —— 被拉回活動說的答案（trigger B）",
+      await flagOf("product"),
+      "false",
+    );
+    check("活動那一份沒有被反向汙染", await flagOf("event"), "false");
+
+    // ③ payload 沒帶那個 key：沿用舊值，不會被蓋回 true。
+    await must(
+      `select public.admin_upsert_event_with_session('${eventPayload(E1, `,\n  "product": { "price": 500, "status": "active" }`)}'::jsonb)`,
+    );
+    check("payload 沒帶 key → 活動仍是 false", await flagOf("event"), "false");
+    check("payload 沒帶 key → 商品仍是 false", await flagOf("product"), "false");
+
+    // ④ payload 帶 true：兩邊一起變回來。
+    await must(
+      `select public.admin_upsert_event_with_session('${eventPayload(
+        E1,
+        `,\n  "product": { "price": 500, "status": "active" }`,
+        // ⚠️ 這個 key 要放在 **event 物件裡面**。放到頂層去的話 RPC 會安靜地忽略它，
+        //    而畫面上的症狀是「後台的開關按了沒有用」——沒有任何錯誤訊息。
+        `,\n    "show_seats_remaining": true`,
+      )}'::jsonb)`,
+    );
+    check("payload 帶 true → 活動變 true", await flagOf("event"), "true");
+    check("payload 帶 true → 商品跟著變 true", await flagOf("product"), "true");
+
+    // ⑤ 不變式：全表掃一次，一列都不可以分岔。
+    check(
+      "🔴 全表沒有任何一件 event 商品與它的活動不一致",
+      num(
+        await must(`select count(*)::int n
+                      from public.products p
+                      join public.events e on e.id = p.source_id
+                     where p.source_type='event'
+                       and p.show_seats_remaining is distinct from e.show_seats_remaining`),
+      ),
+      0,
+    );
+
+    // ⑥ 對照組：**不是** event 來源的商品，trigger B 管不到它（journey 也有場次，
+    //    但它沒有 events 列 —— 這正是「反查 events」那條路做不到的事）。
+    await must(`
+      insert into public.products (id, slug, product_type, title, summary, description,
+                                   price, status, show_seats_remaining)
+      values ('evprod-journey', 'evprod-journey', 'journey',
+              '{"zh":"策旅","en":"Journey","ja":"旅"}', '{"zh":"a","en":"a","ja":"a"}',
+              '{"zh":"b","en":"b","ja":"b"}', 5000, 'active', false)
+      on conflict (id) do update set show_seats_remaining = excluded.show_seats_remaining;
+    `);
+    check(
+      "非 event 來源的商品保有自己的值（trigger B 只管 source_type='event'）",
+      String(
+        one(
+          await must(
+            `select show_seats_remaining::text v from public.products where id='evprod-journey'`,
+          ),
+        )?.v,
+      ),
+      "false",
+    );
+    await must(`delete from public.products where id='evprod-journey'`);
   } catch (err) {
     // 記成一條失敗再往下走，而不是讓例外殺掉整個行程 —— 直接炸掉的話收尾的
     // ##SELFTEST## 那一行印不出來，runner 只會說「沒有印出收尾行」。

@@ -264,6 +264,7 @@ const FIELD_LABELS: Record<string, string> = {
   external_url: "§4 報名／活動網址",
   registration_type: "§4 報名方式",
   payment_enabled: "§4 需付款",
+  show_seats_remaining: "§4 名額顯示",
   product: "§4 商品",
   "product.price": "§4 售價",
   "product.compare_at_price": "§4 原價",
@@ -276,6 +277,16 @@ const FIELD_LABELS: Record<string, string> = {
   includes: "§10 費用包含",
   notes: "§11 注意事項",
 };
+
+/**
+ * §4 那個名額開關的說明文字。
+ *
+ * 抽成常數而不是直接寫在 JSX 裡：它比一行長，寫在 <FormDescription> 裡會被 prettier
+ * 折成三行，而 JSX 的換行會在中文字之間留下一個看得見的空格（「留著， 「尚餘名額」）。
+ */
+const SEATS_VISIBILITY_HINT =
+  "名額設得很寬鬆（等於不限）時建議關掉 —— 畫面上印出「尚餘名額 999」對客人不是資訊。" +
+  "名額真的緊的時候留著，「尚餘名額 2」會影響他報不報名。";
 
 /** 清單欄位：資料庫的三個陣列 → 表單的三個「一行一項」字串。 */
 function listToForm(value: { zh: string[]; en: string[]; ja: string[] } | null | undefined) {
@@ -311,6 +322,9 @@ function toFormValues(
     external_url: row?.external_url ?? "",
     registration_type: row?.registration_type ?? "external",
     payment_enabled: row?.payment_enabled ?? false,
+    // 0029。新增的活動預設**顯示**（＝ 欄位預設，也是 0029 之前的行為）——
+    // 關掉名額顯示要是店家的一個明確動作，不是一個安靜的初始值。
+    show_seats_remaining: row?.show_seats_remaining ?? true,
     is_published: row?.is_published ?? true,
     sort_order: row?.sort_order ?? nextSortOrder,
     product: product
@@ -1020,6 +1034,37 @@ function AdminEventAssemblerPage() {
               )}
             />
           </div>
+
+          {/* 名額顯示。放在這一段是因為它跟上面的名額、下面的售票是同一類設定 ——
+              「這場怎麼收報名」的一部分，不是活動內容。
+
+              🔴 它**只關掉「尚餘名額 N」那一句**。「已額滿」不受影響，永遠會顯示：
+                 那是「你報不了名」，跟「還剩幾位」不是同一件事，而客人必須看得出
+                 前者。下面那句說明文字就是講給店家聽的同一件事，不要拿掉。 */}
+          <FormField
+            control={form.control}
+            name="show_seats_remaining"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>在前台顯示剩餘名額</FormLabel>
+                <div className="flex h-9 items-center gap-2">
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <span className="text-sm text-muted-foreground">
+                    {field.value ? "顯示「尚餘名額 N」" : "不顯示剩餘名額"}
+                  </span>
+                </div>
+                <FormDescription>
+                  {SEATS_VISIBILITY_HINT}
+                  <strong className="font-medium text-foreground">
+                    　關掉之後「已額滿」還是會顯示。
+                  </strong>
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <MirrorNote
             label="報名名單"

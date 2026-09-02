@@ -223,7 +223,11 @@ const selectedCols = (selectMatch?.[1] ?? "")
   .map((c) => c.trim())
   .filter(Boolean);
 // 正式庫 public.events 的欄位全集（0001 的 14 欄 + 0025 的 speaker_id
-// + 0026 的 slug / image_key）。
+// + 0026 的 slug / image_key + 0027 的七個清單欄位 + 0029 的 show_seats_remaining）。
+//
+// ⚠️ 這一份是**事實清單**，不是白名單 —— 它的用途是抓「select 了一個 events 根本沒有
+//    的欄位」。真的加了欄位就要補進來，補了不會放寬任何東西（下面那三條 ghost 斷言
+//    才是「這一頁不准選它」的守衛，show_seats_remaining 同樣列在裡面）。
 const EVENT_COLUMNS = new Set([
   "id",
   "title",
@@ -242,6 +246,8 @@ const EVENT_COLUMNS = new Set([
   "speaker_id",
   "slug",
   "image_key",
+  // 0029_event_seats_visibility.sql
+  "show_seats_remaining",
 ]);
 checkTrue("select 不是空的", selectedCols.length >= 6);
 for (const col of selectedCols) {
@@ -253,7 +259,10 @@ for (const col of selectedCols) {
 checkTrue("select 有帶到 slug（0026 之後這一頁靠它反查商品）", selectedCols.includes("slug"));
 // 這三個是最可能被想當然耳寫進去的：image_key 與 speaker_id 存在但這一頁不讀，
 // payment_enabled 從 0001 就存在而五期以來沒有任何路由讀它。
-for (const ghost of ["image_key", "speaker_id", "payment_enabled"]) {
+// show_seats_remaining（0029）也在這一組：這一頁畫的是 SessionList，而那個旗標是
+// 從**商品**那一側讀進來的（products.show_seats_remaining → ShopProduct）。從 events
+// 再讀一份，就是替同一個事實開第二個來源。
+for (const ghost of ["image_key", "speaker_id", "payment_enabled", "show_seats_remaining"]) {
   check(`select 沒有帶到 ${ghost}`, selectedCols.includes(ghost), false);
 }
 // 網址吃的是 events.slug（0026 回填成 id，所以舊網址仍然有效）。
@@ -294,9 +303,36 @@ checkTrue(
 checkTrue("路由真的渲染 <SessionList", /<SessionList\b/.test(detailCode));
 // 沒有商品就沒有場次（event_sessions 掛的是 product_id），但那時候要傳空陣列
 // 讓元件畫空狀態，不是把整塊拿掉。
+// ⚠️ 這一條原本釘的是整行字面值（含結尾的 ` />`）。0029 給 <SessionList> 加了第二個
+//    prop，那一行被 prettier 拆成多行 —— 於是這條斷言紅了，而它要守的東西（沒有商品
+//    時仍然傳空陣列）一個字都沒變。釘整行字面值就是這個 repo 反覆出過的
+//    「釘死單一形狀，重排之後失去覆蓋（或誤報）」，所以改成釘**那個 prop 的值**。
+//    `[^<]` 保證比對不會跨到下一個 JSX 元素上（每個元素都以 `<` 開頭）。
 checkTrue(
   "沒有商品時仍然傳空陣列進去",
-  /<SessionList sessions=\{booking\.product\?\.sessions \?\? \[\]\} \/>/.test(detailCode),
+  /<SessionList\b[^<]*?sessions=\{booking\.product\?\.sessions \?\? \[\]\}/.test(detailCode),
+);
+// 0029：名額顯示是逐場活動的決定，活動頁的三個場次區塊都要吃到它。
+checkTrue(
+  "沒有商品時，名額旗標退回「顯示」（＝ 0029 的欄位預設，也是既有行為）",
+  /<SessionList\b[^<]*?showSeatsRemaining=\{booking\.product\?\.showSeatsRemaining \?\? true\}/.test(
+    detailCode,
+  ),
+);
+check(
+  "活動頁三個場次區塊全都傳了 showSeatsRemaining（少一個就有一塊不吃這個開關）",
+  (detailCode.match(/showSeatsRemaining=\{/g) || []).length,
+  (detailCode.match(/<Session(Picker|List)\b/g) || []).length,
+);
+checkTrue(
+  "有商品時傳的是商品那一份，不是寫死 true",
+  /<SessionPicker\b[^<]*?showSeatsRemaining=\{product\.showSeatsRemaining\}/.test(detailCode) &&
+    /<SessionList\b[^<]*?showSeatsRemaining=\{product\.showSeatsRemaining\}/.test(detailCode),
+);
+check(
+  "沒有任何一處把旗標寫死成 true 以外的常數（那會讓後台的開關失效）",
+  /showSeatsRemaining=\{(true|false)\}/.test(detailCode.replace(/\?\? true\}/g, "?? X}")),
+  false,
 );
 checkTrue("SessionPicker.tsx 匯出 SessionList", /export function SessionList\(/.test(pickerCode));
 checkTrue("SessionList 有空狀態文案", /COPY\.noPublicSessions/.test(pickerCode));

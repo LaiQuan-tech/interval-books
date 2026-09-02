@@ -708,7 +708,23 @@ assertLedgerDeclarationsHonest(check, join(ROOT, "supabase/migrations"));
 assertMigrationDependencies(check, join(ROOT, "supabase/migrations"), {
   suite: "localized-list-selftest",
   dependsOn: ["localized_list", "events_shape"],
-  reviewedThrough: "0027_event_blocks.sql",
+  // ── 0029_event_seats_visibility.sql 的重讀結論 ───────────────────────────
+  // 0029 讓「尚餘名額 N」變成逐場活動可以關掉：public.events 與 public.products 各加
+  // 一個 show_seats_remaining（boolean not null default true ＝ 維持既有行為），加兩個
+  // trigger 讓兩邊不分岔（events→products 推、products 寫入時反向拉），並用
+  // create or replace 讓 admin_upsert_event_with_session() 多讀一個 payload key。
+  // **沒有 ALTER 任何一張既有欄位、沒有 drop 任何函式、沒有動到任何一支 RPC 的邏輯**
+  // ——那支函式的本體是 0027 那一份逐字照抄，只多了三處 show_seats_remaining
+  // （0029 §5 寫了差異清單，scripts/event-blocks-selftest.mjs [7] 現在改成驗
+  //   **最後一支重新定義它的 migration**，所以那份抄寫走樣會轉紅）。
+  // ⚠️ reviewedThrough 從 0027 一路推到 0029，中間跳過的 0028_free_order_settlement.sql
+  //    也重讀過：它只碰 orders / payments / invoice_backlog（帳本標的五個區域裡沒有
+  //    localized_list 或 events_shape），一個 jsonb 欄位、一個 is_localized 呼叫都沒有。
+  // 逐條重讀之後：0029 沒有重新定義 is_localized() 或 is_localized_list()，也沒有新增
+  // 任何 jsonb 欄位 —— 它加的兩欄都是 boolean。函式本體裡出現的 is_localized 呼叫是
+  // 0027 那一份照抄過來的驗證，形狀與呼叫點都沒變。三語清單的欄位清單與 CHECK 不受影響。
+  // 原樣成立。
+  reviewedThrough: "0029_event_seats_visibility.sql",
 });
 
 // -----------------------------------------------------------------------------

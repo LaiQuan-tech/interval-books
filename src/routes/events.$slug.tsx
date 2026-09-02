@@ -266,7 +266,12 @@ function EventDetail() {
             <RegistrationPanel product={cta.product} />
           ) : (
             <>
-              <SessionList sessions={booking.product?.sessions ?? []} />
+              <SessionList
+                sessions={booking.product?.sessions ?? []}
+                // 商品還沒建立時沒有旗標可讀，退回「顯示」——那是 0029 的欄位預設，
+                // 也是這一支之前的行為。（這條分支的 sessions 本來就是空的。）
+                showSeatsRemaining={booking.product?.showSeatsRemaining ?? true}
+              />
 
               <div>
                 <p className="eyebrow text-2xl">{t(PAGE.registration)}</p>
@@ -325,6 +330,7 @@ function RegistrationPanel({ product }: { product: ShopProduct }) {
       {anySeats ? (
         <SessionPicker
           sessions={product.sessions}
+          showSeatsRemaining={product.showSeatsRemaining}
           selectedId={sessionId}
           onSelect={(id) => {
             setSessionId(id);
@@ -334,7 +340,7 @@ function RegistrationPanel({ product }: { product: ShopProduct }) {
           }}
         />
       ) : (
-        <SessionList sessions={product.sessions} />
+        <SessionList sessions={product.sessions} showSeatsRemaining={product.showSeatsRemaining} />
       )}
 
       <div>
