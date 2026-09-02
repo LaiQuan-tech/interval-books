@@ -1,7 +1,15 @@
 {
-  "generatedAt": "2026-09-02T05:10:23.429Z",
+  "generatedAt": "2026-09-02T07:21:39.891Z",
   "summary": {
     "routesAudited": 17,
+    "redirectRoutes": 4,
+    "redirectRouteList": [
+      "/contact",
+      "/curated",
+      "/publications",
+      "/visit"
+    ],
+    "metaAudited": 13,
     "languages": [
       "zh",
       "en",
@@ -23,93 +31,110 @@
         "ogTitle",
         "ogDescription"
       ],
-      "approxChecks": 204
+      "approxChecks": 156
     }
   },
   "routes": {
     "/about": {
       "file": "src/routes/about.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/cart": {
       "file": "src/routes/cart.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/checkout.complete": {
       "file": "src/routes/checkout.complete.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/checkout.index": {
       "file": "src/routes/checkout.index.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/contact": {
       "file": "src/routes/contact.tsx",
       "ok": true,
+      "redirect": true,
       "issues": []
     },
     "/curated": {
       "file": "src/routes/curated.tsx",
       "ok": true,
+      "redirect": true,
       "issues": []
     },
     "/curation": {
       "file": "src/routes/curation.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/events.$slug": {
       "file": "src/routes/events.$slug.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/events.index": {
       "file": "src/routes/events.index.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/": {
       "file": "src/routes/index.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/journeys": {
       "file": "src/routes/journeys.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/news": {
       "file": "src/routes/news.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/privacy": {
       "file": "src/routes/privacy.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/publications": {
       "file": "src/routes/publications.tsx",
       "ok": true,
+      "redirect": true,
       "issues": []
     },
     "/shop.$slug": {
       "file": "src/routes/shop.$slug.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/shop.index": {
       "file": "src/routes/shop.index.tsx",
       "ok": true,
+      "redirect": false,
       "issues": []
     },
     "/visit": {
       "file": "src/routes/visit.tsx",
       "ok": true,
+      "redirect": true,
       "issues": []
     },
     "__content__": {

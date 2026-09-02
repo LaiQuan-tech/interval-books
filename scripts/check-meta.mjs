@@ -50,6 +50,79 @@ function routeFromFile(file) {
   return "/" + base;
 }
 
+/** Minimal AST walker — @babel/traverse cannot be pointed at a sub-node. */
+function walkNode(node, visit) {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const n of node) walkNode(n, visit);
+    return;
+  }
+  if (typeof node.type !== "string") return;
+  visit(node);
+  for (const key of Object.keys(node)) {
+    if (key === "loc" || key.endsWith("Comments")) continue;
+    walkNode(node[key], visit);
+  }
+}
+
+/** The options object of `createFileRoute("/x")({ … })`, or null. */
+function routeOptionsObject(ast) {
+  let options = null;
+  walkNode(ast.program, (n) => {
+    if (n.type !== "CallExpression") return;
+    const callee = n.callee;
+    if (callee?.type !== "CallExpression") return;
+    if (callee.callee?.type !== "Identifier" || callee.callee.name !== "createFileRoute") return;
+    const arg = n.arguments[0];
+    if (arg?.type === "ObjectExpression") options = arg;
+  });
+  return options;
+}
+
+/**
+ * Is this route file nothing but a redirect?
+ *
+ * A redirect route has no page: beforeLoad throws before anything renders, so
+ * useDocumentMeta could never run and the meta it declared would never reach
+ * the <head>. Requiring meta there would mean shipping code that provably
+ * cannot execute — and then auditing it, which is worse than not auditing.
+ * (2026-09-02: /visit, /contact, /publications and /curated became redirects
+ * when the nav went from nine items to five. Their URLs are on Google Business
+ * listings and business cards, so the routes stay; the pages do not.)
+ *
+ * Recognised **structurally**, never by filename or by a comment:
+ *
+ *   - the route options object has NO `component` property, AND
+ *   - somewhere inside it there is a literal `throw redirect(…)`.
+ *
+ * A route that has a component and also redirects conditionally (e.g.
+ * src/routes/admin/_shell.index.tsx) fails the first test and is audited like
+ * any other page. A route that lost its component but does not redirect fails
+ * the second and still reports no_hook_call — which is exactly the "someone
+ * deleted the page and the audit went quiet" case this must not open up.
+ */
+function isRedirectOnlyRoute(ast) {
+  const options = routeOptionsObject(ast);
+  if (!options) return false;
+  const hasComponent = options.properties.some(
+    (p) => p.type === "ObjectProperty" && (p.key.name ?? p.key.value) === "component",
+  );
+  if (hasComponent) return false;
+
+  let throwsRedirect = false;
+  walkNode(options, (n) => {
+    if (n.type !== "ThrowStatement") return;
+    const arg = n.argument;
+    if (
+      arg?.type === "CallExpression" &&
+      arg.callee?.type === "Identifier" &&
+      arg.callee.name === "redirect"
+    )
+      throwsRedirect = true;
+  });
+  return throwsRedirect;
+}
+
 function checkLocalizedObject(file, route, field, objNode, line) {
   if (!objNode || objNode.type !== "ObjectExpression") {
     record({
@@ -118,14 +191,18 @@ function checkLocalizedObject(file, route, field, objNode, line) {
   }
 }
 
+/** @returns {Promise<boolean>} true when the file is a redirect-only route (not meta-audited). */
 async function auditRoute(file) {
   const route = routeFromFile(file);
   const src = await readFile(file, "utf8");
+  const ast = parse(src, { sourceType: "module", plugins: ["typescript", "jsx"] });
+
+  if (isRedirectOnlyRoute(ast)) return true;
+
   if (!src.includes("useDocumentMeta")) {
     record({ file, route, code: "no_hook_call", message: "useDocumentMeta() not used in route" });
-    return;
+    return false;
   }
-  const ast = parse(src, { sourceType: "module", plugins: ["typescript", "jsx"] });
 
   const topObjects = new Map();
   traverse(ast, {
@@ -228,6 +305,7 @@ async function auditRoute(file) {
       message: "useDocumentMeta imported but not invoked",
     });
   }
+  return false;
 }
 
 async function auditContent() {
@@ -296,13 +374,18 @@ async function auditContent() {
   });
 }
 
-function buildReport(routeFiles) {
+function buildReport(routeFiles, redirectFiles) {
   const byRoute = {};
   const byLang = { zh: 0, en: 0, ja: 0, _none: 0 };
   const byCode = {};
 
   for (const f of routeFiles) {
-    byRoute[routeFromFile(f)] = { file: f, ok: true, issues: [] };
+    byRoute[routeFromFile(f)] = {
+      file: f,
+      ok: true,
+      redirect: redirectFiles.includes(f),
+      issues: [],
+    };
   }
   byRoute["__content__"] = { file: CONTENT_FILE, ok: true, issues: [] };
 
@@ -315,12 +398,20 @@ function buildReport(routeFiles) {
     byCode[x.code] = (byCode[x.code] ?? 0) + 1;
   }
 
+  const metaAudited = routeFiles.length - redirectFiles.length;
   const totalChecks =
-    routeFiles.length * LANGS.length * (REQUIRED_FIELDS.length + OPTIONAL_FIELDS.length);
+    metaAudited * LANGS.length * (REQUIRED_FIELDS.length + OPTIONAL_FIELDS.length);
   return {
     generatedAt: new Date().toISOString(),
     summary: {
       routesAudited: routeFiles.length,
+      // Route files that only redirect (no component, throws redirect) have no
+      // page and therefore no meta — see isRedirectOnlyRoute(). Counted here so
+      // "routesAudited went up but metaAudited did not" is visible, instead of
+      // a route quietly slipping out of the audit.
+      redirectRoutes: redirectFiles.length,
+      redirectRouteList: redirectFiles.map(routeFromFile),
+      metaAudited,
       languages: LANGS,
       totalIssues: findings.length,
       issuesByLanguage: byLang,
@@ -341,13 +432,19 @@ async function main() {
 
   console.log(`→ Auditing ${files.length} routes + content data\n`);
 
+  const redirectFiles = [];
   for (const f of files) {
     const before = findings.length;
-    await auditRoute(f);
+    const isRedirect = await auditRoute(f);
+    if (isRedirect) redirectFiles.push(f);
     const routeIssues = findings.length - before;
-    console.log(
-      `  ${routeIssues === 0 ? "✓" : "✗"} ${f}${routeIssues ? `  (${routeIssues} issue${routeIssues > 1 ? "s" : ""})` : ""}`,
-    );
+    const mark = isRedirect ? "↷" : routeIssues === 0 ? "✓" : "✗";
+    const note = isRedirect
+      ? "  (redirect route — no page, no meta)"
+      : routeIssues
+        ? `  (${routeIssues} issue${routeIssues > 1 ? "s" : ""})`
+        : "";
+    console.log(`  ${mark} ${f}${note}`);
   }
 
   console.log(`\n→ Auditing ${CONTENT_FILE}`);
@@ -358,7 +455,7 @@ async function main() {
     `  ${contentIssues === 0 ? "✓" : "✗"} ${CONTENT_FILE}${contentIssues ? `  (${contentIssues} issue${contentIssues > 1 ? "s" : ""})` : ""}`,
   );
 
-  const report = buildReport(files);
+  const report = buildReport(files, redirectFiles);
   await mkdir("reports", { recursive: true });
 
   // 只有實質內容真的變了才重寫。

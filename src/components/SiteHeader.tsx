@@ -12,16 +12,23 @@ export function SiteHeader() {
   const { lang, setLang } = useLang();
   const { ui } = useSiteContent();
 
+  /**
+   * 五格。2026-09-02 從九格收束而來，兩組合併：
+   *
+   *   /shop        ← 選購 ＋ 地方刊物展 ＋ 主理人的選品（同一頁三個分頁）
+   *   /about       ← 關於 ＋ 來店資訊 ＋ 聯絡
+   *
+   * 被收掉的四個網址（/publications /curated /visit /contact）都還在，各自轉址到
+   * 新家 —— 它們散在 Google 商家、名片與社群貼文上，刪掉就是 404。
+   *
+   * 標籤走 nav.select / nav.aboutStore 這兩個新 key，理由見 src/i18n/strings.ts。
+   */
   const NAV = [
     { to: "/", label: t(ui.nav.home), exact: true },
-    { to: "/shop", label: t(ui.nav.shop), exact: false },
+    { to: "/shop", label: t(ui.nav.select), exact: false },
     { to: "/events", label: t(ui.nav.events), exact: false },
-    { to: "/publications", label: t(ui.nav.publications), exact: false },
     { to: "/journeys", label: t(ui.nav.journeys), exact: false },
-    { to: "/curated", label: t(ui.nav.curated), exact: false },
-    { to: "/visit", label: t(ui.nav.visit), exact: false },
-    { to: "/about", label: t(ui.nav.about), exact: false },
-    { to: "/contact", label: t(ui.nav.contact), exact: false },
+    { to: "/about", label: t(ui.nav.aboutStore), exact: false },
   ] as const;
 
   return (

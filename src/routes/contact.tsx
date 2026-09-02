@@ -1,141 +1,20 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { PageShell, PageHeader } from "@/components/PageShell";
-import { useT } from "@/i18n/LanguageContext";
-import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { fetchPage, pageText, eyebrowOf } from "@/lib/cms";
-import { useSiteContent } from "@/lib/site-content";
-
-/** Fallback copy — used only when the Supabase read fails. */
-const PAGE = {
-  metaTitle: {
-    zh: "聯絡 Contact｜小時光書店 Interval Books",
-    en: "Contact｜Interval Books",
-    ja: "お問合せ｜小時光書店 Interval Books",
-  },
-  metaDescription: {
-    zh: "Email、Instagram、Facebook、LINE——歡迎與我們聯繫。",
-    en: "Reach us via email, Instagram, Facebook, or LINE — we'd love to hear from you.",
-    ja: "メール、Instagram、Facebook、LINE でお気軽にご連絡ください。",
-  },
-  eyebrowSuffix: { zh: "聯絡", en: "Contact", ja: "お問合せ" },
-  title: { zh: "請與我們聯繫", en: "Reach out", ja: "ご連絡ください" },
-  intro: {
-    zh: "Email 是最直接的方式，我們會親自回覆。",
-    en: "Email is the most direct way to reach us — we'll reply personally.",
-    ja: "メールが一番確実です。一通ずつお返事します。",
-  },
-  email: { zh: "Email", en: "Email", ja: "メール" },
-  phone: { zh: "電話", en: "Phone", ja: "お電話" },
-  social: { zh: "社群", en: "Follow", ja: "フォロー" },
-  site: { zh: "官方網站", en: "Website", ja: "公式サイト" },
-};
+/**
+ * /contact —— 只剩轉址。
+ *
+ * 2026-09-02 導覽列從九格收成五格。這一頁是**純移除**，不是搬家：它上面的每一項
+ * （Email、兩支電話、官網、社群）SiteFooter 已經逐項都有，而且來源是同一份
+ * useSiteContent() —— 同一張 site_settings ／ contact_phones，不是抄過去的複本。
+ * 所以沒有東西需要搬到 /about，footer 一個字都不用改。
+ *
+ * 網址仍然保留並轉去 /about（那裡有地址、營業時間、地圖與 Email 按鈕），理由與
+ * /visit 相同：外部連結不該因為站內重整而變成 404。
+ *
+ * 沒有 component，也沒有 useDocumentMeta —— 說明見 src/routes/publications.tsx。
+ */
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/contact")({
-  loader: async () => ({ page: await fetchPage("contact") }),
-  head: ({ loaderData }) => {
-    const p = pageText(loaderData?.page ?? null);
-    return {
-      meta: [
-        { title: p.metaTitle(PAGE.metaTitle).zh },
-        { name: "description", content: p.metaDescription(PAGE.metaDescription).zh },
-        { property: "og:title", content: p.ogTitle(PAGE.title).zh },
-        { property: "og:description", content: p.metaDescription(PAGE.metaDescription).zh },
-      ],
-    };
+  beforeLoad: () => {
+    throw redirect({ to: "/about", statusCode: 301 });
   },
-  component: Contact,
 });
-
-function Contact() {
-  const t = useT();
-  const { page } = Route.useLoaderData();
-  const p = pageText(page);
-  const { contactEmail, siteUrl, phones, social } = useSiteContent();
-
-  useDocumentMeta({
-    title: p.metaTitle(PAGE.metaTitle),
-    description: p.metaDescription(PAGE.metaDescription),
-    ogTitle: p.ogTitle(PAGE.title),
-  });
-
-  return (
-    <PageShell>
-      <PageHeader
-        eyebrow={eyebrowOf(page, "Contact", t(page?.eyebrowSuffix ?? PAGE.eyebrowSuffix))}
-        title={t(p.title(PAGE.title))}
-        intro={t(p.intro(PAGE.intro))}
-      />
-
-      <section className="container-editorial pb-32 grid gap-16 md:grid-cols-2 max-w-4xl">
-        <div>
-          <p className="eyebrow text-2xl">{t(p.block("email", PAGE.email))}</p>
-          <a
-            href={`mailto:${contactEmail}`}
-            className="display mt-4 block text-2xl md:text-3xl hover-underline break-all"
-          >
-            {contactEmail}
-          </a>
-
-          <p className="eyebrow text-2xl mt-10">{t(p.block("phone", PAGE.phone))}</p>
-          <ul className="mt-4 space-y-2 text-lg">
-            {phones.map((phone) => (
-              <li key={phone.tel}>
-                <a href={`tel:${phone.tel}`} className="font-serif hover-underline">
-                  {phone.display}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="space-y-10">
-          <div>
-            <p className="eyebrow text-2xl">{t(p.block("site", PAGE.site))}</p>
-            <a
-              href={siteUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 block text-base hover-underline"
-            >
-              {siteUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-            </a>
-          </div>
-          <div>
-            <p className="eyebrow text-2xl">{t(p.block("social", PAGE.social))}</p>
-            <ul className="mt-4 space-y-2 text-base">
-              <li>
-                <a
-                  href={social.instagram}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover-underline"
-                >
-                  Instagram　@intervalbookstw
-                </a>
-              </li>
-              <li>
-                <a
-                  href={social.facebook}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover-underline text-muted-foreground"
-                >
-                  Facebook
-                </a>
-              </li>
-              <li>
-                <a
-                  href={social.line}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover-underline text-muted-foreground"
-                >
-                  LINE
-                </a>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
-    </PageShell>
-  );
-}

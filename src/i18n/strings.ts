@@ -18,6 +18,22 @@ export const UI = {
     contact: { zh: "聯絡", en: "Contact", ja: "お問合せ" },
     curation: { zh: "策展與合作", en: "Curation & Collaboration", ja: "キュレーション" },
     privacy: { zh: "隱私權聲明", en: "Privacy", ja: "プライバシー" },
+
+    // ── 導覽列合併後的兩格（2026-09-02，九格 → 五格）──────────────────────
+    //
+    // 刻意用**新的 key**，而不是改寫上面的 `shop` / `about`。
+    //
+    // cms.ts 的 buildUi() 先鋪這一份靜態表，再讓 ui_strings 那張表的每一列覆蓋上去
+    // （src/lib/cms.ts buildUi）。supabase/seed.sql:57 已經在正式庫塞了
+    // ('nav','about') = 「關於」；改寫這裡的 about 值，畫面上仍然會是資料庫那一份，
+    // 而且改的人看不出來為什麼沒生效。新 key 在 ui_strings 裡沒有對應列，所以
+    // 一定走這裡的值 —— 之後客戶想改，往 ui_strings 補一列即可（後台的
+    // /admin/strings 只編既有列，不新增）。
+    //
+    // 舊 key 一個都沒刪：index.tsx 拿 nav.curated / nav.visit 當區塊標題用，
+    // SiteFooter 拿 nav.curation / nav.privacy，刪掉會直接壞掉。
+    select: { zh: "選物", en: "Selection", ja: "セレクト" },
+    aboutStore: { zh: "關於小時光", en: "About Interval Books", ja: "小時光について" },
   },
 
   footer: {

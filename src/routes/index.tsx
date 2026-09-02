@@ -262,8 +262,11 @@ function Index() {
             <p className="mt-6 max-w-md text-base leading-relaxed text-foreground/75 whitespace-pre-line">
               {t(p.block("entries.curatedBody", ENTRIES.curatedBody))}
             </p>
+            {/* 主理人的選品 2026-09-02 併進「選物」的分頁。/curated 仍然轉址得過來，
+                但首頁是站內連結，直接指向新家，不必多繞一次 301。 */}
             <Link
-              to="/curated"
+              to="/shop"
+              search={{ tab: "curated" }}
               className="mt-8 inline-block tracking-widest text-clay hover-underline text-base"
             >
               {t(p.block("entries.curatedCta", ENTRIES.curatedCta))} →
@@ -300,7 +303,8 @@ function Index() {
               >
                 {t(ui.buttons.navigate)}
               </a>
-              <Link to="/visit" className="self-center text-clay hover-underline">
+              {/* 來店資訊 2026-09-02 併進 /about 的後半。同上：站內連結直接指向新家。 */}
+              <Link to="/about" className="self-center text-clay hover-underline">
                 {t(p.block("entries.visitFull", ENTRIES.visitFull))} →
               </Link>
             </div>
