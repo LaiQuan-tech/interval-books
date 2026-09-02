@@ -490,6 +490,44 @@ export const MIGRATION_LEDGER = Object.freeze([
     // 不會被任何既有識別字掃到，也不會誤觸其他區域。
     touches: ["admin_auth"],
   },
+  {
+    file: "0034_transfer_payment.sql",
+    note: "匯款付款方式：orders.payment_method 多一個 'transfer'、orders 加 remittance_last5／remittance_reported_at、site_settings 加四個銀行欄位（刻意不進 anon 的 column-level grant）、email_copy 認得 'remittance' 並種四筆文案、admin_mark_order_paid()（手動核銷，保留原本的 payment_method），以及 expire_unpaid_orders() 只改一行 WHERE ——匯款訂單至少留 3 天",
+    // ⚠️ 這一列的 touches 是**掃出來的**（拿 AREAS 的識別字對這一支剝過註解的 SQL），
+    //    不是憑印象寫的。八個裡有三個值得說明它們為什麼在：
+    //
+    //    · products_availability（識別字 products）與 inventory（識別字 inv.）
+    //      **是 expire_unpaid_orders() 的函式本體帶進來的**，跟 0026／0029／0031 對
+    //      admin_upsert_event_with_session() 是同一種情況：這一支用 create or replace
+    //      整支重寫它，而它的本體裡本來就寫著 public.products 的庫存還原（第 3、4 步）
+    //      與 inv.products／stock_reservations 的保留列刪除（第 4b 步）。那兩段是
+    //      0011／0020 那一份**逐字照抄**，一個字都沒改——但識別字確實在檔案裡，
+    //      少標就是少報，所以標上。同理 session_seats 與 event_registrations 是
+    //      第 4c 步帶進來的。
+    //    · email_outbox（識別字 email_copy）是 §3 帶進來的：這一支動了
+    //      email_copy_template_valid 這條 CHECK（多一個 'remittance'）並種了四筆
+    //      文案。email_outbox 那張表與 0022 的每一支函式一個字都沒動。
+    //    · cms（識別字 site_settings）與 0032 是同一個情況，而且要注意同一件事：
+    //      0032 §0.2 把 anon/authenticated 的 SELECT 收成逐欄授權，而 column-level
+    //      grant **不涵蓋日後新增的欄位**——所以這一支的四個銀行欄位天生就是 anon
+    //      讀不到的，這裡刻意不去碰那份清單。0034 §1 結尾有一段 DO block 明著驗
+    //      這件事（四欄可讀就 raise，並反向確認 short_desc 仍然可讀）。
+    //
+    //    唯一真正改變既有行為的是 order_expiry：expire_unpaid_orders() 的第 1 步
+    //    claim 條件多了一個 case（payment_method = 'transfer' 時門檻取
+    //    greatest(p_older_than, 3 days)）。簽章與 RETURNS TABLE 逐字未動——動了就
+    //    得 drop function，而 drop 會斷掉正式庫上那支每 5 分鐘的 pg_cron。
+    touches: [
+      "cms",
+      "orders_payments",
+      "order_expiry",
+      "products_availability",
+      "session_seats",
+      "event_registrations",
+      "email_outbox",
+      "inventory",
+    ],
+  },
 ]);
 
 /** 磁碟上的 migration 檔名，排序過。空目錄 = 丟例外（那不是「沒有違規」）。 */

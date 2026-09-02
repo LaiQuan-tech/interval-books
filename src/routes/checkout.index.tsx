@@ -50,6 +50,7 @@ import {
   SHIPPING_RULES,
   type CheckoutFormValues,
   type OfferedShippingMethod,
+  type PaymentMethodChoice,
 } from "@/lib/checkout";
 import { fetchPaymentOptions, placeOrder } from "@/lib/checkout-fns";
 import {
@@ -63,6 +64,7 @@ import { ParticipantFields } from "@/components/shop/ParticipantFields";
 import { submitPaymentForm } from "@/lib/payment-redirect";
 import { fetchActiveProducts, formatPrice } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
+import type { Localized } from "@/i18n/types";
 
 const PAGE = {
   metaTitle: {
@@ -145,6 +147,12 @@ const PAGE = {
     en: "You will be taken to PayUni's secure page to pay by card. Your cart is only emptied once payment succeeds.",
     ja: "送信後、PayUni の決済ページでお支払いいただきます。カートはお支払い完了後に空になります。",
   },
+  payTransfer: { zh: "銀行匯款", en: "Bank transfer", ja: "銀行振込" },
+  payTransferNote: {
+    zh: "訂單成立後會顯示匯款帳號，也會用電子信箱寄給你一份。請在 3 天內完成匯款，並回到訂單頁填寫帳號末五碼；逾期未匯款的訂單會自動取消，品項與名額會釋出。",
+    en: "The bank details appear once your order is placed, and we email you a copy. Please transfer within 3 days and come back to the order page to tell us the last five digits of your account — unpaid orders are cancelled automatically after that and the items and places are released.",
+    ja: "ご注文確定後にお振込先を表示し、メールでもお送りします。3 日以内にお振込のうえ、ご注文ページで口座番号の下 5 桁をご入力ください。期限を過ぎたご注文は自動的にキャンセルとなり、商品・お席は解放されます。",
+  },
   payOffline: {
     zh: "由我們與你聯繫付款",
     en: "Arrange payment with us",
@@ -161,6 +169,7 @@ const PAGE = {
     ja: "オンライン決済は現在ご利用いただけません。ご注文後にお支払い方法をご連絡いたします。",
   },
   invoiceSection: { zh: "電子發票", en: "Invoice", ja: "電子インボイス" },
+  submitTransfer: { zh: "送出訂單並取得匯款帳號", en: "Place order", ja: "注文して振込先を表示" },
   invoiceIntro: {
     zh: "付款完成後會自動開立電子發票，並以電子信箱通知。統編與載具送出後就不能改，請先確認。",
     en: "An e-invoice is issued automatically once payment clears, and emailed to you. A business number or carrier cannot be changed after submitting, so please check it now.",
@@ -275,6 +284,23 @@ function directProblemText(reason: DirectFailureReason) {
   }
 }
 
+/**
+ * 付款方式 → 畫面上的字。⚠️ **鍵是 PaymentMethodChoice**，所以
+ * src/lib/checkout.ts 的 PAYMENT_METHODS 多一個值而這裡忘了加字，是編譯錯誤，
+ * 不是一顆沒有標籤的 radio。這正是 0034 加第三個選項時想要的行為。
+ */
+const PAYMENT_LABELS: Record<PaymentMethodChoice, Localized> = {
+  card: PAGE.payCard,
+  transfer: PAGE.payTransfer,
+  offline: PAGE.payOffline,
+};
+
+const PAYMENT_NOTES: Record<PaymentMethodChoice, Localized> = {
+  card: PAGE.payCardNote,
+  transfer: PAGE.payTransferNote,
+  offline: PAGE.payOfflineNote,
+};
+
 export const Route = createFileRoute("/checkout/")({
   /**
    * 品項的**第二個**來源：直接結帳（活動頁 →「我要報名」）。
@@ -370,10 +396,27 @@ function Checkout() {
   // Card when it is available, otherwise the pre-gateway flow. Held outside
   // react-hook-form because it is not a validated field — it steers where the
   // browser goes next and has no bearing on what the order costs.
+  //
+  // 🔴 0034：從兩個選項變成三個之後，「這個站現在提供哪幾種付款方式」必須算出來
+  //    一次、然後同時當成**畫面上要畫哪幾顆 radio** 與**送出前的白名單**。原本
+  //    那一行 fallback（`cardAvailable ? payWith : "offline"`，:591）在兩個選項的
+  //    世界裡剛好是對的，多一個選項之後就不是了 —— 一個沒設定金流、但設定了匯款
+  //    帳戶的站，客人選了「匯款」會被那一行改寫成 "offline"，訂單變成
+  //    payment_method = NULL，匯款資訊信不寄、完成頁不顯示帳號，而客人以為他選了
+  //    匯款。所以白名單的判準改成「這個方式在不在提供清單裡」，不是「card 有沒有
+  //    開」。清單只有這一份，畫面與送出用的是同一個。
   const cardAvailable = paymentOptions.cardAvailable;
-  const [payWith, setPayWith] = useState<"card" | "offline">(
-    paymentOptions.cardAvailable ? "card" : "offline",
+  const transferAvailable = paymentOptions.transferAvailable;
+  const methodOptions = useMemo<PaymentMethodChoice[]>(
+    () => [
+      ...(cardAvailable ? (["card"] as const) : []),
+      ...(transferAvailable ? (["transfer"] as const) : []),
+      // offline 永遠在清單裡：它不需要任何設定，是這家店在金流出現之前就有的路。
+      "offline" as const,
+    ],
+    [cardAvailable, transferAvailable],
   );
+  const [payWith, setPayWith] = useState<PaymentMethodChoice>(methodOptions[0]);
   /**
    * Set once the PayUni form has been submitted; the page is navigating away.
    * Mirrored in a ref because the `finally` block runs in the same tick as the
@@ -588,7 +631,10 @@ function Checkout() {
           // Steers the next hop only. The amount PayUni is asked for is
           // recomputed server-side from public.products; nothing in this
           // payload can change it.
-          paymentMethod: cardAvailable ? payWith : "offline",
+          // 🔴 白名單是「這個方式現在有提供嗎」，不是「card 有沒有開」。見
+          //    methodOptions 那一段的註解——舊的那一行會把一個選了匯款的客人
+          //    靜靜改成 offline。
+          paymentMethod: methodOptions.includes(payWith) ? payWith : "offline",
         },
       });
 
@@ -962,9 +1008,14 @@ function Checkout() {
 
               <fieldset className="space-y-4">
                 <legend className="eyebrow text-xl">{t(PAGE.paymentSection)}</legend>
-                {cardAvailable ? (
+                {/*
+                  只剩一個選項（＝金流與匯款都沒設定，只有 offline）時不畫 radio ——
+                  一組只有一顆、而且不能不選的 radio 不是選擇，是雜訊。那個情況畫的
+                  是既有的 paymentUnavailable 說明，與 0034 之前的行為完全相同。
+                */}
+                {methodOptions.length > 1 ? (
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {(["card", "offline"] as const).map((p) => {
+                    {methodOptions.map((p) => {
                       const selected = payWith === p;
                       return (
                         <label
@@ -983,9 +1034,7 @@ function Checkout() {
                             onChange={() => setPayWith(p)}
                             className="accent-current"
                           />
-                          <span className="text-sm">
-                            {p === "card" ? t(PAGE.payCard) : t(PAGE.payOffline)}
-                          </span>
+                          <span className="text-sm">{t(PAYMENT_LABELS[p])}</span>
                         </label>
                       );
                     })}
@@ -995,9 +1044,9 @@ function Checkout() {
                     {t(PAGE.paymentUnavailable)}
                   </p>
                 )}
-                {cardAvailable && (
+                {methodOptions.length > 1 && (
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    {payWith === "card" ? t(PAGE.payCardNote) : t(PAGE.payOfflineNote)}
+                    {t(PAYMENT_NOTES[payWith])}
                   </p>
                 )}
               </fieldset>
@@ -1206,9 +1255,11 @@ function Checkout() {
                     ? t(PAGE.redirecting)
                     : submitting
                       ? t(PAGE.submitting)
-                      : cardAvailable && payWith === "card"
+                      : payWith === "card"
                         ? t(PAGE.submitPay)
-                        : t(PAGE.submit)}
+                        : payWith === "transfer"
+                          ? t(PAGE.submitTransfer)
+                          : t(PAGE.submit)}
                 </Button>
                 {redirecting && (
                   <p className="text-xs leading-relaxed text-muted-foreground">

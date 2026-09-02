@@ -128,6 +128,9 @@ import type { Localized } from "@/i18n/types";
 import {
   CheckoutError,
   computeShippingFee,
+  remittanceConfigured,
+  remittanceDueAt,
+  REMITTANCE_LAST5_RE,
   type CheckoutPayload,
   type OrderConfirmation,
   type PaymentHandoff,
@@ -135,6 +138,7 @@ import {
   type ShippingMethod,
 } from "@/lib/checkout";
 import { normalizeInvoiceChoice } from "@/lib/invoice-format";
+import { getRemittanceAccount } from "@/server/repos/site-settings";
 
 /** Columns checkout needs from public.products. Price is re-read, never trusted. */
 const PRODUCT_COLUMNS =
@@ -746,7 +750,7 @@ async function buildCardHandoff(order: PayableOrder): Promise<PaymentHandoff | n
 export async function reissuePayment(token: string): Promise<PaymentHandoff | null> {
   const { data } = await supabaseAdmin()
     .from("orders")
-    .select("id, order_no, public_token, total, status, payment_status")
+    .select("id, order_no, public_token, total, status, payment_status, payment_method")
     .eq("public_token", token)
     .maybeSingle();
   if (!data) return null;
@@ -758,11 +762,18 @@ export async function reissuePayment(token: string): Promise<PaymentHandoff | nu
     total: number;
     status: string;
     payment_status: string;
+    payment_method: string | null;
   };
 
   // Only an order that is still waiting may be paid. A paid, cancelled or
   // shipped order must never be handed a live payment form.
   if (order.status !== "pending" || order.payment_status === "paid") return null;
+
+  // 🔴 匯款訂單不可以被推進刷卡流程（0034）。這個 server function 是公開的，
+  //    只要有 token 就叫得動 —— 完成頁不再顯示「重新付款」按鈕（awaitingPayment
+  //    對 transfer 是 false）只是不畫那顆按鈕，不是一道防線。少了這一句，一張已經
+  //    匯了款的訂單可以被同一個 token 再送去刷一次卡，變成收兩次錢。
+  if (order.payment_method === "transfer") return null;
 
   return buildCardHandoff(order);
 }
@@ -792,6 +803,12 @@ export async function reissuePayment(token: string): Promise<PaymentHandoff | nu
 export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder> {
   const db = supabaseAdmin();
   const wantsCard = payload.paymentMethod === "card";
+  /**
+   * 匯款（0034）。⚠️ 它與 wantsCard 一樣**只決定去向，不決定金額** —— 下面每一個
+   * 數字都還是從 public.products 重算的。它影響三件事：orders.payment_method 寫
+   * 什麼、step 7 要不要去金流（不要）、step 7.5 要寄哪一封信。
+   */
+  const wantsTransfer = payload.paymentMethod === "transfer";
 
   // ---- step 0: has this exact attempt already succeeded? --------------------
   // This has to come before the availability pre-check, not after. A replay is
@@ -847,7 +864,10 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
       //    'free' by step 5b. The two are deliberately different values because
       //    they are different facts — NULL means money is still owed, 'free'
       //    means none was ever owed. See 0028 §1.
-      payment_method: wantsCard ? "card" : null,
+      // 'transfer'（0034）是第三種：客人要匯款到店家的固定帳戶，人工對帳。它與
+      // NULL 的差別是「錢要怎麼進來這件事已經談定了」——所以完成頁印得出帳號、
+      // 信寄得出去，而 expire_unpaid_orders() 也認得它要多留三天。
+      payment_method: wantsCard ? "card" : wantsTransfer ? "transfer" : null,
       idempotency_key: payload.idempotencyKey,
       locale: payload.locale,
       note: payload.note ?? null,
@@ -1150,6 +1170,31 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
   // throw，而且用 DELETE…RETURNING 當冪等 claim，所以多呼叫也不會壞。
   if (total === 0) await commitInventoryForOrder(order.id);
 
+  // ---- step 7.5: 下單當下的信（0034）----------------------------------------
+  // 這個站到 0033 為止**沒有任何一封信是在下單當下寄的**。四封信只有一個入口
+  // queueOrderNotifications()，而它的第一道閘門就是「payment_status 不是 paid 就
+  // 回 order_not_paid」（0022 §8）。這裡要寄的兩封信的前提正好相反：
+  //
+  //   · 匯款訂單 → 客人要收到帳號與期限，否則他不知道錢要匯去哪裡；
+  //   · 匯款／「由我們與你聯繫付款」→ 店家要知道有一張待收款的單。0032 那封是
+  //     付款成功之後才寄的，而這兩條路的訂單可能永遠走不到那一步 —— 沒有這一封，
+  //     一張 offline 訂單就是靜靜躺著，兩小時後被 expire 掉，沒有任何人知道。
+  //
+  // ⚠️ 位置在 step 7 **之後**，而且**不在 try 裡**：訂單這時候已經 durable 了，
+  //    寄信是「錦上添花」。放進上面那個 try 會讓一次 Resend 逾時變成「訂單建立
+  //    失敗、座位還回去、客人看到請再試一次」—— 而客人的錢包什麼事都沒發生，
+  //    只是他的位子沒了。triggerNotifyAfterOrderPlaced() 自己有逾時保護、自己
+  //    吞掉所有例外、而且從不 throw（同 triggerNotifyAfterPayment 的規約）。
+  //
+  // ⚠️ 刷卡訂單不走這裡：它們的通知在付款成功之後由 0032 那條路寄。免費訂單
+  //    （total = 0）也不走 —— step 5b 已經把它變成 paid，該走的是付款成功那條路。
+  //    這個判斷寫在 queueOrderPlacedNotifications() 裡（它自己重讀 payment_method），
+  //    不在這裡用 wantsTransfer 判斷：那樣才是「以資料庫那一列為準」。
+  if (!wantsCard && total > 0) {
+    const { triggerNotifyAfterOrderPlaced } = await import("@/server/notify");
+    await triggerNotifyAfterOrderPlaced(order.id);
+  }
+
   return {
     orderNo: order.order_no,
     publicToken: order.public_token,
@@ -1215,7 +1260,7 @@ export async function getOrderByToken(token: string): Promise<OrderSummary | nul
   const { data, error } = await db
     .from("orders")
     .select(
-      "id, order_no, status, payment_status, payment_method, subtotal, shipping_fee, discount, total, shipping_method, created_at",
+      "id, order_no, status, payment_status, payment_method, subtotal, shipping_fee, discount, total, shipping_method, created_at, remittance_last5, remittance_reported_at",
     )
     .eq("public_token", token)
     .maybeSingle();
@@ -1233,7 +1278,33 @@ export async function getOrderByToken(token: string): Promise<OrderSummary | nul
     total: number;
     shipping_method: ShippingMethod;
     created_at: string;
+    remittance_last5: string | null;
+    remittance_reported_at: string | null;
   };
+
+  /**
+   * 匯款資訊（0034）。只有匯款訂單才組這一包。
+   *
+   * ⚠️ 帳戶那四欄對 anon **沒有** SELECT 權限（0034 §0.4），所以它是在這裡用
+   *    service_role 讀出來、夾在這個回應裡送給瀏覽器的。這一頁本來就在
+   *    public_token 後面（24 bytes 亂數），而帳號印在信裡也印在店家的報價單上 ——
+   *    重點不是把帳號藏起來，是不要做出一個匿名可查的端點。
+   *
+   * 帳戶讀不到（沒設定、查詢失敗）就整包回 null：完成頁那一側就不顯示匯款區塊，
+   * 而不是顯示一個沒有帳號的匯款區塊。判準只有 remittanceConfigured() 一份。
+   */
+  let remittance: OrderSummary["remittance"] = null;
+  if (o.payment_method === "transfer") {
+    const account = await getRemittanceAccount();
+    if (remittanceConfigured(account) && account) {
+      remittance = {
+        account,
+        dueAt: remittanceDueAt(o.created_at),
+        last5: o.remittance_last5,
+        reportedAt: o.remittance_reported_at,
+      };
+    }
+  }
 
   const { data: itemRows } = await db
     .from("order_items")
@@ -1270,17 +1341,101 @@ export async function getOrderByToken(token: string): Promise<OrderSummary | nul
      * this value decides whether the cart is thrown away. `pending` covers the
      * shopper who is still on PayUni's page; `failed` covers the one who came
      * back after a declined card and may retry. Both must keep their cart.
+     *
+     * 🔴 匯款訂單（0034）**不算**。沒有任何金流欠我們一個答案 —— 等的是客人自己
+     *    去銀行，而那要三天，不是三秒。把 'transfer' 算進來會同時弄壞三件事：
+     *      · 完成頁印「還在等金流回覆付款結果，這通常只需要幾秒」；
+     *      · 那一頁會空轉輪詢兩分鐘（30 次請求）等一個永遠不會來的 webhook；
+     *      · 長出一顆「重新付款」按鈕，而 reissuePayment() 會把一張匯款訂單
+     *        推進刷卡流程（它本來只看 status/payment_status，看不出 method）。
+     *    購物車照樣會被清掉，跟 offline 訂單一樣 —— 訂單已經成立、品項已經保留，
+     *    客人不需要（也不應該）拿著同一車東西再結一次帳。
      */
     awaitingPayment:
       o.payment_method !== null &&
+      o.payment_method !== "transfer" &&
       o.status === "pending" &&
       (o.payment_status === "pending" || o.payment_status === "failed"),
     subtotal: o.subtotal,
     shippingFee: o.shipping_fee,
     discount: o.discount,
     total: o.total,
+    remittance,
     shippingMethod: o.shipping_method,
     createdAt: o.created_at,
     items,
   };
+}
+
+/**
+ * 客人回報匯款帳號末五碼。
+ *
+ * 授權模型與 reissuePayment() 逐字相同：認的是 orders.public_token（24 bytes 亂數，
+ * 0005 為此而生），不是訂單編號 —— 訂單編號是流水號，拿它當鑰匙等於讓任何人沿著
+ * 號碼走一遍，把每一張單都標上一組末五碼。
+ *
+ * 🔴 「只能回報一次」是**結構性的**，不是靠呼叫端自律：底下那一句 UPDATE 的 WHERE
+ *    裡帶著 `remittance_last5 is null`，所以第二次呼叫（或兩個同時送出的請求）
+ *    match 到零列，回 already_reported。這不是一個可以反覆塗改的欄位 —— 它是店家
+ *    對帳時要相信的證詞，能改就等於沒有證詞。
+ *
+ * 三道閘門全部寫在同一句 WHERE 裡（而不是先 select 再判斷再 update）：
+ *   · payment_method = 'transfer'  —— 刷卡／免費訂單沒有末五碼可言
+ *   · status = 'pending' 且 payment_status <> 'paid' —— 已經對完帳、或已經被
+ *     expire 取消的訂單不接受回報
+ *   · remittance_last5 is null —— 只能回報一次
+ * 先 select 再 update 的寫法在這三道之間各有一個空窗，而這一句沒有。
+ */
+export type RemittanceReportResult =
+  | { ok: true; last5: string; reportedAt: string }
+  | { ok: false; reason: "not_found" | "not_transfer" | "already_reported" | "bad_format" };
+
+export async function reportRemittance(
+  token: string,
+  last5: string,
+): Promise<RemittanceReportResult> {
+  // 格式在這裡擋一次、zod 在 server function 那一層擋一次、0034 的 CHECK 在資料庫
+  // 擋一次。三層是刻意的：這是客人直接輸入的自由文字，而它會被印在後台的對帳畫面上。
+  const trimmed = last5.trim();
+  if (!REMITTANCE_LAST5_RE.test(trimmed)) return { ok: false, reason: "bad_format" };
+
+  const reportedAt = new Date().toISOString();
+  const db = supabaseAdmin();
+
+  const { data, error } = await db
+    .from("orders")
+    .update({ remittance_last5: trimmed, remittance_reported_at: reportedAt })
+    .eq("public_token", token)
+    .eq("payment_method", "transfer")
+    .eq("status", "pending")
+    .neq("payment_status", "paid")
+    .is("remittance_last5", null)
+    .select("id");
+
+  if (error) {
+    // ⚠️ code + message，不印整包 error —— PostgREST 會把 Postgres 的
+    //    `DETAIL: Failing row contains (…)` 帶上來，而這條路徑的那一列是 orders，
+    //    滿滿都是客人的個資。同 step 5 / step 5b 的規矩。
+    console.error(`[orders] 回報末五碼失敗：${error.code} ${error.message}`);
+    return { ok: false, reason: "not_found" };
+  }
+  if (Array.isArray(data) && data.length > 0) return { ok: true, last5: trimmed, reportedAt };
+
+  // CAS 沒 match 到。重讀一次分辨原因 —— 「這張單不存在」與「你已經回報過了」對
+  // 客人的意義完全不同（後者要看到自己填過的號碼，不是一句「找不到訂單」）。
+  const { data: fresh } = await db
+    .from("orders")
+    .select("payment_method, remittance_last5")
+    .eq("public_token", token)
+    .maybeSingle();
+  if (!fresh) return { ok: false, reason: "not_found" };
+  const row = fresh as unknown as {
+    payment_method: string | null;
+    remittance_last5: string | null;
+  };
+  if (row.payment_method !== "transfer") return { ok: false, reason: "not_transfer" };
+  if (row.remittance_last5 !== null) return { ok: false, reason: "already_reported" };
+  // 剩下的是「已付款」或「已取消」：兩者都不該再收回報，而且對客人來說答案一樣
+  // ——這張單不在可以回報的狀態。不分辨得更細，免得這個端點變成訂單狀態的探針。
+  return { ok: false, reason: "not_transfer" };
 }

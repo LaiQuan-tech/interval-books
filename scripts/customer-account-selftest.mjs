@@ -182,7 +182,22 @@ assertMigrationDependencies(check, MIG_DIR, {
   // repos/email-outbox.ts / repos/site-settings.ts）。「fetchMyRegistrations 查的
   // event_registrations 欄位形狀、reserve_session_seat 的七步」同樣不受影響。
   // 原樣成立。
-  reviewedThrough: "0032_admin_order_notify.sql",
+  // ── 0034_transfer_payment.sql 的重讀結論 ───────────────────────────────────
+  // 0034 加匯款付款方式。它動到這支依賴的四個區域，但這支守的是「客人帳號認領訪客
+  // 訂單」（claim_guest_orders，0030）與會員中心的讀取範圍，逐條對過：
+  //   · orders_payments——0034 對 orders 做的是：payment_method 的 CHECK 多一個值、
+  //     加兩個 remittance_* 欄位（都可為 null，都有 default null）、加一支
+  //     admin_mark_order_paid()。**沒有碰 user_id、customer_email、public_token**，
+  //     也沒有 create or replace claim_guest_orders()。認領的三道閘一個字都沒動。
+  //   · order_expiry——只改 expire_unpaid_orders() 第 1 步 claim 條件裡的一行
+  //     （匯款訂單門檻取 greatest(p_older_than, 3 days)）。它挑的仍然是同一組欄位，
+  //     RETURNS TABLE 逐字未變。會員中心看得到的訂單集合不因此改變——被延後回收的
+  //     那些單本來就還在 pending，本來就看得到。
+  //   · session_seats / event_registrations——0034 對這兩區的「接觸」全部來自
+  //     expire_unpaid_orders() 函式本體那段 0020 的逐字照抄（第 4c 步），沒有任何
+  //     新寫的程式碼落在那裡。
+  // 原樣成立。
+  reviewedThrough: "0034_transfer_payment.sql",
 });
 
 // =============================================================================

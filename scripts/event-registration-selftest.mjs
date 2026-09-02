@@ -51,6 +51,7 @@ import {
   assertMigrationDependencies,
   readMigrationFiles,
 } from "./lib/migration-ledger.mjs";
+import { latestDefinition } from "./lib/live-definition.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -314,7 +315,34 @@ assertMigrationDependencies(check, MIG_DIR, {
   // RETURNS TABLE 形狀、event_registrations 的零 grant、SessionPicker 的
   // showSeatsRemaining prop，0032 一個字都沒提到。位置快照（0025 在原位）也不受
   // 影響——0032 是往後接的第 32 支。原樣成立。
-  reviewedThrough: "0032_admin_order_notify.sql",
+  // ── 0034_transfer_payment.sql 的重讀結論 ───────────────────────────────────
+  // 🔴 0034 是 0020 之後**第一支重寫 expire_unpaid_orders() 的 migration**，所以
+  //    下面 [5] 那一整段（RETURNS TABLE 的形狀）這次是真的有東西要看，不是例行公事。
+  //    逐條確認過：
+  //
+  //   · 簽章（p_older_than interval default '30 minutes', p_limit integer default 200）
+  //     與 RETURNS TABLE（expired_id / expired_order_no / restored_stock /
+  //     restored_seats）**逐字未動**。[5] 現在把 0011 / 0020 / 0034 三份抽出來互相
+  //     比對，三份必須相等。
+  //   · 函式本體是 0020 那一份逐字照抄，唯一的差別是第 1 步 claim 條件裡的
+  //     `and o.created_at < now() - …` 那一行：匯款訂單（payment_method = 'transfer'）
+  //     的門檻改成 greatest(p_older_than, interval '3 days')。第 4c 步（刪
+  //     event_registrations、扣 event_sessions.seats_taken，data-modifying CTE、
+  //     for no key update）一個字都沒改——下面那三條斷言現在也對 0034 那一份跑。
+  //   · reserve_session_seat() / release_session_seat() **完全沒被碰**（0034 沒有
+  //     create or replace 它們）。products_availability 與 session_seats 這兩個標籤
+  //     是函式本體逐字照抄帶進來的，與 0026／0029／0031 對
+  //     admin_upsert_event_with_session() 是同一種情況。
+  //   · orders_payments——多一個 payment_method 值、兩個 remittance_* 欄位、一支
+  //     admin_mark_order_paid()（狀態組合與 markOrderPaid 相同，但保留原本的
+  //     payment_method）。「佔了 N 個位子 ⇔ 有 N 位參加者」那條不變量不經過
+  //     payment_method：座位是在下單當下由 reserve_session_seat() 佔的，與付款方式
+  //     無關。0034 唯一改變的是「這張單什麼時候會被回收」，而回收的**做法**（4c 那
+  //     一句）沒變。
+  //   · cron_jobs——0034 **沒有動任何排程**。正式庫那支每 5 分鐘的
+  //     expire-unpaid-orders 呼叫的是同一個函式名、同一組參數，換的只是函式本體。
+  // 原樣成立。
+  reviewedThrough: "0034_transfer_payment.sql",
 });
 for (const f of [
   "0004_commerce_products.sql",
@@ -494,6 +522,81 @@ checkTrue(
   "0011 的 4b 保留列刪除還在",
   expireBody0020.includes("delete from public.stock_reservations"),
 );
+
+// ---------------------------------------------------------------------------
+// [5b] 🔴 **資料庫裡實際在跑的那一份**（不是釘死在 0020 的那一份）
+// ---------------------------------------------------------------------------
+// 上面那幾條驗的是 0020 那個檔案，而 0020 是已套用的 migration ——規約禁止再改它
+// 一個字，所以它們會**永遠**是綠的。0034 是 0020 之後第一支用 create or replace
+// 重寫這支函式的 migration，也就是說：從 0034 那一刻起，上面那幾條驗的已經是一份
+// 沒有任何資料庫在跑的定義。這正是 scripts/lib/live-definition.mjs 檔頭寫的那個
+// 假陽性形狀（「斷言釘死單一檔案路徑，程式碼搬家後靜默失去覆蓋」）。
+//
+// 修法不是把 0020 改成 0034（那只是把地雷往後埋一期），是讓斷言**自己去找**現在
+// 生效的那一份。下面每一條都對 live 那一份跑。
+const liveExpire = latestDefinition(MIG_DIR, "expire_unpaid_orders", stripComments);
+checkTrue("反空殼：切得到現在生效的 expire 定義", liveExpire.body.length > 1000);
+console.log(`      （現在生效的 expire_unpaid_orders 來自 ${liveExpire.file}）`);
+
+// 🔴 這一條是整組最重要的：create or replace 改不了 RETURNS TABLE 的形狀，要改就
+//    得先 drop function，而 drop 會斷掉正式庫上那支每 5 分鐘的 pg_cron。所以現在
+//    生效的那一份，它的回傳形狀必須與 0011 逐字相同。
+const shapeLive = returnsTableBlock(liveExpire.body);
+checkTrue("抽得出 live 版的 returns table 區塊", shapeLive.length > 60);
+check("🔴 live 版的回傳形狀與 0011 逐字相同", shapeLive, shape0011);
+// 參數簽章也不准動（drop 的另一個理由）。
+checkTrue(
+  "live 版的參數簽章逐字未變",
+  /p_older_than interval default '30 minutes',\s*\n?\s*p_limit\s+integer\s+default 200/.test(
+    liveExpire.body,
+  ),
+);
+
+// 0020 訂下的三件事，在 live 那一份裡必須還在。
+checkTrue("live 版還有第 4c 步（放掉場次名額）", liveExpire.body.includes("event_registrations"));
+checkTrue(
+  "live 版的 4c 仍然是 data-modifying CTE（刪人與扣位子同一句）",
+  /with freed as \([\s\S]{0,300}returning r\.session_id[\s\S]{0,300}update public\.event_sessions/.test(
+    liveExpire.body,
+  ),
+);
+checkTrue(
+  "live 版的 4b 保留列刪除還在",
+  liveExpire.body.includes("delete from public.stock_reservations"),
+);
+check(
+  "live 版的 4c 也用 for no key update（升級成 for update 就是死鎖）",
+  /from public\.event_sessions s[\s\S]{0,300}for update;/.test(liveExpire.body),
+  false,
+);
+
+// 0034 的那一行。匯款訂單至少留 3 天 —— 沒有它，客人隔天去銀行匯款時訂單早就被
+// 取消、位子還給別人了，而且全程沒有任何錯誤訊息（0034 §0.1）。
+checkTrue(
+  "🔴 匯款訂單的過期門檻至少 3 天（0034）",
+  /payment_method = 'transfer'[\s\S]{0,160}greatest\(p_older_than, interval '3 days'\)/.test(
+    liveExpire.body,
+  ),
+);
+// greatest() 不是 3 days 直接寫死：日後有人手動用更長的區間清理時，匯款訂單不可以
+// 反而被更早收走。
+checkTrue(
+  "門檻用 greatest(p_older_than, …)，不是直接寫死 3 days",
+  /greatest\(p_older_than,/.test(liveExpire.body),
+);
+// 其他付款方式走 else，門檻仍然是 p_older_than —— 刷卡訂單不可以被順手延後。
+checkTrue(
+  "非匯款訂單的門檻仍然是 p_older_than（else 那一支）",
+  /else p_older_than end\)/.test(liveExpire.body),
+);
+// 這個常數與前端／信件用的必須一致，否則頁面上寫「3 天內匯款」而排程第 2 天就收。
+{
+  const checkoutTs = readFile(join(ROOT, "src/lib/checkout.ts"));
+  checkTrue(
+    "🔴 REMITTANCE_DUE_DAYS 與 SQL 的 3 days 一致",
+    /export const REMITTANCE_DUE_DAYS = 3;/.test(checkoutTs),
+  );
+}
 
 // =============================================================================
 // [6] product_availability 的活動分支改讀場次（漏了會 fail-open）

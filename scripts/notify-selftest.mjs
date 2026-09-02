@@ -301,7 +301,34 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 斷言邏輯本身沒有改動；要不要另外新增第四條驗 orderNotifyAdmin 前綴，屬於
   // 「改斷言」的範疇，這裡不擅自加，留給任務清單裡的「真正衝突」欄位說明）。
   // 原樣成立。
-  reviewedThrough: "0032_admin_order_notify.sql",
+  // ── 0034_transfer_payment.sql 的重讀結論 ───────────────────────────────────
+  // 🔴 0034 對這支自檢是這幾期以來影響最大的一支：它加了**這個站第一條不在「付款
+  //    成功之後」觸發的寄信路徑**。逐條對過：
+  //
+  //   · email_outbox——0034 放寬 email_copy_template_valid（多一個 'remittance'）
+  //     並種四筆文案。email_outbox 那張表、claim_email_batch()、finish/fail、
+  //     purge_sent_email_bodies()、enqueue_order_email()、enqueue_registration_emails()、
+  //     enqueue_admin_order_email()、claim_order_notify() **一支都沒有被重寫**。
+  //     0034 的兩封新信刻意**重用** enqueue_order_email() 與 enqueue_admin_order_email()
+  //     ——它們要的東西（同一張訂單的收件人、site_settings 的店家信箱、dedupe_key
+  //     的 unique）與既有那幾封一模一樣，差別只在呼叫端組的 dedupe_key 前綴。
+  //   · 🔴 claim_order_notify() 的閘門 1（payment_status 必須已結清）**沒有被放寬**，
+  //     這是這一期最該確認的一件事。新路徑（queueOrderPlacedNotifications）是**第二
+  //     條路**，不是第一條路的例外。下面新增了一條斷言明著守它。
+  //   · dedupe_key——多兩個前綴（`remittance:` 與 `order_placed_admin:`）。
+  //     `order_placed_admin:` 必須與 0032 的 `order_notify_admin:` 分開，否則同一張
+  //     匯款訂單付款後那封「已收款」會撞 key 變成 no-op。下面新增了對此的斷言。
+  //   · orders_payments / order_expiry / session_seats / event_registrations——
+  //     這四個標籤裡，後三個全部來自 expire_unpaid_orders() 函式本體的逐字照抄；
+  //     orders_payments 是 payment_method 多一個值 + 兩個 remittance_* 欄位 +
+  //     admin_mark_order_paid()。這支自檢守的「誰收得到信」仍然只由 0021 §3 的
+  //     on_roster 定義，0034 沒有第二份條件。
+  //   · roster_pii / cron_jobs——0034 一個字都沒提到（沒有排程、沒有碰名單 view）。
+  //
+  // 這一期改動的斷言：email_copy 的反空殼比對改成掃**所有**種 email_copy 的
+  // migration（原本只讀 0022，新 key 種在 0034 會讓它直接紅）——是加強不是放寬，
+  // 見那一段的註解。
+  reviewedThrough: "0034_transfer_payment.sql",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1151,22 +1178,56 @@ if (tpl) {
   checkTrue("DB 文案蓋過內建佔位", custom.subject.startsWith("自訂主旨"));
   checkTrue("內建佔位一眼看得出還沒填", ticket.subject.includes("（待補："));
 
-  // 內建佔位的每一把 key 都要在 0022 的 seed 裡。
-  const seedBlock = (exec0022.match(/insert into public\.email_copy[\s\S]*?on conflict/) ?? [
-    "",
-  ])[0];
-  checkTrue("反空殼：切得到 email_copy 的 seed", seedBlock.length > 500);
+  // 內建佔位的每一把 key 都要在 migration 的 seed 裡，一把不多一把不少。
+  //
+  // ⚠️ 這一段原本只讀 0022 那一支的 insert。0034 把匯款信的四把 key 種在**它自己
+  //    那一支** migration 裡（既有的 migration 一個字都不能改，那是這個 repo 的
+  //    規約），於是這條比對會直接轉紅 —— 而正確的修法**不是**放寬它（例如改成
+  //    「defaultKeys 是 seedKeys 的超集」或乾脆刪掉），那等於把這個反空殼守衛拆掉：
+  //    它守的是「程式碼裡的 fallback 文案」與「資料庫裡的文案」不會分岔，而分岔
+  //    的症狀（沒有 email_copy 那張表的環境寄出跟正式站不一樣的信）沒有任何地方
+  //    看得出來。
+  //
+  //    修法是讓它**自己去找**：掃 supabase/migrations 底下每一支 insert 進
+  //    public.email_copy 的 migration，把它們的 seed key 聯集起來再比對。日後第 N
+  //    支 migration 再加文案，這一段不需要改。這與 scripts/lib/live-definition.mjs
+  //    對 admin_upsert_event_with_session() 做的是同一件事、同一個理由。
+  const seedBlocks = [];
+  for (const f of readMigrationFiles(MIG_DIR)) {
+    const code = stripComments(readFile(join(MIG_DIR, f)));
+    for (const m of code.matchAll(/insert into public\.email_copy[\s\S]*?on conflict/g)) {
+      seedBlocks.push({ file: f, block: m[0] });
+    }
+  }
+  // 反空殼三連。任何一條失守，下面那條「完全一致」都會變成拿空集合跟空集合比。
+  checkTrue(
+    "反空殼：至少掃到兩支 migration 種了 email_copy（0022 與 0034）",
+    seedBlocks.length >= 2,
+    `掃到 ${seedBlocks.length} 段：${seedBlocks.map((s) => s.file).join(", ")}`,
+  );
+  checkTrue(
+    "反空殼：0022 的 seed 仍然在掃描結果裡",
+    seedBlocks.some((s) => s.file === "0022_email_outbox_notify.sql"),
+  );
+  checkTrue(
+    "反空殼：每一段 seed 都切得到內容（不是空字串）",
+    seedBlocks.length > 0 && seedBlocks.every((s) => s.block.length > 200),
+  );
   const defaultKeys = Object.keys(tpl.DEFAULT_EMAIL_COPY).sort();
   checkTrue(
     "反空殼：DEFAULT_EMAIL_COPY 有內容",
-    defaultKeys.length >= 14,
+    defaultKeys.length >= 18,
     `${defaultKeys.length} 把`,
   );
-  const seedKeys = [...seedBlock.matchAll(/\('(\w+)', '(\w+)',/g)]
-    .map((m) => `${m[1]}.${m[2]}`)
-    .sort();
+  const seedKeys = [
+    ...new Set(
+      seedBlocks.flatMap(({ block }) =>
+        [...block.matchAll(/\('(\w+)', '(\w+)',/g)].map((m) => `${m[1]}.${m[2]}`),
+      ),
+    ),
+  ].sort();
   check(
-    "DEFAULT_EMAIL_COPY 的 key 與 0022 的 seed 完全一致",
+    "DEFAULT_EMAIL_COPY 的 key 與所有 migration 的 seed 完全一致",
     defaultKeys,
     seedKeys,
     "兩邊不同步的話，沒有那張表的環境會寄出不一樣的信",
@@ -1280,7 +1341,11 @@ if (!PG_URL) {
         create schema if not exists auth;
         create table if not exists auth.users (
           id uuid primary key default gen_random_uuid(), email text,
-          raw_user_meta_data jsonb, created_at timestamptz not null default now());
+          raw_user_meta_data jsonb, created_at timestamptz not null default now(),
+          -- 0030 的檔頭守衛要求這兩欄存在（claim_guest_orders 的兩道閘建立在它們
+          -- 上面）。少了它們，0030 會**故意**拒絕套用並丟出說明——這是對的行為，
+          -- 所以要修的是這份 stub，不是那道守衛。
+          email_confirmed_at timestamptz, deleted_at timestamptz);
         create schema if not exists storage;
         create table if not exists storage.buckets (
           id text primary key, name text, public boolean default false,
@@ -1292,12 +1357,20 @@ if (!PG_URL) {
         alter table storage.objects enable row level security;
         grant usage on schema public to anon, authenticated, service_role;
       `);
-      for (const f of migrations) {
+      // ⚠️ 套用順序必須是「0022 **之前**的 → 0022 → 0022 之後的」，不可以先把
+      //    0023 以後的全部套完再套 0022。這裡原本是一個 `for (migrations) { skip 0022 }`
+      //    的迴圈——在 0022 是最後一支的年代那是對的，但 0034 對 public.email_copy
+      //    下了 alter（那張表是 0022 建的），照舊寫法會在 0022 還沒套的時候就跑到，
+      //    直接炸在 "relation public.email_copy does not exist"。
+      const idx22 = migrations.findIndex((f) => f.startsWith("0022_"));
+      checkTrue("反空殼：找得到 0022 在 migration 序列裡的位置", idx22 > 0);
+      const applyOne = async (f) => {
         // 0008 要 pg_net + vault + pg_cron，本機沒有。跳過它不影響這一期要驗的任何東西。
-        if (f.startsWith("0008_") || f.startsWith("0022_")) continue;
+        if (f.startsWith("0008_")) return;
         const r = await q(readFile(join(MIG_DIR, f)));
         if (!r.ok) throw new Error(`套用 ${f} 失敗：${r.error.slice(0, 600)}`);
-      }
+      };
+      for (const f of migrations.slice(0, idx22)) await applyOne(f);
       checkTrue("0001–0021 套用完成（0008 跳過）", true);
 
       // ---- 0022 套用**之前**先放一張「歷史已付款訂單」------------------------
@@ -1385,6 +1458,12 @@ if (!PG_URL) {
       );
 
       await must(`delete from public.orders where id in ('${HISTORIC}','${FRESH}')`);
+
+      // 0023 以後的。放在這裡而不是前面那個迴圈裡，理由見上面 idx22 那一段；
+      // 放在 [20a] 之後而不是 0022 緊接著，是為了讓上面那幾條回填斷言驗的是
+      // 「剛套完 0022 的那一刻」——那正是它們在說的事。
+      for (const f of migrations.slice(idx22 + 1)) await applyOne(f);
+      checkTrue("0023 以後的 migration 也套用完成", true);
     }
 
     console.log("\n[21] 前置：清理殘骸並建立測試資料");

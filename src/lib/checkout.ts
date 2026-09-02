@@ -36,19 +36,70 @@ export type ProductTypeForOrder = "goods" | "book" | "event" | "journey";
 /**
  * What the shopper may ask to pay with.
  *
- * A subset of orders.payment_method's CHECK ('card','atm','cvs_cod','test_paid'):
- * only the card path is wired to PayUni, and `offline` is not a payment_method
- * at all — it writes NULL and means "we will arrange payment with you", which is
- * what this shop did before the gateway existed and what it falls back to when
- * PayUni is not configured.
+ * A subset of orders.payment_method's CHECK
+ * ('card','atm','cvs_cod','test_paid','free','transfer'):
+ *
+ *   card      → the gateway path (黑貓 PAY / PayUni). Writes 'card'.
+ *   transfer  → 匯款：the shopper wires money to the shop's own fixed bank
+ *               account and reports the last five digits; the shop reconciles
+ *               by hand (0034). Writes 'transfer'. **NOT the same as 'atm'** —
+ *               that value means "the gateway minted a virtual account number
+ *               and will reconcile it automatically" (src/server/blackcat.ts),
+ *               which is a different thing with a different failure mode.
+ *   offline   → not a payment_method at all: it writes NULL and means "we will
+ *               arrange payment with you", which is what this shop did before
+ *               the gateway existed and what it falls back to when no gateway
+ *               is configured.
  *
  * ⚠️ This field must never influence money. Prices, shipping and the total are
  * re-read from public.products on the server (see src/server/repos/orders.ts);
  * choosing a payment method changes where the shopper is sent next and nothing
  * else.
  */
-export const PAYMENT_METHODS = ["card", "offline"] as const;
+export const PAYMENT_METHODS = ["card", "transfer", "offline"] as const;
 export type PaymentMethodChoice = (typeof PAYMENT_METHODS)[number];
+
+/**
+ * 匯款期限：下單 + 3 天。
+ *
+ * 🔴 這個數字**必須**與 supabase/migrations/0034 的 expire_unpaid_orders() 裡的
+ *    `greatest(p_older_than, interval '3 days')` 一致。兩邊分岔的後果是完成頁與信
+ *    上寫著「3 天內匯款」，而排程在第 2 天就把訂單連同座位一起收走了 —— 客人照著
+ *    我們寫的期限去匯款，錢進來時訂單已經不存在。
+ *
+ * scripts/notify-selftest.mjs 有一條把這個常數拿去 0034 的 SQL 裡對的斷言。
+ */
+export const REMITTANCE_DUE_DAYS = 3;
+
+/** 匯款帳戶。四個欄位都空＝店家還沒設定，前端就不顯示匯款選項。 */
+export type RemittanceAccount = {
+  bankName: string;
+  bankCode: string;
+  bankAccount: string;
+  accountName: string;
+};
+
+/** 這個站有沒有可以顯示的匯款帳戶。戶名與帳號是最低限度——少了任何一個都匯不了款。 */
+export function remittanceConfigured(account: RemittanceAccount | null | undefined): boolean {
+  if (!account) return false;
+  return account.bankAccount.trim() !== "" && account.accountName.trim() !== "";
+}
+
+/**
+ * 匯款期限的 ISO 字串。輸入是訂單的 created_at。
+ *
+ * 純函式（沒有 `new Date()` 的隱含現在時間），所以測得起來：見
+ * scripts/notify-selftest.mjs。壞掉的日期字串回 null 而不是 Invalid Date —— 一個
+ * 印著「請於 Invalid Date 前完成匯款」的頁面比一個沒有印期限的頁面糟。
+ */
+export function remittanceDueAt(createdAtIso: string): string | null {
+  const t = Date.parse(createdAtIso);
+  if (Number.isNaN(t)) return null;
+  return new Date(t + REMITTANCE_DUE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** 末五碼的唯一格式定義。前端、server function 與 0034 的 CHECK 三處共用同一條規則。 */
+export const REMITTANCE_LAST5_RE = /^[0-9]{5}$/;
 
 /**
  * A gateway hand-off, as the browser must perform it.
@@ -728,8 +779,28 @@ export type OrderConfirmation = {
    * shoppers whose payment failed in front of an empty cart with nothing to
    * retry. Derived on the server from the order's own columns; never from a
    * URL parameter the gateway might have set.
+   *
+   * ⚠️ 匯款訂單（payment_method = 'transfer'）**不算**在等付款結果：沒有任何金流
+   *    欠我們一個答案，等的是客人自己去銀行。把它算進來會有三個後果，每一個都是
+   *    錯的 —— 完成頁會印「還在等金流回覆」、會空轉輪詢兩分鐘、而且會長出一顆
+   *    「重新付款」按鈕把匯款訂單推去刷卡。見 getOrderByToken()。
    */
   awaitingPayment: boolean;
+  /**
+   * 匯款資訊。只有 payment_method = 'transfer' 的訂單才不是 null（0034）。
+   *
+   * ⚠️ 帳戶資料從 site_settings 讀，而那四欄對 anon **沒有** SELECT 權限
+   *    （0034 §0.4）—— 所以它是由 server function 用 service_role 讀出來、
+   *    夾在這一包裡送給瀏覽器的，不是瀏覽器自己去查表。
+   */
+  remittance: {
+    account: RemittanceAccount;
+    /** ISO；下單 + REMITTANCE_DUE_DAYS 天。 */
+    dueAt: string | null;
+    /** 客人回報過的帳號末五碼。null ＝ 還沒回報。 */
+    last5: string | null;
+    reportedAt: string | null;
+  } | null;
   subtotal: number;
   shippingFee: number;
   discount: number;

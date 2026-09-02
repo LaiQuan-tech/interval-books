@@ -48,6 +48,7 @@ import {
   finishEmail,
   finishOrderNotify,
   getOrderForNotify,
+  getOrderPublicToken,
   loadEmailCopy,
   loadOrderLocales,
   notifyBacklog,
@@ -59,14 +60,18 @@ import {
 } from "@/server/repos/email-outbox";
 import { loadPaidRoster, loadPaidRosterByOrder } from "@/server/repos/event-registrations";
 import { getEventSessionById } from "@/server/repos/event-sessions";
+import { getRemittanceAccount } from "@/server/repos/site-settings";
+import { publicUrlFor } from "@/server/public-url";
 import {
   maskEmail,
   renderAdminOrderNotificationEmail,
   renderOrderPaidEmail,
   renderRegistrationTicketEmail,
+  renderRemittanceEmail,
   renderSessionReminderEmail,
   type SessionBrief,
 } from "@/lib/email-templates";
+import { remittanceConfigured, remittanceDueAt } from "@/lib/checkout";
 import type { Lang } from "@/i18n/types";
 
 export type NotifyOutcome =
@@ -81,6 +86,19 @@ export const dedupeKeys = {
     `session_reminder:${sessionId}:${registrationId}`,
   /** 0032：店家的新訂單／新報名通知。一張訂單一封，跟 orderPaid 用同一個實體 id。 */
   orderNotifyAdmin: (orderId: string) => `order_notify_admin:${orderId}`,
+  /** 0034：匯款資訊信（客人），下單當下寄。 */
+  remittance: (orderId: string) => `remittance:${orderId}`,
+  /**
+   * 0034：店家的「有一筆待收款的新訂單」通知，**下單當下**寄。
+   *
+   * 🔴 前綴必須與 orderNotifyAdmin 不同。同一張匯款訂單會先走這裡（下單當下），
+   *    店家對完帳標記已付款之後再走 orderNotifyAdmin（付款成功）——兩者共用 key
+   *    的話，第二封會撞 dedupe_key 的 unique 變成 no-op，店家從此再也收不到任何
+   *    一張匯款／待聯繫訂單的「已收款」通知，而 email_outbox 裡看起來一切正常
+   *    （那一列確實存在，只是內容是三天前那封「有新單」）。見 0034 §0.6。
+   *    scripts/notify-selftest.mjs 對真的 email_outbox 跑過這一條。
+   */
+  orderPlacedAdmin: (orderId: string) => `order_placed_admin:${orderId}`,
 };
 
 // -----------------------------------------------------------------------------
@@ -182,6 +200,9 @@ async function queueWithClaim(orderId: string): Promise<NotifyOutcome> {
       );
     }
     const adminMail = renderAdminOrderNotificationEmail({
+      // 0034：這條路永遠是「付款成功之後」——它跑在 claim_order_notify() 之內，
+      // 而那道閘門的第一句就是「訂單必須已經結清」（0022 §8 閘門 1）。
+      stage: "afterPayment",
       orderNo: order.orderNo,
       total: order.total,
       paymentMethod: order.paymentMethod,
@@ -249,6 +270,212 @@ async function queueWithClaim(orderId: string): Promise<NotifyOutcome> {
   }
   console.info(`[notify] 已排信 order=${order.orderNo} queued=${queued}`);
   return { ok: true, queued, adopted: false };
+}
+
+// -----------------------------------------------------------------------------
+// 下單當下排信（0034）—— 這個站第一條不在「付款成功之後」觸發的路徑
+// -----------------------------------------------------------------------------
+
+/**
+ * 訂單成立當下該寄的信。**永不 throw。**
+ *
+ * 🔴 為什麼不能塞進 queueOrderNotifications()：那一支的第一句是 claimOrderNotify()，
+ *    而它的閘門 1 就是 `payment_status <> 'paid' → order_not_paid`（0022 §8）。
+ *    這裡要寄的兩封信的前提正好相反 —— **錢還沒進來**。放寬那道閘門是錯的修法：
+ *    它守的是「沒收到錢不要告訴客人收到錢了」，這條規則沒有問題。所以這是第二條
+ *    路，不是第一條路的例外。見 0034 §0.5。
+ *
+ * 排幾封（都是「有才排」，沒有就安靜跳過）：
+ *   · payment_method = 'transfer' → 客人 1 封匯款資訊信
+ *   · payment_method = 'transfer' 或 NULL（＝「由我們與你聯繫付款」）
+ *     → 店家 1 封「有一筆待收款的新訂單」
+ *
+ * 刷卡訂單不走這裡（它們有金流頁可以看，而店家的通知在付款成功之後由 0032 那條路
+ * 寄）。免費訂單（total = 0）也不走這裡——它在 step 5b 就已經是 paid 了，該走的是
+ * 付款成功那條路。
+ *
+ * 冪等：兩層。createOrder() 頂端的 idempotency_key replay 短路讓重送的結帳請求
+ * 根本不會走到這裡；真的走到了，email_outbox.dedupe_key 的 unique 讓它變成 no-op。
+ * 這與既有四封信是同一個保證，不是新機制。
+ *
+ * ⚠️ 這一支**沒有** claim。claim 在 0022 那條路上省的是「重送的 webhook 讓同一批
+ *    工作跑三遍」，而這條路的觸發者是結帳請求本身，已經被 idempotency_key 擋在
+ *    更前面了。多開一道 claim 只會多一張要維護的 order_post_payment_log 列，
+ *    而且會與 'notify' 那一步的語意混在一起。
+ */
+export async function queueOrderPlacedNotifications(orderId: string): Promise<NotifyOutcome> {
+  try {
+    const loaded = await getOrderForNotify(orderId);
+    if (!loaded) return { ok: false, reason: "order_not_found" };
+    const { order, items } = loaded;
+
+    const isTransfer = order.paymentMethod === "transfer";
+    const isOffline = order.paymentMethod === null;
+    if (!isTransfer && !isOffline) return { ok: true, queued: 0, adopted: false };
+
+    const sessionIds = [...new Set(items.map((i) => i.sessionId).filter((s): s is string => !!s))];
+    const sessions = await loadSessionBriefs(sessionIds);
+    let queued = 0;
+
+    // ---- 1. 客人的匯款資訊信（只有匯款訂單有）-------------------------------
+    // ⚠️ 自己一個 try/catch：它失敗不可以害得下面店家那封也排不進去（那是兩件
+    //    獨立的事），更不可以往上丟讓訂單成立失敗。同 0032 在這個檔案裡的做法。
+    if (isTransfer) {
+      try {
+        const account = await getRemittanceAccount();
+        // 🔴 這封信裡有一條「回訂單頁填末五碼」的連結，而網址來自 SITE_URL。
+        //    `SITE_URL` **從來沒有設在 Vercel 上**過一次，而那一次讓這個站掉了一張
+        //    NT$1,800 的單（src/server/public-url.ts 有整段紀錄）。組不出可用的
+        //    公開網址時，正確的行為是**不寄這封信**：一封連結指向 localhost 的信在
+        //    我們這一側完全沒有錯誤（寄出成功、log 乾淨），只有客人點下去打不開，
+        //    等於整個末五碼回報功能不存在，而且沒有任何人會發現。
+        //
+        // ⚠️ 不寄信**不會**讓訂單失敗。這一整段跑在 createOrder() 的 step 7.5，
+        //    訂單那時候已經 durable、座位已經鎖住；這裡回什麼都不影響它。客人當下
+        //    就在完成頁上，帳號與回填欄位在那一頁看得到——信是備份，不是唯一出口。
+        const token = await getOrderPublicToken(orderId);
+        const orderUrl = token ? publicUrlFor("/checkout/complete", { token }) : null;
+        if (orderUrl === null) {
+          // ⚠️ error 不是 warn，而且明著說出兩件事：為什麼不寄、以及訂單沒事。
+          //    這是「吵的失敗」——比一封寄出去卻沒有人點得開的信好得多。
+          console.error(
+            `[notify] 🚨 匯款資訊信不寄 order=${order.orderNo} —— ` +
+              (token
+                ? "組不出可用的公開網址（SITE_URL 沒設、不是 https、或指向 localhost/*.local）。" +
+                  "請到 Vercel 設定 SITE_URL。"
+                : "讀不到這張訂單的 public_token。") +
+              " 訂單與座位不受影響，客人仍可在完成頁看到匯款帳號與回報欄位。",
+          );
+        } else if (remittanceConfigured(account) && account) {
+          const copy = await loadEmailCopy();
+          const mail = renderRemittanceEmail(
+            {
+              orderNo: order.orderNo,
+              customerName: order.customerName,
+              total: order.total,
+              bankName: account.bankName,
+              bankCode: account.bankCode,
+              bankAccount: account.bankAccount,
+              accountName: account.accountName,
+              dueAt: remittanceDueAt(order.createdAt),
+              orderUrl,
+              items: items.map((i) => ({
+                name: i.name,
+                quantity: i.quantity,
+                subtotal: i.subtotal,
+              })),
+              sessions: sessionIds
+                .map((id) => sessions.get(id))
+                .filter((s): s is SessionBrief => !!s),
+            },
+            copy,
+            order.locale,
+          );
+          // enqueueOrderEmail 就是 0022 §7 的 enqueue_order_email()：地址由 SQL 自己
+          // 從 orders.customer_email join 進來，不經過 Node。這封信要的東西與付款成功
+          // 信一模一樣（同一張訂單、同一個收件人、同一種 dedupe），沒有理由在資料庫
+          // 裡再開一支長得一樣的函式——差別只在 dedupe_key 的前綴，而那是呼叫端組的。
+          const added = await enqueueOrderEmail({
+            orderId,
+            dedupeKey: dedupeKeys.remittance(orderId),
+            subject: mail.subject,
+            text: mail.text,
+            html: mail.html,
+          });
+          if (added) queued += 1;
+        } else {
+          console.warn(`[notify] 匯款訂單但店家沒設定匯款帳戶，資訊信不寄 order=${order.orderNo}`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[notify] 匯款資訊信排入失敗 order=${order.orderNo} ${message}`);
+      }
+    }
+
+    // ---- 2. 店家的「有一筆待收款的新訂單」------------------------------------
+    // 匯款與「由我們與你聯繫付款」兩條都寄。0032 那封只在**付款成功之後**寄，
+    // 而這兩條路的訂單可能永遠不會走到那一步——沒有這一封，一張 offline 訂單就是
+    // 靜靜躺著等 expire，沒有任何人知道它存在過。
+    try {
+      const sessionParticipants = new Map<string, number>();
+      for (const it of items) {
+        if (!it.sessionId) continue;
+        sessionParticipants.set(
+          it.sessionId,
+          (sessionParticipants.get(it.sessionId) ?? 0) + it.quantity,
+        );
+      }
+      const adminMail = renderAdminOrderNotificationEmail({
+        stage: "atOrderTime",
+        orderNo: order.orderNo,
+        total: order.total,
+        paymentMethod: order.paymentMethod,
+        shippingMethod: order.shippingMethod,
+        items: items.map((i) => ({ name: i.name, quantity: i.quantity, subtotal: i.subtotal })),
+        sessions: sessionIds.flatMap((id) => {
+          const session = sessions.get(id);
+          if (!session) return [];
+          return [{ session, participants: sessionParticipants.get(id) ?? 0 }];
+        }),
+      });
+      const added = await enqueueAdminOrderEmail({
+        // 🔴 orderPlacedAdmin，**不是** orderNotifyAdmin。見那兩個 key 的註解。
+        dedupeKey: dedupeKeys.orderPlacedAdmin(orderId),
+        subject: adminMail.subject,
+        text: adminMail.text,
+        html: adminMail.html,
+      });
+      if (added) queued += 1;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[notify] 待收款通知信排入失敗 order=${order.orderNo} ${message}`);
+    }
+
+    console.info(`[notify] 下單當下已排信 order=${order.orderNo} queued=${queued}`);
+    return { ok: true, queued, adopted: false };
+  } catch (err) {
+    // 最外圈。這一支的規約是「永不 throw」，而它跑在結帳的成功路徑上 —— 一封信
+    // 排不進去絕不可以變成「訂單建立失敗，請再試一次」。
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[notify] 下單當下排信發生未預期例外 order=${orderId} ${message}`);
+    return { ok: false, reason: "unexpected_error" };
+  }
+}
+
+/**
+ * 下單成功之後觸發「下單當下」那批信，且**保證不會拖垮結帳**。
+ *
+ * 形狀與理由逐字對應 triggerNotifyAfterPayment()，只有呼叫端不同：那邊是金流
+ * webhook（拖久了金流商會重送），這邊是客人的結帳請求（拖久了客人看著轉圈圈，
+ * 而訂單其實早就成立了）。逾時就當作沒做完 —— 排進 outbox 的信本來就在等
+ * /api/tasks/notify 的下一輪 flush。
+ */
+export async function triggerNotifyAfterOrderPlaced(
+  orderId: string,
+  timeoutMs = 5_000,
+): Promise<NotifyOutcome> {
+  // .unref?.() 同 triggerNotifyAfterPayment：逾時的 timer 不可以把 Node 的行程
+  // 留著不結束（serverless 上那等於白白吃滿執行時間）。
+  const timeout = new Promise<NotifyOutcome>((resolve) =>
+    setTimeout(() => resolve({ ok: false, reason: "notify_timeout" }), timeoutMs).unref?.(),
+  );
+  try {
+    const work = (async (): Promise<NotifyOutcome> => {
+      const outcome = await queueOrderPlacedNotifications(orderId);
+      // 排完就立刻試寄一次。失敗不影響上面的結果 —— 信已經在 outbox 裡了。
+      await flushEmailOutbox(EMAIL_FLUSH_BATCH);
+      return outcome;
+    })();
+    const outcome = await Promise.race([work, timeout]);
+    if (!outcome.ok && outcome.reason === "notify_timeout") {
+      console.error(`[notify] 下單當下通知逾時 order=${orderId} —— 已交給排程，訂單照常成立`);
+    }
+    return outcome;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[notify] triggerNotifyAfterOrderPlaced 例外 ${message}`);
+    return { ok: false, reason: "unexpected_error" };
+  }
 }
 
 /** 場次的摘要（信裡要印的時間地點）。查不到的場次直接略過，不讓整封信失敗。 */

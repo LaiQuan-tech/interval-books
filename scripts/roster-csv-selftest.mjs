@@ -331,7 +331,23 @@ assertMigrationDependencies(check, MIG_DIR, {
   // NAV_GROUPS 既有的「活動報名」項目（0033 只在別處新增一個獨立的後台人員
   // 管理項目）。它新增的 trigger 只在 update／delete profiles 時觸發，
   // event-registrations 那四支 fn 完全不寫 profiles，不受影響。原樣成立。
-  reviewedThrough: "0033_admin_staff_management.sql",
+  // ── 0034_transfer_payment.sql 的重讀結論 ───────────────────────────────────
+  // 0034 加匯款付款方式。這支守的是名單的遮罩、明文出口與 PII 存取紀錄。逐條對過：
+  //   · roster_pii **不在** 0034 的 touches 裡——它沒有碰 admin_event_roster、
+  //     pii_access_log、on_roster 任何一個。這支自檢的核心斷言完全不受影響。
+  //   · event_registrations / session_seats / order_expiry / inventory 這四個標籤
+  //     **全部來自 expire_unpaid_orders() 函式本體的逐字照抄**（第 3、4、4b、4c 步
+  //     分別提到 products、inv.products、stock_reservations、event_registrations、
+  //     event_sessions）。0034 在那支函式裡唯一新寫的程式碼是第 1 步 claim 條件裡
+  //     的一行 case。名單上有誰、看得到什麼，一個字都沒變。
+  //   · orders_payments——payment_method 多一個值、orders 多兩個 remittance_* 欄位。
+  //     兩個新欄位都不是個資（一組五位數字與一個時間戳），而且**不在**
+  //     admin_event_roster 的 select 清單裡（0034 沒有 create or replace 那個 view）。
+  //   · admin_auth——0034 沒有碰 profiles / staff_permissions / is_admin()。
+  //     admin_mark_order_paid() 是 security definer + 只 grant service_role，
+  //     授權由呼叫端（後台 server function）負責，與這支守的東西無關。
+  // 原樣成立。
+  reviewedThrough: "0034_transfer_payment.sql",
 });
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {

@@ -70,6 +70,40 @@ export type OrderPaidInput = {
   sessions: SessionBrief[];
 };
 
+/**
+ * 匯款資訊信（renderRemittanceEmail 的輸入）。
+ *
+ * ⚠️ 這封信是**下單當下**寄的，錢還沒進來 —— 它是這個站第一封不在「付款成功之後」
+ *    寄出的信。所以它刻意**不含**任何「我們收到您的付款了」的語氣，也不含發票資訊
+ *    （還沒有發票可開）。
+ */
+export type RemittanceEmailInput = {
+  orderNo: string;
+  customerName: string;
+  total: number;
+  /** 匯款帳戶。四個欄位由 site_settings 提供（0034 §1）。 */
+  bankName: string;
+  bankCode: string;
+  bankAccount: string;
+  accountName: string;
+  /** 匯款期限的 ISO 字串。null＝算不出來（不該發生），信裡就不印這一列。 */
+  dueAt: string | null;
+  /**
+   * 回到訂單頁（填末五碼）的完整網址。
+   *
+   * 🔴 **型別上是必填的 string，不是 `string | null`，而且這是刻意的。**
+   *    這封信的存在意義有一半是「匯完款回來填末五碼」——沒有可用的網址時，正確的
+   *    行為是**不寄這封信**（並留下錯誤紀錄），不是寄一封連結壞掉的信。把它做成
+   *    必填，等於在編譯期就讓「先組出一封信、再想辦法塞一個 fallback 網址進去」
+   *    這條路走不通。呼叫端（src/server/notify.ts）必須先拿到
+   *    publicSiteUrl() 的答案才組得出這個物件。
+   */
+  orderUrl: string;
+  items: { name: Localized; quantity: number; subtotal: number }[];
+  /** 這張訂單買到的場次（可能 0 個）。 */
+  sessions: SessionBrief[];
+};
+
 export type RegistrationEmailInput = {
   /** 這一位參加者的姓名（0021 §0.1：姓名不遮罩）。 */
   participantName: string;
@@ -92,6 +126,24 @@ export type RegistrationEmailInput = {
 export type AdminOrderNotificationInput = {
   orderNo: string;
   total: number;
+  /**
+   * 這封信是什麼時候排的（0034）。
+   *
+   * `afterPayment` ＝ 付款成功之後（0022／0032 那條路，dedupe_key
+   * `order_notify_admin:`）；`atOrderTime` ＝ 下單當下，錢還沒進來（0034 那條路，
+   * dedupe_key `order_placed_admin:`）。
+   *
+   * 🔴 兩者是**兩封不同的信**，不是同一封的兩個版本。一張匯款訂單會先收到
+   *    atOrderTime 那封（「有一張待收款的單」），店家對完帳把它標成已付款之後再收到
+   *    afterPayment 那封（「錢收到了」）。dedupe_key 也必須分開，否則第二封會撞
+   *    第一封的 key 變成 no-op —— 見 0034 §0.6。
+   *
+   * ⚠️ 值刻意叫 afterPayment 而不是 "paid"：scripts/notify-selftest.mjs 有一條
+   *    「src/server/notify.ts 裡不可以出現 'paid' 字面值」的守衛（要判斷付款狀態
+   *    就用 on_roster，那個條件只定義在 0021 §3 的 view 裡）。那條守衛是對的，
+   *    這裡不去放寬它——換個名字就好，而且「什麼時候寄」本來就比「paid」精確。
+   */
+  stage: "afterPayment" | "atOrderTime";
   /** public.orders.payment_method（0005:88）。null＝webhook 還沒填（理論上不會發生——排這封信的前提是訂單已經 paid）。 */
   paymentMethod: string | null;
   /** public.orders.shipping_method（0005:86）。 */
@@ -187,6 +239,30 @@ export const DEFAULT_EMAIL_COPY: EmailCopy = {
     en: "（待補：活動提醒信結尾段落）",
     ja: "（待補：活動提醒信結尾段落）",
   },
+
+  // 匯款資訊信（0034）。⚠️ 這四把 key 種在 supabase/migrations/0034，不是 0022 ——
+  // scripts/notify-selftest.mjs 的反空殼比對因此改成掃**所有**種 email_copy 的
+  // migration，見那一段的註解。
+  "remittance.subject": {
+    zh: "（待補：匯款資訊信主旨）訂單 {orderNo} 的匯款資訊",
+    en: "（待補：匯款資訊信主旨）Bank transfer details for order {orderNo}",
+    ja: "（待補：匯款資訊信主旨）ご注文 {orderNo} のお振込のご案内",
+  },
+  "remittance.heading": {
+    zh: "（待補：匯款資訊信標題）訂單已成立，請於期限前完成匯款",
+    en: "（待補：匯款資訊信標題）Your order is placed — please transfer by the due date",
+    ja: "（待補：匯款資訊信標題）ご注文を承りました。期日までにお振込ください",
+  },
+  "remittance.intro": {
+    zh: "（待補：匯款資訊信開頭段落）",
+    en: "（待補：匯款資訊信開頭段落）",
+    ja: "（待補：匯款資訊信開頭段落）",
+  },
+  "remittance.outro": {
+    zh: "（待補：匯款資訊信結尾段落，例如「匯款後請回訂單頁填寫帳號末五碼，我們核對後會再通知你」）",
+    en: "（待補：匯款資訊信結尾段落）",
+    ja: "（待補：匯款資訊信結尾段落）",
+  },
 };
 
 /**
@@ -208,6 +284,18 @@ const LABELS: Record<string, Localized> = {
   paymentMethod: { zh: "付款方式", en: "Payment method", ja: "お支払い方法" },
   shippingMethod: { zh: "收件方式", en: "Delivery method", ja: "受け取り方法" },
   participants: { zh: "參加人數", en: "Participants", ja: "参加人数" },
+  // 匯款（0034）
+  bankAccountName: { zh: "戶名", en: "Account name", ja: "口座名義" },
+  bankName: { zh: "銀行", en: "Bank", ja: "銀行" },
+  bankCode: { zh: "銀行代號", en: "Bank code", ja: "銀行コード" },
+  bankAccount: { zh: "帳號", en: "Account number", ja: "口座番号" },
+  remittanceDue: { zh: "匯款期限", en: "Transfer by", ja: "お振込期限" },
+  remittanceAccount: { zh: "匯款帳戶", en: "Bank account", ja: "お振込先" },
+  remittanceReportLink: {
+    zh: "匯款後請回訂單頁填寫帳號末五碼",
+    en: "After transferring, tell us your last five digits",
+    ja: "お振込後、ご注文ページで下 5 桁をご入力ください",
+  },
 };
 
 /**
@@ -229,6 +317,10 @@ const PAYMENT_METHOD_LABEL_ZH: Record<string, string> = {
   cvs_cod: "超商代收",
   test_paid: "測試付款",
   free: "免費（無需付款）",
+  // 0034。⚠️ 與上面的 'atm' 刻意用不同的字：'atm' 是金流商動態產生虛擬帳號、
+  //         自動核帳；'transfer' 是客人匯到店家的固定帳戶、人工對帳。店家看到
+  //         這兩個字要能立刻知道「這張單要不要我自己去看銀行對帳單」。
+  transfer: "匯款（人工對帳）",
 };
 
 const SHIPPING_METHOD_LABEL_ZH: Record<string, string> = {
@@ -408,6 +500,18 @@ function layout(input: {
   outro: string;
   signature: string;
   footerNote: string;
+  /**
+   * 一條「回到訂單頁」的連結（0034 的匯款信是第一個用到的）。
+   *
+   * ⚠️ **url 必須是一條已經驗證過連得到的網址。** 這一層不驗 —— 驗在
+   *    src/server/public-url.ts 的 publicSiteUrl()，而 src/server/notify.ts 在
+   *    組不出來時**根本不寄這封信**。理由見那一段：一封連結指向 localhost 的信在
+   *    我們這一側完全沒有錯誤（寄出成功、log 乾淨），只有客人點下去打不開。
+   *
+   * 純文字版把網址整條印出來（不是「點這裡」）——純文字信裡沒有可以點的東西，
+   * 藏起來的網址等於沒有網址。
+   */
+  link?: { label: string; url: string };
 }): { text: string; html: string } {
   const textLines: string[] = [input.heading, ""];
   if (input.intro) textLines.push(input.intro, "");
@@ -416,6 +520,7 @@ function layout(input: {
     textLines.push("", b.title);
     for (const r of b.rows) textLines.push(`  ${r.label}：${r.value}`);
   }
+  if (input.link) textLines.push("", `${input.link.label}：`, input.link.url);
   if (input.outro) textLines.push("", input.outro);
   textLines.push("", input.signature, "", input.footerNote);
 
@@ -447,6 +552,16 @@ function layout(input: {
           `</div>`,
       )
       .join("") +
+    (input.link
+      ? `<p style="margin:20px 0 0">` +
+        `<a href="${escapeHtml(input.link.url)}" ` +
+        `style="display:inline-block;font-size:14px;line-height:1.5;padding:10px 18px;` +
+        `border:1px solid #2b2621;color:#2b2621;text-decoration:none">` +
+        `${escapeHtml(input.link.label)}</a></p>` +
+        // 有些信件客戶端不讓按鈕可點（或客人想複製）。網址本身也印一次。
+        `<p style="font-size:12px;line-height:1.7;color:#8a8175;margin:8px 0 0;word-break:break-all">` +
+        `${escapeHtml(input.link.url)}</p>`
+      : "") +
     (input.outro
       ? `<p style="font-size:14px;line-height:1.8;margin:20px 0 0">${escapeHtml(input.outro)}</p>`
       : "") +
@@ -512,6 +627,78 @@ export function renderOrderPaidEmail(
   });
 
   return { subject, text, html };
+}
+
+/**
+ * 匯款資訊（寄給訂購人，**下單當下**，錢還沒進來）。
+ * dedupe_key = `remittance:<order_id>`。
+ *
+ * 🔴 這是這個站第一封不在「付款成功之後」寄的信。它不走 claim_order_notify()
+ *    ——那道閘門的第一句就是 `payment_status <> 'paid' → order_not_paid`，而那是
+ *    對的（沒收到錢不要告訴客人收到錢了）。這封信走的是 orders.ts step 7 之後的
+ *    新路徑，見 0034 §0.5 與 src/server/notify.ts 的 queueOrderPlacedNotifications()。
+ *
+ * ⚠️ 帳號印在信裡是刻意的：客人要拿著它去銀行，而完成頁那個連結（帶 public_token）
+ *    是他唯一能回來的路，信是備份。帳號本身不是秘密——它印在店家的每一張報價單上。
+ */
+export function renderRemittanceEmail(
+  input: RemittanceEmailInput,
+  copy: EmailCopy | undefined,
+  lang: Lang,
+): RenderedEmail {
+  const vars = { orderNo: input.orderNo, customerName: input.customerName };
+
+  const itemLines = input.items
+    .map((it) => `${pick(it.name, lang)} × ${it.quantity}　${formatMoney(it.subtotal)}`)
+    .join("\n");
+
+  const rows: Row[] = [
+    { label: pick(LABELS.orderNo, lang), value: input.orderNo },
+    { label: pick(LABELS.total, lang), value: formatMoney(input.total) },
+  ];
+  // 算不出期限就整列不印。印一列「匯款期限：Invalid Date」比不印那一列糟得多。
+  if (input.dueAt) {
+    rows.push({
+      label: pick(LABELS.remittanceDue, lang),
+      value: formatDateTime(input.dueAt, lang),
+    });
+  }
+  if (itemLines) rows.push({ label: pick(LABELS.items, lang), value: itemLines });
+
+  // 匯款帳戶自成一個 block（layout 會用一條分隔線把它跟訂單摘要分開）。空欄位不印
+  // ——一個「銀行代號：」後面空白的欄位會讓人以為資料掉了。
+  const accountRows: Row[] = [];
+  if (input.accountName)
+    accountRows.push({ label: pick(LABELS.bankAccountName, lang), value: input.accountName });
+  if (input.bankName)
+    accountRows.push({ label: pick(LABELS.bankName, lang), value: input.bankName });
+  if (input.bankCode)
+    accountRows.push({ label: pick(LABELS.bankCode, lang), value: input.bankCode });
+  if (input.bankAccount)
+    accountRows.push({ label: pick(LABELS.bankAccount, lang), value: input.bankAccount });
+
+  const blocks = [
+    ...(accountRows.length > 0
+      ? [{ title: pick(LABELS.remittanceAccount, lang), rows: accountRows }]
+      : []),
+    ...input.sessions.map((s) => ({
+      title: pick(LABELS.sessionTitle, lang),
+      rows: sessionRows(s, lang),
+    })),
+  ];
+
+  const { text, html } = layout({
+    heading: fill(copyText(copy, "remittance.heading", lang), vars),
+    intro: fill(copyText(copy, "remittance.intro", lang), vars),
+    rows,
+    blocks,
+    link: { label: pick(LABELS.remittanceReportLink, lang), url: input.orderUrl },
+    outro: fill(copyText(copy, "remittance.outro", lang), vars),
+    signature: copyText(copy, "common.signature", lang),
+    footerNote: copyText(copy, "common.footerNote", lang),
+  });
+
+  return { subject: fill(copyText(copy, "remittance.subject", lang), vars), text, html };
 }
 
 /**
@@ -612,24 +799,49 @@ export function renderAdminOrderNotificationEmail(
   input: AdminOrderNotificationInput,
 ): RenderedEmail {
   const hasSessions = input.sessions.length > 0;
-  const heading = hasSessions ? "有新的訂單／活動報名" : "有新的訂單";
-  const subject = `【小時光書店】新訂單 ${input.orderNo}`;
+  const placed = input.stage === "atOrderTime";
+  // 兩個 stage 的標題與主旨刻意長得不一樣。店家收到的是兩封信，而它們要做的事完全
+  // 不同（一封是「錢收到了，去出貨」，一封是「還沒收到錢，去追」）——主旨一樣的話
+  // 收件匣裡分不出來，而分不出來的後果是有人去出一張沒收到錢的貨。
+  const heading = placed
+    ? hasSessions
+      ? "有一筆待收款的新訂單／活動報名"
+      : "有一筆待收款的新訂單"
+    : hasSessions
+      ? "有新的訂單／活動報名"
+      : "有新的訂單";
+  const subject = placed
+    ? `【小時光書店】待收款訂單 ${input.orderNo}`
+    : `【小時光書店】新訂單 ${input.orderNo}`;
 
   const itemLines = input.items
     .map((it) => `${pick(it.name, "zh")} × ${it.quantity}　${formatMoney(it.subtotal)}`)
     .join("\n");
 
+  // payment_method = NULL 在 placed 這條路上是**正常值**（＝客人選了「由我們與你
+  // 聯繫付款」），不是「webhook 還沒填」。paymentMethodLabel() 對 null 回
+  // 「（未設定）」——那在 paid 那條路上是對的（那裡 null 代表資料異常），在這裡會
+  // 讓店家以為系統壞了。所以只有這一條路自己翻譯 null。
+  const paymentLabel =
+    placed && input.paymentMethod === null
+      ? "由我們與客人聯繫付款"
+      : paymentMethodLabel(input.paymentMethod);
+
   const rows: Row[] = [
     { label: pick(LABELS.orderNo, "zh"), value: input.orderNo },
     { label: pick(LABELS.total, "zh"), value: formatMoney(input.total) },
-    { label: pick(LABELS.paymentMethod, "zh"), value: paymentMethodLabel(input.paymentMethod) },
+    { label: pick(LABELS.paymentMethod, "zh"), value: paymentLabel },
     { label: pick(LABELS.shippingMethod, "zh"), value: shippingMethodLabel(input.shippingMethod) },
   ];
   if (itemLines) rows.push({ label: pick(LABELS.items, "zh"), value: itemLines });
 
   const { text, html } = layout({
     heading,
-    intro: "後台收到一筆新訂單，摘要如下，完整資料請登入後台查看。",
+    // ⚠️ 純文字，不要用 **粗體** 這類 markdown —— layout() 會把它逐字跳脫之後印出來
+    //    （信裡就會出現兩個星號），它沒有 markdown 轉換那一步。
+    intro: placed
+      ? "後台收到一筆新訂單，款項尚未入帳。品項與座位已經先保留起來，完整資料請登入後台查看。"
+      : "後台收到一筆新訂單，摘要如下，完整資料請登入後台查看。",
     rows,
     blocks: input.sessions.map(({ session, participants }) => ({
       title: pick(LABELS.sessionTitle, "zh"),
@@ -638,7 +850,9 @@ export function renderAdminOrderNotificationEmail(
         { label: pick(LABELS.participants, "zh"), value: String(participants) },
       ],
     })),
-    outro: "",
+    outro: placed
+      ? "收到款項之後，請到後台把這張訂單標記為已付款——標記之後才會寄出付款成功信與報名成功信，發票也才會開立。"
+      : "",
     signature: "小時光書店後台系統",
     footerNote: "本信件由系統自動發送，收件人於後台「全站設定」設定。",
   });

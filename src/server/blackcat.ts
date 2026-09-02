@@ -59,6 +59,11 @@
  * 載不動了。siteUrl() 因此在這裡重寫一次，而不是從 payuni.ts 借。
  */
 import { createHash, timingSafeEqual } from "node:crypto";
+// ⚠️ 相對路徑 + `.ts` 副檔名，而且 public-url.ts 自己一個 import 都沒有 ——
+//    檔頭那條「這支測試才驗得到產線那一份」的規約因此是**傳遞性**成立的：
+//    Node 的原生 type stripping 照樣載得動這個檔案。
+//    scripts/blackcat-selftest.mjs [10] 對這兩件事都有斷言。
+import { publicSiteUrl } from "./public-url.ts";
 
 // ─────────────────────────────── 環境與設定 ───────────────────────────────
 
@@ -174,23 +179,28 @@ export const BLACKCAT_RETURN_PATH = "/api/payments/blackcat/return";
  * loopback 位址與非 https 的網址，**在任何環境下**都不是一個有效的 APN 目的地。
  * 本機開發不受影響：那時候沒有真的憑證，blackcatConfigured() 本來就是 false。
  *
- * 擋下來的後果是整條刷卡路線降級成「不經金流」（訂單成立、由店家另行安排付款），
- * 那是**吵的**失敗 —— 比「刷得過但通知送不到」那種安靜的失敗好得多。
+ * ── 0034：這條判斷已經搬進 src/server/public-url.ts ──────────────────────
+ * 同一條規則在這個 repo 裡被抄過三次（這裡、customer-auth.ts 的
+ * customerAuthRedirectUrl()、以及 0034 的匯款資訊信）。三份就該收成一份，
+ * 所以 UNREACHABLE_HOSTS 與 https 那兩條現在住在 publicSiteUrl() 裡。
+ * **行為完全沒變**：那支函式驗的是 base（協定與主機名），而附上路徑不會改變
+ * 這兩者，所以先驗 base 再組路徑與先組再驗是同一件事。
  */
-const UNREACHABLE_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
-
 export function blackcatApnUrl(): string | null {
   const secret = process.env.BLACKCAT_WEBHOOK_SECRET;
   if (!secret) return null;
+  // 🔴 金流商的伺服器從外網打進來。publicSiteUrl() 擋掉它永遠到不了的目的地
+  //    （非 https、loopback、*.local），組不出來就回 null，由 blackcatConfigured()
+  //    把整條刷卡路線降級成「不經金流」—— 那是**吵的**失敗，比「刷得過但通知送不
+  //    到」那種安靜的失敗好得多。
+  const base = publicSiteUrl();
+  if (base === null) return null;
   let url: URL;
   try {
-    url = new URL(`${siteUrl()}${BLACKCAT_APN_PATH}`);
+    url = new URL(`${base}${BLACKCAT_APN_PATH}`);
   } catch {
     return null;
   }
-  // 🔴 金流商的伺服器從外網打進來。這兩條擋掉它永遠到不了的目的地。
-  if (url.protocol !== "https:") return null;
-  if (UNREACHABLE_HOSTS.has(url.hostname) || url.hostname.endsWith(".local")) return null;
   url.searchParams.set("k", secret);
   const out = url.toString();
   return out.length <= 250 ? out : null;

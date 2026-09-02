@@ -453,6 +453,13 @@ export type NotifyOrder = {
   paymentMethod: string | null;
   /** public.orders.shipping_method（0005:86）。店家通知信要用。 */
   shippingMethod: string;
+  /**
+   * public.orders.created_at（ISO）。0034 加的：匯款期限是「下單 + 3 天」，
+   * 而算它的地方只有一份（src/lib/checkout.ts 的 remittanceDueAt()）。
+   * 用訂單自己的建立時間、不是 `new Date()` —— backlog 補跑時信裡的期限必須與
+   * expire_unpaid_orders() 算出來的是同一個時間點。
+   */
+  createdAt: string;
 };
 
 export type NotifyOrderItem = {
@@ -482,7 +489,9 @@ export async function getOrderForNotify(
   const [orderRes, itemsRes] = await Promise.all([
     db
       .from("orders")
-      .select("id, order_no, customer_name, total, locale, payment_method, shipping_method")
+      .select(
+        "id, order_no, customer_name, total, locale, payment_method, shipping_method, created_at",
+      )
       .eq("id", orderId)
       .maybeSingle(),
     db
@@ -519,6 +528,7 @@ export async function getOrderForNotify(
       locale,
       paymentMethod: o.payment_method == null ? null : String(o.payment_method),
       shippingMethod: String(o.shipping_method ?? "none"),
+      createdAt: String(o.created_at ?? ""),
     },
     items: ((itemsRes.data ?? []) as Record<string, unknown>[]).map((r) => ({
       name: (r.name ?? {}) as Localized,
@@ -558,4 +568,34 @@ export async function loadOrderLocales(orderIds: string[]): Promise<Map<string, 
     out.set(String(row.id), raw === "en" || raw === "ja" ? raw : "zh");
   }
   return out;
+}
+
+/**
+ * 一張訂單的 public_token（0034）。
+ *
+ * ⚠️ 刻意**不**併進 getOrderForNotify()：那支的回傳值同時餵給客人的信與**店家的**
+ *    通知信，而 public_token 是那張訂單的鑰匙（0005：「Unguessable order lookup key
+ *    for guests」）。把它放進共用的 NotifyOrder 裡，等於讓每一條用得到那支函式的
+ *    路徑都拿得到它——包括店家那封信的組裝程式碼。型別上拿不到，就不會有人不小心
+ *    把它印進一封寄給別人的信裡。
+ *
+ * 只有匯款資訊信用得到它（信裡那條「回訂單頁填末五碼」的連結）。
+ *
+ * 讀不到就回 null（不 throw）：呼叫端跑在結帳的成功路徑上，規約是絕不拖垮訂單成立。
+ */
+export async function getOrderPublicToken(orderId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin()
+    .from("orders")
+    .select("public_token")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      `[repo/email-outbox] 讀 public_token 失敗 order=${orderId}：${error.code} ${error.message}`,
+    );
+    return null;
+  }
+  const token = (data as { public_token?: unknown } | null)?.public_token;
+  return typeof token === "string" && token !== "" ? token : null;
 }

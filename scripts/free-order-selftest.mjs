@@ -201,7 +201,30 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 免費訂單一樣會走 queueOrderNotifications()，店家一樣會收到通知（那正是
   // 0032 要補的洞），但那不影響訂單本身的 status / payment_status，也不影響
   // invoice_backlog() 的 total > 0 判斷。原樣成立。
-  reviewedThrough: "0032_admin_order_notify.sql",
+  // ── 0034_transfer_payment.sql 的重讀結論 ───────────────────────────────────
+  // 0034 加匯款付款方式。這支守的是「total = 0 的訂單在結帳當下就結清，不會被
+  // expire_unpaid_orders() 連同 event_registrations 一起收掉」（0028）。逐條對過：
+  //   · order_expiry——0034 改的是 expire 第 1 步 claim 條件裡的一行，而且只對
+  //     payment_method = 'transfer' 生效。免費訂單的 payment_method 是 'free'，走
+  //     的是 else 那一支（門檻仍然是 p_older_than）——但那不重要，因為免費訂單根本
+  //     進不了 claim：settle_free_order() 已經把它推成 payment_status = 'paid'，
+  //     而 claim 的第二個條件是 payment_status <> 'paid'。0028 的保護一個字都沒被
+  //     碰到，下面每一條斷言原樣成立。
+  //   · orders_payments——payment_method 的 CHECK 從五個值變六個（drop + add，
+  //     'free' 原樣保留）。這支自檢驗的是 settle_free_order() 寫 'free'，那一句
+  //     0034 沒碰。
+  //   · session_seats / event_registrations——同上，全部來自 expire 本體的逐字照抄。
+  //   · invoice——0034 **沒有碰 invoice_backlog()**。它的條件是
+  //     `payment_status = 'paid' and total > 0`，不看 payment_method，所以匯款訂單
+  //     被標成已付款之後會自動排進開票佇列，而免費訂單（total = 0）照樣被排除。
+  //     兩件事都是既有行為的自然結果，不是新規則。
+  //
+  // ⚠️ 順帶記下一個**這一期發現、但不屬於這一期**的事實：createOrder() 對免費訂單
+  //    從來沒有呼叫過 queueOrderNotifications()，所以免費報名的客人與參加者其實都
+  //    收不到信（0022 那條路只由 webhook 與 /api/tasks/notify 觸發，而免費訂單沒有
+  //    webhook）。0034 沒有動它——那是另一個洞，要修得動 0028 那條路的觸發點。
+  // 原樣成立。
+  reviewedThrough: "0034_transfer_payment.sql",
 });
 
 // =============================================================================

@@ -178,7 +178,28 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 是 getOrderForNotify()，它是 0022 就有的既有函式，0032 只把它的 select 清單
   // 多加兩欄 payment_method / shipping_method，兩欄都是 0005 就存在、由 0028 加了
   // 一個允許值的既有欄位，不是新開的洞）都已經是這份清單在驗的東西。原樣成立。
-  reviewedThrough: "0032_admin_order_notify.sql",
+  // ── 0034_transfer_payment.sql 的重讀結論 ───────────────────────────────────
+  // 0034 加匯款付款方式。它動到這支自檢依賴的三個區域，逐一對過：
+  //
+  //   · cms（site_settings）——加了四個銀行欄位，而且**刻意不碰** 0032 §0.2 那份
+  //     column-level grant 清單（column-level grant 不涵蓋新增的欄位，所以四欄天生
+  //     anon 讀不到）。下面 [2] 那一整段驗的是 notify_emails 不在清單裡、而公開欄位
+  //     還在清單裡——0034 一個字都沒改那份 grant，兩邊原樣成立。這一期另外補了一條
+  //     斷言：四個銀行欄位也不可以出現在那份清單裡。
+  //   · email_outbox（email_copy）——0034 只放寬 email_copy_template_valid 這條
+  //     CHECK（多一個 'remittance'）並種四筆文案。email_outbox 那張表、
+  //     enqueue_admin_order_email()、claim_order_notify()、dedupe_key 的 unique，
+  //     0034 一個字都沒動。
+  //   · orders_payments——orders.payment_method 的 CHECK 多一個 'transfer'、加兩個
+  //     remittance_* 欄位、加一支 admin_mark_order_paid()。既有的 markOrderPaid()
+  //     與兩支 webhook 都沒被碰。
+  //
+  // 唯一與這支自檢的斷言真的相交的是 renderAdminOrderNotificationEmail()：它多了
+  // 一個必填的 `stage`（'afterPayment' | 'atOrderTime'），因為 0034 讓店家在**下單
+  // 當下**也會收到一封「待收款」通知（dedupe_key `order_placed_admin:`，與 0032 的
+  // `order_notify_admin:` 刻意分開——共用會讓付款成功那封被去重掉）。下面每一條驗
+  // 這封信內容的斷言都補上了 stage，並新增了 atOrderTime 那一版的對照。原樣成立。
+  reviewedThrough: "0034_transfer_payment.sql",
 });
 
 // =============================================================================
@@ -393,12 +414,26 @@ checkTrue(
   /enqueue_admin_order_email[\s\S]{0,400}return data === true;/.test(outboxCode),
 );
 
-checkTrue(
-  "getOrderForNotify 的 select 多了 payment_method, shipping_method",
-  /select\("id, order_no, customer_name, total, locale, payment_method, shipping_method"\)/.test(
-    outboxCode,
-  ),
-);
+// 0034 把這一行折成多行（多了 created_at），所以比對改成「切出 select 的欄位清單
+// 再逐欄確認」，而不是釘死一整行字串。守的事情沒變，而且順便擋掉了「欄位還在、
+// 但被搬到另一支查詢裡」這種搬家式失守。
+{
+  const sel = (outboxCode.match(
+    /\.select\(\s*"(id, order_no, customer_name, total, locale[^"]*)"/,
+  ) ?? [])[1];
+  checkTrue("反空殼：切得到 getOrderForNotify 的 select 欄位清單", Boolean(sel));
+  const cols = (sel ?? "").split(",").map((c) => c.trim());
+  for (const c of ["payment_method", "shipping_method"]) {
+    checkTrue(`getOrderForNotify 的 select 有 ${c}（0032 加的）`, cols.includes(c));
+  }
+  checkTrue(
+    "getOrderForNotify 的 select 有 created_at（0034 加的，匯款期限要用）",
+    cols.includes("created_at"),
+  );
+  // ⚠️ 反面對照：這支查詢**不可以**把 customer_email 撈進 Node —— 地址由 0022 §7
+  //    的 SQL 自己 join，這是那個設計的承重牆（見 getOrderForNotify 的檔頭）。
+  check("getOrderForNotify 不 select customer_email", cols.includes("customer_email"), false);
+}
 checkTrue(
   "NotifyOrder 型別加了 paymentMethod / shippingMethod",
   /paymentMethod:\s*string \| null/.test(outboxCode) && /shippingMethod:\s*string/.test(outboxCode),

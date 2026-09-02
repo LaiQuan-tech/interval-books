@@ -1144,13 +1144,64 @@ check(
 console.log("\n[10] 原始碼結構不變量");
 
 {
+  // 🔴 這一條守的是「這支測試驗得到**產線那一份**」。判準不是「只准 import 一個
+  //    模組」，而是「Node 的原生 type stripping 載得動」—— 也就是不可以出現 `@/`
+  //    別名（vite 才解得開）或任何會把 server-only 拖進來的東西。
+  //
+  //    0034 把 localhost/https 那條判斷抽成 src/server/public-url.ts（同一條規則
+  //    本來被抄了三份，見那個檔案的檔頭），blackcat.ts 因此多了第二個 import。
+  //    這裡不是放寬——底下把清單釘成**逐字相等**，而且加驗了兩件新的事：
+  //      · public-url.ts 用相對路徑 + `.ts` 副檔名（別名解不開，副檔名 Node 才吃）
+  //      · public-url.ts 自己**一個 import 都沒有**（所以載得動是傳遞性成立的）
+  //    最後再真的把 blackcat.ts 載進來跑一次（本檔開頭的 import 就是），
+  //    那是這一整組斷言的反空殼：載不動的話這支測試根本跑不到這裡。
   const imports = [...BC_SRC.matchAll(/^import\s.*?from\s+"([^"]+)";/gm)].map((m) => m[1]);
-  check("blackcat.ts 只 import 一個模組", imports.length, 1);
+  check("blackcat.ts 的 import 清單逐字相符", imports.join(","), "node:crypto,./public-url.ts");
   check(
-    "🔴 而且是 node:crypto —— 不 import 任何專案模組，這支測試才驗得到**產線那一份**",
-    imports[0],
-    "node:crypto",
+    "🔴 blackcat.ts 不 import 任何 `@/` 別名（vite 才解得開，Node 載不動）",
+    imports.some((i) => i.startsWith("@/")),
+    false,
   );
+
+  const PU_PATH = join(ROOT, "src/server/public-url.ts");
+  const PU_SRC = readFile(PU_PATH);
+  checkTrue("反空殼：public-url.ts 不是空檔", PU_SRC.length > 500);
+  const puImports = [...PU_SRC.matchAll(/^import\s/gm)];
+  check(
+    "🔴 public-url.ts 一個 import 都沒有（blackcat.ts 的可載入性是傳遞性的）",
+    puImports.length,
+    0,
+  );
+  // 那條規則本身。抄第四份的人會在這裡被抓到。
+  const pu = await import(pathToFileURL(PU_PATH).href);
+  const savedSiteUrl = process.env.SITE_URL;
+  for (const [value, expected, label] of [
+    [undefined, null, "SITE_URL 沒設（就是那次事故的狀態）"],
+    ["http://localhost:8080", null, "siteUrl() 的預設值 http://localhost:8080"],
+    ["https://localhost", null, "https 但 localhost"],
+    ["https://127.0.0.1", null, "https 但 loopback"],
+    ["https://[::1]", null, "https 但 IPv6 loopback"],
+    ["https://0.0.0.0", null, "https 但 0.0.0.0"],
+    ["https://shop.local", null, "https 但 *.local（mDNS，外面解析不到）"],
+    ["http://intervalbooks.tw", null, "正式網域但不是 https"],
+    ["https://intervalbooks.tw", "https://intervalbooks.tw", "正式網域 + https"],
+    ["https://intervalbooks.tw/", "https://intervalbooks.tw", "結尾斜線會被去掉"],
+  ]) {
+    if (value === undefined) delete process.env.SITE_URL;
+    else process.env.SITE_URL = value;
+    check(`publicSiteUrl()：${label}`, pu.publicSiteUrl(), expected);
+    // blackcatApnUrl() 必須與它一致 —— 這是「兩邊真的用同一份判斷」的證據，
+    // 而不是「兩份長得很像」。
+    process.env.BLACKCAT_WEBHOOK_SECRET = "selftest-secret";
+    check(
+      `blackcatApnUrl() 與 publicSiteUrl() 一致：${label}`,
+      bc.blackcatApnUrl() === null,
+      expected === null,
+    );
+  }
+  delete process.env.BLACKCAT_WEBHOOK_SECRET;
+  if (savedSiteUrl === undefined) delete process.env.SITE_URL;
+  else process.env.SITE_URL = savedSiteUrl;
 }
 
 {
@@ -1320,7 +1371,23 @@ for (const [label, src] of [
     // CHECK／trigger／排程，也沒有改 orders / payments 對任何角色的 grant（0032
     // 唯一動到的 grant 是 site_settings 那一張表，跟這支自檢的斷言對象是兩張不同
     // 的表）。「0024 仍在第 24 個位置」不受影響（0032 是往後接的第 32 支）。原樣成立。
-    reviewedThrough: "0032_admin_order_notify.sql",
+    // ── 0034_transfer_payment.sql 的重讀結論 ─────────────────────────────────
+    // 0034 加匯款（'transfer'）付款方式。它在帳本上標了 orders_payments，所以這條
+    // 為它轉紅。逐條對過：
+    //   · 這支自檢的斷言集中在 0024 的檔案內容、payuni/blackcat 的簽章與 APN 流程。
+    //     0034 **完全沒有碰** src/server/blackcat.ts、blackcat-webhook.ts、payuni.ts、
+    //     payuni-webhook.ts、markOrderPaid() 任何一個字。
+    //   · orders_payment_method_check 多一個 'transfer'（drop + add，同一交易，
+    //     既有六個值原樣保留）——正是 0024 檔頭寫下的規定做法，而 1198 那條驗的是
+    //     0024 **寫下了**改法，不是目前有哪些值。
+    //   · 真正與這支自檢相交的是 fetchPaymentOptions() 與結帳頁的付款選項：0034 讓
+    //     它多回一個 transferAvailable，並把結帳頁的兩個選項變成三個。上面那幾條
+    //     斷言因此改寫成對新形狀比對**同一件事**（fail-closed、只回布林、card 掛在
+    //     cardAvailable 上、預設退回不含 card 的第一個選項），並新增兩條更強的：
+    //     送出前的白名單改用 methodOptions，以及「舊的 cardAvailable 三元式沒有殘留」
+    //     ——那個舊寫法在三個選項的世界裡會把選了匯款的客人靜靜改成 offline。
+    // 原樣成立。
+    reviewedThrough: "0034_transfer_payment.sql",
   });
 }
 
@@ -1335,20 +1402,46 @@ for (const [label, src] of [
   );
   checkTrue(
     "🔴 fetchPaymentOptions 出錯時回 false（fail-closed：寧可不顯示，也不要顯示一個會壞的選項）",
-    /catch[\s\S]{0,200}return \{ cardAvailable: false \}/.test(fnsSrc),
+    /catch[\s\S]{0,300}return \{[\s\S]{0,200}cardAvailable: false/.test(fnsSrc),
   );
   checkTrue(
     "cardAvailable 只是一個布林 —— 瀏覽器永遠拿不到任何憑證的形狀",
-    /Promise<\{ cardAvailable: boolean \}>/.test(fnsSrc),
+    /Promise<\{ cardAvailable: boolean; transferAvailable: boolean \}>/.test(fnsSrc),
+  );
+  // 反面對照：回傳型別裡不可以出現任何「憑證形狀」的欄位名。上面那條是正面
+  // 比對一個寫死的字串，改一個字就轉紅；這一條擋的是「多回了一個欄位」。
+  check(
+    "fetchPaymentOptions 的回傳裡沒有任何憑證欄位",
+    /Promise<\{[^}]*(merchant|MerID|key|Key|secret|hash)[^}]*\}>/.test(fnsSrc),
+    false,
   );
   const checkoutSrc = readFile(join(ROOT, "src/routes/checkout.index.tsx"));
+  // 0034 把兩個選項變成三個，所以「刷卡選項出不出現」不再是一個 `{cardAvailable ?`
+  // 三元式，而是 card 進不進得了 methodOptions 這份清單。守的事情沒變。
   checkTrue(
-    "結帳頁的刷卡選項掛在 cardAvailable 上（false 就不 render）",
-    /\{cardAvailable \?/.test(checkoutSrc),
+    "結帳頁的刷卡選項掛在 cardAvailable 上（false 就不進 methodOptions）",
+    /cardAvailable \? \(\["card"\] as const\) : \[\]/.test(checkoutSrc),
   );
   checkTrue(
-    "cardAvailable 為 false 時預設付款方式退回 offline",
-    /paymentOptions\.cardAvailable \? "card" : "offline"/.test(checkoutSrc),
+    "offline 永遠在 methodOptions 裡（不需要任何設定的那條退路）",
+    /"offline" as const,/.test(checkoutSrc),
+  );
+  checkTrue(
+    "cardAvailable 為 false 時預設付款方式退回清單的第一個（card 不在裡面）",
+    /useState<PaymentMethodChoice>\(methodOptions\[0\]\)/.test(checkoutSrc),
+  );
+  // 🔴 0034 新增：送出前的白名單。這一條比它取代的那一條強 —— 舊的
+  //    `cardAvailable ? payWith : "offline"` 在三個選項的世界裡會把一個選了匯款的
+  //    客人靜靜改寫成 offline（訂單 payment_method = NULL、匯款信不寄、完成頁不顯示
+  //    帳號），而畫面上沒有任何地方看得出來。
+  checkTrue(
+    "🔴 送出前的白名單是「這個方式有沒有提供」，不是「card 有沒有開」",
+    /paymentMethod: methodOptions\.includes\(payWith\) \? payWith : "offline"/.test(checkoutSrc),
+  );
+  check(
+    "🔴 舊的 cardAvailable 三元式 fallback 沒有殘留（它會吃掉匯款的選擇）",
+    /paymentMethod: cardAvailable \? payWith/.test(checkoutSrc),
+    false,
   );
 
   const ordersSrc = readFile(join(ROOT, "src/server/repos/orders.ts"));

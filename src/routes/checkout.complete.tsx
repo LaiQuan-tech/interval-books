@@ -30,11 +30,12 @@ import { toast } from "sonner";
 import { PageShell, PageHeader } from "@/components/PageShell";
 import { PRODUCT_TYPE_LABELS } from "@/components/shop/labels";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useLang, useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { useCart } from "@/lib/cart";
-import { checkoutErrorText, type OrderConfirmation } from "@/lib/checkout";
-import { fetchOrderConfirmation, retryPayment } from "@/lib/checkout-fns";
+import { checkoutErrorText, REMITTANCE_LAST5_RE, type OrderConfirmation } from "@/lib/checkout";
+import { fetchOrderConfirmation, reportRemittance, retryPayment } from "@/lib/checkout-fns";
 import { shouldClearCartAfterOrder } from "@/lib/direct-checkout";
 import { submitPaymentForm } from "@/lib/payment-redirect";
 import { formatPrice } from "@/lib/shop";
@@ -94,7 +95,86 @@ const PAGE = {
     en: "We could not find that order. The link may be incomplete, or the order was never created.",
     ja: "ご注文が見つかりませんでした。リンクが不完全か、ご注文が成立していない可能性があります。",
   },
+
+  // ---- 匯款（0034）---------------------------------------------------------
+  titleTransfer: {
+    zh: "訂單已成立，請完成匯款",
+    en: "Please complete your transfer",
+    ja: "お振込のお願い",
+  },
+  transferCopy: {
+    zh: "訂單已經成立，品項與名額已為你保留。請於下列期限前匯款到這個帳戶，匯款後回到這一頁填寫帳號末五碼，我們核對後會再以電子信箱通知你。這些資訊也已經寄到你的信箱。",
+    en: "Your order is placed and the items and places are held for you. Please transfer to the account below by the due date, then come back to this page and tell us the last five digits of your account. We will email you once it is reconciled. A copy of these details is already in your inbox.",
+    ja: "ご注文が成立し、商品・お席をお取り置きしております。下記の期日までにお振込のうえ、このページに戻って口座番号の下 5 桁をご入力ください。確認後にメールでご連絡いたします。この内容はメールでもお送りしています。",
+  },
+  transferAccount: { zh: "匯款帳戶", en: "Bank account", ja: "お振込先" },
+  bankAccountName: { zh: "戶名", en: "Account name", ja: "口座名義" },
+  bankName: { zh: "銀行", en: "Bank", ja: "銀行" },
+  bankCode: { zh: "銀行代號", en: "Bank code", ja: "銀行コード" },
+  bankAccount: { zh: "帳號", en: "Account number", ja: "口座番号" },
+  transferAmount: { zh: "應匯金額", en: "Amount to transfer", ja: "お振込金額" },
+  transferDue: { zh: "匯款期限", en: "Transfer by", ja: "お振込期限" },
+  transferDueNote: {
+    zh: "逾期未匯款的訂單會自動取消，品項與名額會釋出。",
+    en: "Orders that are not paid by then are cancelled automatically, and the items and places are released.",
+    ja: "期限までにご入金がない場合、ご注文は自動的にキャンセルとなり、商品・お席は解放されます。",
+  },
+  last5Section: {
+    zh: "回報匯款帳號末五碼",
+    en: "Tell us your last five digits",
+    ja: "下 5 桁のご入力",
+  },
+  last5Label: { zh: "匯款帳號末五碼", en: "Last five digits", ja: "口座番号の下 5 桁" },
+  last5Hint: {
+    zh: "請填 5 位數字，我們用它比對銀行的入帳紀錄。只能填寫一次，送出前請確認。",
+    en: "Five digits, which we use to match your payment against our bank records. It can only be submitted once, so please check it first.",
+    ja: "5 桁の数字をご入力ください。入金記録の照合に使用します。ご入力は一度のみですのでご確認ください。",
+  },
+  last5Submit: { zh: "送出末五碼", en: "Submit", ja: "送信する" },
+  last5Submitting: { zh: "送出中…", en: "Submitting…", ja: "送信中…" },
+  last5Done: { zh: "已回報末五碼", en: "Last five digits received", ja: "下 5 桁を受け付けました" },
+  last5DoneNote: {
+    zh: "謝謝，我們核對入帳後會以電子信箱通知你。",
+    en: "Thank you — we will email you once we have matched the payment.",
+    ja: "ありがとうございます。入金確認後、メールでご連絡いたします。",
+  },
+  last5BadFormat: {
+    zh: "請填 5 位數字。",
+    en: "Please enter five digits.",
+    ja: "5 桁の数字をご入力ください。",
+  },
+  last5Already: {
+    zh: "這筆訂單已經回報過末五碼了。若填錯了，請直接與我們聯繫。",
+    en: "The last five digits have already been submitted for this order. If they were wrong, please contact us.",
+    ja: "このご注文はすでに下 5 桁をご入力済みです。誤りがある場合はご連絡ください。",
+  },
+  last5Failed: {
+    zh: "沒能送出，請稍後再試，或直接與我們聯繫。",
+    en: "That did not go through. Please try again shortly, or contact us.",
+    ja: "送信できませんでした。しばらくしてから再度お試しいただくか、ご連絡ください。",
+  },
 };
+
+/**
+ * 匯款期限的顯示字串。時區固定 Asia/Taipei —— 這是一間台北的書店，而
+ * Vercel 的機器是 UTC：不指定時區的話，「9/5 23:59 截止」會在頁面上變成
+ * 「9/5 15:59」，客人會以為自己少了 8 小時。同 src/lib/email-templates.ts 的
+ * formatDateTime()，兩邊算的是同一個時間點。
+ */
+function formatDueDate(iso: string, lang: "zh" | "en" | "ja"): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : "zh-TW";
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
 
 export const Route = createFileRoute("/checkout/complete")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -209,6 +289,52 @@ function CheckoutComplete() {
     };
   }, [token, order]);
 
+  /**
+   * 末五碼回報（0034）。
+   *
+   * `reportedLast5` 的來源有兩個，順序不可以顛倒：伺服器回來的那一份是權威
+   * （重新整理、換裝置都看得到），本地的 state 只是「這一次剛送出成功」的即時回饋
+   * ——不等下一次 fetch 就把畫面切成「已回報」。兩者都沒有就是還沒回報。
+   */
+  const [last5, setLast5] = useState("");
+  const [reporting, setReporting] = useState(false);
+  const [justReported, setJustReported] = useState<string | null>(null);
+  const reportedLast5 = order?.remittance?.last5 ?? justReported;
+
+  const onReportLast5 = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      if (!token) return;
+      const value = last5.trim();
+      // 送出前先擋一次格式。三層裡的第一層（另外兩層是 server function 的 zod 與
+      // 0034 的 CHECK）——它的作用是讓客人立刻看到問題，不是安全邊界。
+      if (!REMITTANCE_LAST5_RE.test(value)) {
+        toast.error(t(PAGE.last5BadFormat));
+        return;
+      }
+      setReporting(true);
+      try {
+        const result = await reportRemittance({ data: { token, last5: value } });
+        if (result.ok) {
+          setJustReported(result.last5);
+          return;
+        }
+        toast.error(
+          result.reason === "bad_format"
+            ? t(PAGE.last5BadFormat)
+            : result.reason === "already_reported"
+              ? t(PAGE.last5Already)
+              : t(PAGE.last5Failed),
+        );
+      } catch {
+        toast.error(t(PAGE.last5Failed));
+      } finally {
+        setReporting(false);
+      }
+    },
+    [token, last5, t],
+  );
+
   /** Re-issues the PayUni form for an order whose payment did not complete. */
   const onRetry = useCallback(async () => {
     if (!token) return;
@@ -248,26 +374,48 @@ function CheckoutComplete() {
     );
   }
 
-  // Three shapes of the same page, chosen from the server's answer only.
+  // Four shapes of the same page, chosen from the server's answer only.
   const isPaid = order.paymentStatus === "paid";
   const isFailed = order.awaitingPayment && order.paymentStatus === "failed";
   const isWaiting = order.awaitingPayment && order.paymentStatus === "pending";
+  /**
+   * 匯款訂單，而且還沒收到款（0034）。
+   *
+   * ⚠️ `order.remittance` 是 server 端組的：只有 payment_method = 'transfer'
+   *    **而且**店家真的設定好帳戶時才不是 null（見 getOrderByToken）。所以這裡不必
+   *    （也不可以）自己再判斷一次 payment_method —— 「有沒有匯款資訊可以顯示」的
+   *    判準只有伺服器那一份。
+   *
+   * 已經收到款的匯款訂單走 isPaid 那一條（跟刷卡訂單一樣），不再顯示帳號 ——
+   * 錢已經進來了，再印一次帳號只會讓人以為要再匯一次。
+   */
+  const transfer = !isPaid && order.remittance ? order.remittance : null;
 
-  const StatusIcon = isPaid ? Check : isFailed ? TriangleAlert : isWaiting ? Clock : Check;
+  const StatusIcon = isPaid
+    ? Check
+    : isFailed
+      ? TriangleAlert
+      : isWaiting || transfer
+        ? Clock
+        : Check;
   const heading = isPaid
     ? PAGE.titlePaid
-    : isWaiting
-      ? PAGE.titleWaiting
-      : isFailed
+    : transfer
+      ? PAGE.titleTransfer
+      : isWaiting
         ? PAGE.titleWaiting
-        : PAGE.title;
+        : isFailed
+          ? PAGE.titleWaiting
+          : PAGE.title;
   const statusCopy = isPaid
     ? PAGE.paid
     : isFailed
       ? PAGE.failed
-      : isWaiting
-        ? PAGE.waiting
-        : PAGE.paymentPending;
+      : transfer
+        ? PAGE.transferCopy
+        : isWaiting
+          ? PAGE.waiting
+          : PAGE.paymentPending;
 
   return (
     <PageShell>
@@ -296,6 +444,99 @@ function CheckoutComplete() {
             <Link to="/cart" className="text-xs tracking-widest underline underline-offset-4">
               {t(PAGE.backToCart)}
             </Link>
+          </div>
+        )}
+
+        {/* ---- 匯款帳戶與末五碼回報（0034）------------------------------- */}
+        {transfer && (
+          <div className="mt-10 border border-foreground p-7 md:p-8">
+            <p className="eyebrow text-xl">{t(PAGE.transferAccount)}</p>
+
+            <dl className="mt-6 space-y-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t(PAGE.bankAccountName)}</dt>
+                <dd className="text-right font-medium">{transfer.account.accountName}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t(PAGE.bankName)}</dt>
+                <dd className="text-right font-medium">{transfer.account.bankName}</dd>
+              </div>
+              {transfer.account.bankCode !== "" && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t(PAGE.bankCode)}</dt>
+                  <dd className="text-right font-medium tabular-nums">
+                    {transfer.account.bankCode}
+                  </dd>
+                </div>
+              )}
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t(PAGE.bankAccount)}</dt>
+                {/* break-all：帳號很長，手機上不可以撐破版面而讓人看不到後幾碼。 */}
+                <dd className="text-right font-serif text-lg tabular-nums break-all">
+                  {transfer.account.bankAccount}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t(PAGE.transferAmount)}</dt>
+                <dd className="text-right font-serif text-lg tabular-nums">
+                  {formatPrice(order.total)}
+                </dd>
+              </div>
+              {/*
+                期限算不出來就整列不印。印一列「匯款期限：Invalid Date」比不印那一列
+                糟得多 —— 客人會照著它去判斷什麼時候該匯款。
+              */}
+              {transfer.dueAt && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t(PAGE.transferDue)}</dt>
+                  <dd className="text-right tabular-nums">{formatDueDate(transfer.dueAt, lang)}</dd>
+                </div>
+              )}
+            </dl>
+
+            <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+              {t(PAGE.transferDueNote)}
+            </p>
+
+            <div className="rule my-6" />
+
+            {reportedLast5 !== null ? (
+              // 已回報：顯示填過的號碼，**不提供修改**。這個欄位是店家對帳時要相信的
+              // 證詞，能改就等於沒有證詞（伺服器那一側也擋著，見 reportRemittance）。
+              <div>
+                <p className="eyebrow text-xl">{t(PAGE.last5Done)}</p>
+                <p className="mt-2 font-serif text-2xl tabular-nums">{reportedLast5}</p>
+                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                  {t(PAGE.last5DoneNote)}
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={onReportLast5} className="space-y-3">
+                <label className="eyebrow block text-xl" htmlFor="remittance-last5">
+                  {t(PAGE.last5Section)}
+                </label>
+                <p className="text-xs leading-relaxed text-muted-foreground">{t(PAGE.last5Hint)}</p>
+                <div className="flex flex-wrap items-start gap-3">
+                  <Input
+                    id="remittance-last5"
+                    name="last5"
+                    value={last5}
+                    onChange={(e) => setLast5(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                    // inputMode/pattern：手機上直接跳數字鍵盤。maxLength 與上面那一行
+                    // 的 replace 是兩層——貼上與輸入法走的路徑不一樣。
+                    inputMode="numeric"
+                    pattern="[0-9]{5}"
+                    maxLength={5}
+                    autoComplete="off"
+                    aria-label={t(PAGE.last5Label)}
+                    className="w-32 font-serif text-lg tabular-nums"
+                  />
+                  <Button type="submit" disabled={reporting || !REMITTANCE_LAST5_RE.test(last5)}>
+                    {reporting ? t(PAGE.last5Submitting) : t(PAGE.last5Submit)}
+                  </Button>
+                </div>
+              </form>
+            )}
           </div>
         )}
 

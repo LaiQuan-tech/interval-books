@@ -74,16 +74,28 @@ export type PlaceOrderResult =
  *    而不是「選了之後結帳失敗」。
  */
 export const fetchPaymentOptions = createServerFn({ method: "GET" }).handler(
-  async (): Promise<{ cardAvailable: boolean }> => {
+  async (): Promise<{ cardAvailable: boolean; transferAvailable: boolean }> => {
     try {
-      const [{ blackcatConfigured }, { payuniConfigured }] = await Promise.all([
-        import("@/server/blackcat"),
-        import("@/server/payuni"),
-      ]);
-      return { cardAvailable: blackcatConfigured() || payuniConfigured() };
+      const [{ blackcatConfigured }, { payuniConfigured }, { getRemittanceAccount }, checkout] =
+        await Promise.all([
+          import("@/server/blackcat"),
+          import("@/server/payuni"),
+          import("@/server/repos/site-settings"),
+          import("@/lib/checkout"),
+        ]);
+      // 0034：匯款選項的開關是「店家設好帳戶了沒有」，與金流憑證無關（兩者可以同時
+      // 開、也可以同時關）。⚠️ 這裡只回一個布林 —— 帳號本身**不進**結帳頁的 loader。
+      // 它對 anon 沒有 SELECT 權限（0034 §0.4），而結帳頁是公開頁面：把帳號放進它的
+      // loader 等於把公司帳號寫進每一個訪客都拿得到的 SSR payload，換來的好處是零
+      // （客人在完成頁與信裡才需要看到帳號，那時候他已經有 public_token 了）。
+      const account = await getRemittanceAccount();
+      return {
+        cardAvailable: blackcatConfigured() || payuniConfigured(),
+        transferAvailable: checkout.remittanceConfigured(account),
+      };
     } catch (err) {
       console.error("[checkout] fetchPaymentOptions failed", err);
-      return { cardAvailable: false };
+      return { cardAvailable: false, transferAvailable: false };
     }
   },
 );
@@ -160,5 +172,47 @@ export const retryPayment = createServerFn({ method: "POST" })
     } catch (err) {
       console.error("[checkout] retryPayment failed", err);
       return { ok: false, code: "payment_unavailable" };
+    }
+  });
+
+export type ReportRemittanceResult =
+  | { ok: true; last5: string; reportedAt: string }
+  | { ok: false; reason: "not_found" | "not_transfer" | "already_reported" | "bad_format" };
+
+/**
+ * 客人回報匯款帳號末五碼（0034）。
+ *
+ * 授權模型與 retryPayment 逐字相同：認 orders.public_token，不認訂單編號。理由也
+ * 一樣 —— 訂單編號是流水號（IB-2026000000NN），拿它當鑰匙等於讓任何人沿著號碼走
+ * 一遍，把每一張待收款的單都標上一組假的末五碼，讓店家的對帳畫面全部失效。
+ *
+ * ⚠️ 與 retryPayment 不同的是，這裡的失敗原因**有分辨**（already_reported /
+ *    bad_format …）。那不違反 retryPayment 上面那條「不要變成探針」的規則：那條
+ *    規則守的是「別讓人用亂猜的 token 問出一張訂單存不存在」，而這裡對一個不存在
+ *    的 token 一律回 not_found，對一個存在但不能回報的訂單一律回 not_transfer。
+ *    分辨得出來的兩種（已回報過、格式錯）都需要 token 本來就對得上，那時候呼叫者
+ *    已經是訂單的持有人了，告訴他「你已經填過 12345」是他該看到的東西。
+ *
+ * 「只能填一次」不是靠這裡擋的 —— 它是 reportRemittance() 那一句 UPDATE 的 WHERE
+ * 條件（見那支函式）。這一層只負責把明顯不合格式的請求擋在資料庫外面。
+ */
+export const reportRemittance = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      token: z.string().trim().min(16).max(200),
+      // 與 src/lib/checkout.ts 的 REMITTANCE_LAST5_RE 和 0034 的 CHECK 是同一條規則。
+      last5: z
+        .string()
+        .trim()
+        .regex(/^[0-9]{5}$/),
+    }),
+  )
+  .handler(async ({ data }): Promise<ReportRemittanceResult> => {
+    const { reportRemittance: report } = await import("@/server/repos/orders");
+    try {
+      return await report(data.token, data.last5);
+    } catch (err) {
+      console.error("[checkout] reportRemittance failed", err);
+      return { ok: false, reason: "not_found" };
     }
   });
