@@ -33,6 +33,7 @@ import {
   Tent,
   TriangleAlert,
   Type,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -189,6 +190,22 @@ const NAV_GROUPS = [
       { to: "/admin/settings", label: "全站設定", icon: Settings, staff: false },
       { to: "/admin/strings", label: "介面文字", icon: Type, staff: false },
       { to: "/admin/phones", label: "聯絡電話", icon: Phone, staff: false },
+    ],
+  },
+  {
+    label: "系統管理",
+    items: [
+      // 獨立成一組而不是塞進「站台設定」：那一組管的是網站內容長什麼樣
+      // （site_settings／ui_strings／聯絡電話），這裡管的是「誰能用這個
+      // 後台」——來源不一樣（public.profiles／public.staff_permissions，
+      // 見 supabase/migrations/0033_admin_staff_management.sql），跟本檔
+      // 開頭「不同系統分開成不同群組」的原則一致。
+      //
+      // staff: false —— 這一頁只有 admin 看得到連結。真正擋人的不是這一行，
+      // 是 src/lib/admin/fns/staff-accounts.ts 每一支都掛的 adminFnMiddleware
+      // （見 _shell.staff.tsx 檔頭）；這裡只是不要給店員一個一按就跳錯誤頁
+      // 的連結。
+      { to: "/admin/staff", label: "後台人員", icon: Users, staff: false },
     ],
   },
 ] as const;

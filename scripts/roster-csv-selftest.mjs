@@ -320,7 +320,18 @@ assertMigrationDependencies(check, MIG_DIR, {
   //    dedupe_key，不是自己重新判斷一次付款狀態。其餘四支（email-templates.ts /
   //    _shell.settings.tsx / notify.ts / site-settings.ts）完全不提
   //    event_registrations / admin_event_roster，不落在掃描範圍內。原樣成立。
-  reviewedThrough: "0032_admin_order_notify.sql",
+  // ── 0033_admin_staff_management.sql 的重讀結論 ────────────────────────────
+  // 0033 加後台人員管理頁的資料庫底座：profiles_keep_last_admin（AFTER
+  // STATEMENT trigger，擋刪除／降級最後一位 admin）＋ admin_update_profile_role
+  // 與 admin_replace_staff_permissions 兩支 RPC（都只 grant 給 service_role）。
+  // 命中 admin_auth 純粹是因為它的 SQL 提到 profiles 與 staff_permissions 這兩個
+  // 表名——它**沒有**動 0021 §4 幫 staff_permissions.permission 加的 CHECK
+  // （九種值域，event.roster.read 仍在裡面，未被 drop/add 過），也沒有動
+  // fns/event-registrations.ts 那四支 staffFnMiddleware()、沒有動側欄
+  // NAV_GROUPS 既有的「活動報名」項目（0033 只在別處新增一個獨立的後台人員
+  // 管理項目）。它新增的 trigger 只在 update／delete profiles 時觸發，
+  // event-registrations 那四支 fn 完全不寫 profiles，不受影響。原樣成立。
+  reviewedThrough: "0033_admin_staff_management.sql",
 });
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {

@@ -1821,3 +1821,74 @@ export const vendorSubmissionApprovalSchema = z.object({
 });
 
 export type VendorSubmissionApprovalValues = z.infer<typeof vendorSubmissionApprovalSchema>;
+
+// ---------------------------------------------------------------------------
+// 後台人員管理（/admin/staff，supabase/migrations/0033_admin_staff_management.sql）
+// ---------------------------------------------------------------------------
+// STAFF_PERMISSIONS 在這裡重新宣告一份，不是從 @/server/auth import 那份同名
+// 常數——那個檔案第一行是 `import "@tanstack/react-start/server-only"`，瀏覽器
+// import 它會直接炸掉，而 schemas.ts 是 route 元件（瀏覽器端）也會 import 的
+// 檔案（例如 _shell.categories.tsx 就 import 這裡的 eventCategorySchema）。
+// 這不是這個檔案第一次這樣做：VENDOR_SENSITIVE_FIELDS 在上面（本檔案）與
+// src/server/repos/inv-vendors.ts 也是各自宣告一份，同一個跨界限制、同一個
+// 解法，這裡照抄既有做法。九個值必須與 src/server/auth.ts 的 STAFF_PERMISSIONS
+// 逐字一致——它們同時也必須是 public.staff_permissions.permission 的 CHECK
+// 值域（0021 §4）的子集，那條 CHECK 才是真正的權威來源。
+
+export const STAFF_PERMISSIONS = [
+  "approve_products",
+  "approve_purchases",
+  "approve_price_changes",
+  "approve_vendors",
+  "approve_combo_sets",
+  "approve_stock_adjustments",
+  "approve_inventory_adjustments",
+  "inv.vendor.pii.read",
+  "event.roster.read",
+] as const;
+
+/**
+ * 建立新帳號時允許設定的角色。🔴 刻意只有這三種，不可以是 vendor 或
+ * customer——vendor 是廠商自助入口（0019）的身分，customer 是一般購物客人，
+ * 兩者都不是「後台人員」。這份清單與 src/server/repos/staff-accounts.ts 的
+ * CreatableRole 型別、supabase/migrations/0033_admin_staff_management.sql §2
+ * 的 RPC 內部檢查，三處刻意各自寫死同一份三值清單而不共用一個型別——同一個
+ * server-only / 瀏覽器端的跨界限制，見上面 STAFF_PERMISSIONS 的說明。
+ */
+export const CREATABLE_BACKOFFICE_ROLES = ["pending", "staff", "admin"] as const;
+
+export const createStaffAccountSchema = z.object({
+  email: z.string().trim().email("電子郵件格式不正確").max(200),
+  // 8：Supabase 專案目前設定的密碼長度下限（見任務交代，非這裡發明的規則）。
+  // 這裡驗證是為了在畫面上給出即時、友善的錯誤，真正的下限仍由 GoTrue 自己
+  // 的專案設定把關——即使這裡被繞過（直接呼叫 server fn），GoTrue 也會拒絕。
+  password: z.string().min(8, "密碼至少需要 8 個字元").max(200, "密碼太長了"),
+  role: z.enum(CREATABLE_BACKOFFICE_ROLES, { errorMap: () => ({ message: "請選擇角色" }) }),
+});
+
+export type CreateStaffAccountValues = z.infer<typeof createStaffAccountSchema>;
+
+export const updateStaffRoleSchema = z.object({
+  userId: z.string().trim().uuid(),
+  role: z.enum(CREATABLE_BACKOFFICE_ROLES, { errorMap: () => ({ message: "請選擇角色" }) }),
+});
+
+export type UpdateStaffRoleValues = z.infer<typeof updateStaffRoleSchema>;
+
+/**
+ * 移除後台身分。⚠️ 刻意沒有 role 欄位——這個動作永遠把角色設回 'customer'，
+ * 那個值由 server fn 自己決定（src/lib/admin/fns/staff-accounts.ts 的
+ * removeStaffAccess），這支 schema 從協定層面就沒有地方可以夾帶任何角色值。
+ */
+export const removeStaffAccessSchema = z.object({
+  userId: z.string().trim().uuid(),
+});
+
+export type RemoveStaffAccessValues = z.infer<typeof removeStaffAccessSchema>;
+
+export const staffPermissionsSchema = z.object({
+  userId: z.string().trim().uuid(),
+  permissions: z.array(z.enum(STAFF_PERMISSIONS)).max(STAFF_PERMISSIONS.length),
+});
+
+export type StaffPermissionsValues = z.infer<typeof staffPermissionsSchema>;

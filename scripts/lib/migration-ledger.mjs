@@ -481,6 +481,15 @@ export const MIGRATION_LEDGER = Object.freeze([
     //    enqueue/claim 函式，客人那兩封信的路徑一個字都沒動。
     touches: ["cms", "orders_payments", "email_outbox"],
   },
+  {
+    file: "0033_admin_staff_management.sql",
+    note: "後台人員管理頁的資料庫底座：profiles_keep_last_admin（保底至少一位 admin 的 AFTER STATEMENT trigger）＋ admin_update_profile_role／admin_replace_staff_permissions 兩支 RPC",
+    // 識別字掃描結果只命中 admin_auth（staff_permissions、profiles 兩個識別字都對到）。
+    // 沒有 alter 任何既有欄位、沒有重建任何既有函式，所以沒有「函式重建帶進來」
+    // 那種借標；三個新物件（trigger 函式、trigger、兩支 RPC）名字全新，
+    // 不會被任何既有識別字掃到，也不會誤觸其他區域。
+    touches: ["admin_auth"],
+  },
 ]);
 
 /** 磁碟上的 migration 檔名，排序過。空目錄 = 丟例外（那不是「沒有違規」）。 */
