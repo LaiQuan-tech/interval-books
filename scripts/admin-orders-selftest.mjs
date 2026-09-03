@@ -405,6 +405,45 @@ console.log("\n[7] 側欄有訂單的入口");
 }
 
 // =============================================================================
+// [7b] 「標記已收款」只服務 transfer／null，且標記結果與畫面刷新的錯誤分開處理
+// =============================================================================
+// 這兩條不是原始任務條列出來的驗收項，是 fresh-context 覆核時讀出來的兩個真的
+// UX／流程瑕疵，修完之後補上斷言鎖住，不讓它們無聲無息地被下一次改動撞回來：
+//
+//   1. 「標記已收款」的按鈕如果對任何 payment_method 都出現，畫面文案卻寫死是
+//      匯款情境（「對過銀行對帳單」），會在 card／atm／cvs_cod 這幾種卡住待付款
+//      的訂單上把店員導向錯的核對管道（該查金流商後台）。
+//   2. 標記本身（呼叫 RPC）與標記後的畫面刷新（重讀詳情、重讀列表）如果共用同一
+//      個 try/catch，刷新恰好失敗時會補一句「標記失敗」，蓋掉已經成立的
+//      toast.success，同一次操作出現互相矛盾的兩則訊息。
+console.log("\n[7b] 標記已收款的可用範圍，以及標記結果與畫面刷新的錯誤互不干擾");
+{
+  checkTrue(
+    "🔴 「標記已收款」只在 payment_method 是 transfer 或 null 時可用",
+    /payment_method === "transfer" \|\| detail\.payment_method === null/.test(routeSrc),
+    "card／atm／cvs_cod／test_paid／free 卡在待付款時不該出現這顆按鈕——那些正常都由金流商 webhook 自動結清，卡住代表要去查金流商後台，不是對銀行對帳單。",
+  );
+
+  const submitFnSrc = sliceBetween(routeSrc, "async function submitMarkPaid", "return (");
+  checkTrue("抓得到 submitMarkPaid 的函式本體", submitFnSrc.length > 200);
+  const tryCount = (submitFnSrc.match(/\btry\s*\{/g) ?? []).length;
+  check(
+    "🔴 submitMarkPaid 裡有兩段各自的 try：呼叫 RPC 一段，重讀畫面另一段",
+    tryCount,
+    2,
+    "併成一段的後果：重讀畫面失敗會被同一個 catch 接住，補一句「標記失敗」蓋掉已經成立的成功訊息。",
+  );
+  const failedMsgCount = (submitFnSrc.match(/標記失敗，請稍後再試/g) ?? []).length;
+  check(
+    "🔴 「標記失敗」這句話只出現一次（只在呼叫 RPC 那段的 catch 裡）",
+    failedMsgCount,
+    1,
+    "如果重讀畫面那段的 catch 也講「標記失敗」，就是同一個矛盾 toast 的 bug 換句話重演。",
+  );
+  checkTrue("重讀畫面失敗有自己的訊息，不是「標記失敗」", /畫面更新失敗/.test(submitFnSrc));
+}
+
+// =============================================================================
 // [8] 動態：src/lib/admin/pii-mask.ts 本人（純函式，直接 import 產線那一份）
 // =============================================================================
 console.log("\n[8] 遮罩演算法（動態呼叫 src/lib/admin/pii-mask.ts）");

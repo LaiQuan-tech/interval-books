@@ -234,6 +234,12 @@ function AdminOrdersPage() {
    * 成功／失敗兩種（見任務驗收條件）。already_paid 用 toast.info 而不是
    * toast.error：那是冪等成功（同一張單被標記了兩次），不是一次失敗，
    * 同 _shell.stock-alerts.tsx 對「這一筆已經有人處理過了」的處置。
+   *
+   * ⚠️ 標記本身（第一個 try）與標記完之後的畫面刷新（第二個 try）刻意分成兩段、
+   *    各自的 catch。刷新只是「畫面要不要跟上最新狀態」，跟這次標記本身成不成功
+   *    是兩件事——併在同一個 try 裡的話，標記明明成功（已經 toast.success 過），
+   *    只因為緊接著的 getAdminOrderDetail() 恰好網路抖動，就會被外層 catch 接住、
+   *    又補一句「標記失敗，請稍後再試」，同一次操作出現互相矛盾的兩則 toast。
    */
   async function submitMarkPaid() {
     if (!detail) return;
@@ -259,17 +265,24 @@ function AdminOrdersPage() {
 
       setConfirmOpen(false);
       setNote("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "標記失敗，請稍後再試");
+      return;
+    } finally {
+      setMarking(false);
+    }
 
+    // 標記本身的結果已經回報過了（見上）。這裡失敗只代表畫面沒跟上最新狀態，
+    // 不可以沿用「標記失敗」那句話——那會讓一次已經成立的標記被誤讀成沒成功。
+    try {
       // 兩件事都要重讀：這張訂單的詳情（畫面要看得到新狀態），以及列表
       // （scope='transfer_pending' 時，剛標成已付款的這一筆該從清單上消失）。
       const { getAdminOrderDetail } = await import("@/lib/admin/fns/orders");
       const fresh = await getAdminOrderDetail({ data: { orderId: detail.id } });
       if (fresh) setDetail(fresh);
       await load(scope);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "標記失敗，請稍後再試");
-    } finally {
-      setMarking(false);
+    } catch {
+      toast.error("已處理，但畫面更新失敗，請重新整理頁面確認最新狀態");
     }
   }
 
@@ -499,11 +512,17 @@ function AdminOrdersPage() {
                 </dl>
               </section>
 
-              {detail.payment_status !== "paid" ? (
+              {detail.payment_status === "paid" ? (
+                <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  這張訂單已經是已收款狀態。
+                </p>
+              ) : detail.payment_method === "transfer" || detail.payment_method === null ? (
                 <section className="space-y-2 rounded-md border border-border p-3">
                   <h3 className="text-sm font-medium">標記已收款</h3>
                   <p className="text-xs text-muted-foreground">
-                    對過銀行對帳單、確認這筆款項真的入帳之後才按下面這顆按鈕。
+                    {detail.payment_method === "transfer"
+                      ? "對過銀行對帳單、確認這筆款項真的入帳之後才按下面這顆按鈕。"
+                      : "這張訂單由店家另行聯繫付款——確認款項已經用約定的方式收到之後才按下面這顆按鈕。"}
                   </p>
                   <div className="space-y-1.5">
                     <Label htmlFor="mark-paid-note">備註（選填）</Label>
@@ -520,8 +539,15 @@ function AdminOrdersPage() {
                   </Button>
                 </section>
               ) : (
-                <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-                  這張訂單已經是已收款狀態。
+                // payment_method 是 card／atm／cvs_cod／test_paid／free 卻還卡在待付款：
+                // 正常情況下這幾種一律由金流商 webhook 自動結清，卡住多半代表 webhook
+                // 沒送到或送失敗，不是店家手上有一張對帳單可以核對。這裡不給「標記已
+                // 收款」的入口——按下去等於在沒有金流商佐證的情況下宣稱收到錢，那正是
+                // 這一頁存在的理由（保留 payment_method）想避免的另一種說謊方式。
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+                  這張訂單透過線上金流付款，但還沒收到付款成功的通知。請到金流商後台核對，
+                  不建議在這裡手動標記——這一頁的「標記已收款」只服務匯款與店家另行聯繫付款
+                  這兩種情況。
                 </p>
               )}
             </div>
@@ -537,7 +563,11 @@ function AdminOrdersPage() {
               {detail
                 ? `訂單 ${detail.order_no}，金額 ${money(detail.total)}` +
                   (detail.remittance_last5 ? `，客人回報末五碼 ${detail.remittance_last5}` : "") +
-                  "。請先確認銀行對帳單上真的有這一筆——這個動作無法在這一頁復原。"
+                  "。" +
+                  (detail.payment_method === "transfer"
+                    ? "請先確認銀行對帳單上真的有這一筆"
+                    : "請先確認款項真的已經用約定的方式收到") +
+                  "——這個動作無法在這一頁復原。"
                 : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
