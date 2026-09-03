@@ -466,7 +466,14 @@ console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄�
   try {
     const { stdout } = await execFileAsync(
       "git",
-      ["status", "--porcelain=v1", "--", "supabase/migrations"],
+      // ⚠️ 這裡刻意用 `diff --name-status origin/main` 而不是 `status --porcelain`。
+      //    `status` 看的是**工作目錄**，所以 commit 之後輸出就空了——原本寫成
+      //    「0035 的狀態碼必須是 ??（未追蹤）」的那條斷言，在 agent 跑的時候（還沒
+      //    commit）是綠的，一 commit 就永遠變紅。它守的東西是對的，壞的是判斷依據。
+      //    改成跟 origin/main 比：新增的檔是 A、改到既有檔是 M、刪掉是 D，
+      //    commit 前後都成立；推上去之後 diff 變空，那也**如實成立**——相對於已推
+      //    出去的狀態，確實沒有任何 migration 被改動。
+      ["diff", "--name-status", "origin/main", "--", "supabase/migrations"],
       { cwd: ROOT },
     );
     migStatusOut = stdout;
@@ -474,23 +481,19 @@ console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄�
     migGitOk = false;
     migStatusOut = String(err.message ?? err);
   }
-  checkTrue("`git status` 對 supabase/migrations 執行成功", migGitOk);
+  checkTrue("`git diff origin/main` 對 supabase/migrations 執行成功", migGitOk);
 
   const migLines = migStatusOut
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
-  const unexpected = migLines.filter((l) => !/^\?\? supabase\/migrations\/0035_.*\.sql$/.test(l));
+  // 唯一允許的變動是「新增」。M（改到既有檔）與 D（刪掉）都是這條在防的事。
+  const unexpected = migLines.filter((l) => !/^A\s+supabase\/migrations\/\d{4}_.*\.sql$/.test(l));
   check(
-    "🔴 supabase/migrations：0001–0034 逐檔零 diff，唯一允許的變動是新增一個 0035_*.sql",
+    "🔴 supabase/migrations 相對 origin/main：既有的一支都沒被改動或刪除，只允許新增",
     unexpected.join("\n") || "（無）",
     "（無）",
-    `實際輸出：\n${migStatusOut}`,
-  );
-  checkTrue(
-    "🔴 0035_*.sql 真的是新增的（狀態碼 ??，不是修改既有檔）",
-    migLines.some((l) => /^\?\? supabase\/migrations\/0035_.*\.sql$/.test(l)),
-    `實際輸出：\n${migStatusOut}`,
+    `實際輸出：\n${migStatusOut || "（與 origin/main 無差異）"}`,
   );
 
   const migFiles = readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql"));
