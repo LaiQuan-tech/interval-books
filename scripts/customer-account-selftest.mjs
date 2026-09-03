@@ -197,7 +197,25 @@ assertMigrationDependencies(check, MIG_DIR, {
   //     expire_unpaid_orders() 函式本體那段 0020 的逐字照抄（第 4c 步），沒有任何
   //     新寫的程式碼落在那裡。
   // 原樣成立。
-  reviewedThrough: "0034_transfer_payment.sql",
+  // ── 0035_admin_order_registration_cleanup.sql 的重讀結論 ───────────────────
+  // 0035 是後台訂單刪除／封存＋名單刪除單筆，動到這支依賴的四個區域全部：
+  //   · orders_payments——只加一個 nullable 欄位（orders.archived_at）與兩支全新
+  //     函式（admin_delete_order／admin_archive_order）。同樣**沒有碰 user_id、
+  //     customer_email、public_token**，沒有 create or replace claim_guest_orders()
+  //     一個字，認領訪客訂單的三道閘不受影響。
+  //   · order_expiry——admin_delete_order() 讀 order_items 只是為了逐一呼叫
+  //     release_session_seat()，以及型錄庫存還原那一段的 join；**沒有重寫**
+  //     expire_unpaid_orders() 本人，RETURNS TABLE 與挑單條件一個字都沒動。
+  //   · session_seats / event_registrations——這是這支自己會動到讀寫的地方，但
+  //     動法是「admin 主動對一張未付款訂單呼叫 admin_delete_order() /
+  //     admin_delete_registration()」，那是後台的操作，不是
+  //     fetchMyRegistrations()／customer-orders.ts 這條會員自己讀自己資料的路徑會
+  //     經過的程式碼——0035 沒有改 fetchMyRegistrations 一個字，也沒有改
+  //     customer-orders.ts 過濾 user_id 的任何一段。已付款訂單（會員中心真正關心
+  //     的那種）走的是 admin_archive_order()，那支連 event_registrations 都不碰
+  //     （只設／清 archived_at），會員自己的報名紀錄不受影響。
+  // 原樣成立。
+  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
 });
 
 // =============================================================================

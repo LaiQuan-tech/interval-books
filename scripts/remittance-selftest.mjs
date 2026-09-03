@@ -265,7 +265,28 @@ assertLedgerDeclarationsHonest(check, MIG_DIR);
 assertMigrationDependencies(check, MIG_DIR, {
   suite: "remittance-selftest",
   dependsOn: ["orders_payments", "order_expiry", "cms", "email_outbox"],
-  reviewedThrough: "0034_transfer_payment.sql",
+  // ── 0035_admin_order_registration_cleanup.sql 的重讀結論 ───────────────────
+  // 0035 是後台訂單刪除／封存＋名單刪除單筆。它標了 orders_payments（加
+  // orders.archived_at 一個 nullable 欄位、admin_delete_order() /
+  // admin_archive_order() 兩支新函式）與 order_expiry（admin_delete_order() 讀
+  // order_items 逐一呼叫 release_session_seat()），但**沒有**標 cms 或
+  // email_outbox——0035 完全沒有碰 site_settings（銀行四欄與它們的 column-level
+  // grant 一個字都沒動）、email_copy、'remittance' 這個 template_key，或任何
+  // enqueue 函式。逐條對過與這支自檢真正相交的三件事：
+  //
+  //   · expire_unpaid_orders()——0035 沒有 create or replace 它，匯款訂單 3 天
+  //     寬限那一行（[14] 段驗的核心）一個字沒被 0034 之後的任何一支動過。
+  //   · admin_mark_order_paid()——0035 沒有碰它，[16] 段驗的「保留原本
+  //     payment_method、四種 reason、稽核列、grants」全部原樣成立。
+  //   · reportRemittance() 的四道閘——0035 完全沒有改 orders.remittance_last5／
+  //     remittance_reported_at 的寫入路徑，那支函式與它的 UPDATE 條件一個字
+  //     沒動。
+  //
+  // 唯一新增的欄位 archived_at 與唯一新增的兩支函式，都是**匯款訂單核銷完成之後**
+  // 才可能用到的東西（封存一張已付款的匯款訂單，或刪除一張始終沒回報末五碼、
+  // 已經取消的匯款訂單）——不影響匯款訂單「怎麼從 pending 走到 paid」的任何一步。
+  // 原樣成立。
+  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
 });
 
 const sql0034 = readFile(MIG_0034);

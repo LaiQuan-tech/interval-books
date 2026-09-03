@@ -1387,7 +1387,22 @@ for (const [label, src] of [
     //     送出前的白名單改用 methodOptions，以及「舊的 cardAvailable 三元式沒有殘留」
     //     ——那個舊寫法在三個選項的世界裡會把選了匯款的客人靜靜改成 offline。
     // 原樣成立。
-    reviewedThrough: "0034_transfer_payment.sql",
+    // ── 0035_admin_order_registration_cleanup.sql 的重讀結論 ─────────────────
+    // 0035 是後台訂單刪除／封存＋名單刪除單筆。它在帳本上標了 orders_payments
+    // （新增 orders.archived_at 一個 nullable 欄位、admin_delete_order() /
+    // admin_archive_order() 兩支新函式都收 p_order_id 查 public.orders），所以這條
+    // 為它轉紅。逐條對過：
+    //   · 一樣**完全沒有碰** src/server/blackcat.ts、blackcat-webhook.ts、
+    //     payuni.ts、payuni-webhook.ts、markOrderPaid() 任何一個字，也沒有動
+    //     orders_payment_method_check（payment_method 的允許值域一個字都沒改）。
+    //   · admin_delete_order() 會擋已付款訂單（payment_status = 'paid' →
+    //     order_is_paid），只對未付款／已取消的訂單生效，而這支自檢的斷言全部圍繞
+    //     著「刷卡訂單怎麼走到 paid」這條路徑——被 0035 擋下來的訂單本來就不會是
+    //     這支自檢建的那些已付款測試資料。
+    //   · fetchPaymentOptions() 與結帳頁的三個付款選項（card／transfer／offline）
+    //     0035 一個字都沒動，只在後台訂單頁加了刪除／封存兩顆按鈕，不影響結帳頁。
+    // 原樣成立。
+    reviewedThrough: "0035_admin_order_registration_cleanup.sql",
   });
 }
 

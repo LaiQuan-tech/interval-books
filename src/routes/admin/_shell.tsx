@@ -118,6 +118,40 @@ const NAV_GROUPS = [
     ],
   },
   {
+    // 0035：「電商」搬到「內容管理」前面——訂單／報名是每天要盯的營運頁面，內容
+    // 管理多半是上架前才動一次。群組內部的項目與各自的 staff/permission 一個字
+    // 都沒動，純粹是這一個陣列裡兩個 group 物件的先後順序（NAV_GROUPS 沒有 sort
+    // 欄位，順序就是畫面順序）。scripts/artists-selftest.mjs 只用群組標籤定位、
+    // scripts/event-assembler-selftest.mjs 只抓扁平的 `to:` 清單，兩者都不看
+    // group 的排列順序，換位置不會動到它們的斷言。
+    label: "電商",
+    items: [
+      { to: "/admin/products", label: "商品", icon: Package, staff: false },
+      // 訂單列表／詳情／標記已收款／刪除／封存（0034 的匯款付款方式；0035 加刪除
+      // 與封存）。staff: false——這一頁看得到客人的姓名與遮罩後的聯絡方式，而且
+      // 標記已收款／刪除／封存都動到錢或紀錄本身，src/lib/admin/fns/orders.ts
+      // 每一支都掛 adminFnMiddleware，門市人員打不進來。這裡只是不要給他一個
+      // 一按就跳錯誤頁的連結。
+      { to: "/admin/orders", label: "訂單", icon: Landmark, staff: false },
+      // 活動場次與報名名單（0020／0021；0035 加移除單筆報名）。名額搬離 products
+      // 之後，「這場還剩幾個位子」只有這裡答得出來。
+      //
+      // 名單是第三人的個資，所以它不跟著 staff 一起放行，而是掛在 0021 §4 的
+      // event.roster.read 上：一個負責活動現場的工讀生可以被授權看簽到表，而不必
+      // 連帶拿到整個 CMS。admin 一律看得到（他全有）。移除報名比查看更敏感，掛的
+      // 是 adminFnMiddleware（見 fns/event-registrations.ts 的
+      // deleteAdminRegistration），店員看得到名單、但看不到移除按鈕能成功執行的
+      // 權限——這裡的 staff/permission 一樣**只是畫面**。
+      {
+        to: "/admin/registrations",
+        label: "活動報名",
+        icon: ClipboardCheck,
+        staff: true,
+        permission: "event.roster.read" as const,
+      },
+    ],
+  },
+  {
     label: "內容管理",
     items: [
       { to: "/admin", label: "儀表板", icon: LayoutDashboard, staff: false },
@@ -135,30 +169,6 @@ const NAV_GROUPS = [
       { to: "/admin/collaborations", label: "合作", icon: Handshake, staff: false },
       { to: "/admin/categories", label: "活動分類", icon: Tags, staff: false },
       { to: "/admin/pages", label: "頁面文案", icon: FileText, staff: false },
-    ],
-  },
-  {
-    label: "電商",
-    items: [
-      { to: "/admin/products", label: "商品", icon: Package, staff: false },
-      // 訂單列表／詳情／標記已收款（0034 的匯款付款方式）。staff: false——這一頁
-      // 看得到客人的姓名與遮罩後的聯絡方式，而且「標記已收款」動到錢，
-      // src/lib/admin/fns/orders.ts 每一支都掛 adminFnMiddleware，門市人員打不進
-      // 來。這裡只是不要給他一個一按就跳錯誤頁的連結。
-      { to: "/admin/orders", label: "訂單", icon: Landmark, staff: false },
-      // 活動場次與報名名單（0020／0021）。名額搬離 products 之後，「這場還剩幾個
-      // 位子」只有這裡答得出來。
-      //
-      // 名單是第三人的個資，所以它不跟著 staff 一起放行，而是掛在 0021 §4 的
-      // event.roster.read 上：一個負責活動現場的工讀生可以被授權看簽到表，而不必
-      // 連帶拿到整個 CMS。admin 一律看得到（他全有）。
-      {
-        to: "/admin/registrations",
-        label: "活動報名",
-        icon: ClipboardCheck,
-        staff: true,
-        permission: "event.roster.read" as const,
-      },
     ],
   },
   {

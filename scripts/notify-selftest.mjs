@@ -328,7 +328,30 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 這一期改動的斷言：email_copy 的反空殼比對改成掃**所有**種 email_copy 的
   // migration（原本只讀 0022，新 key 種在 0034 會讓它直接紅）——是加強不是放寬，
   // 見那一段的註解。
-  reviewedThrough: "0034_transfer_payment.sql",
+  // ── 0035_admin_order_registration_cleanup.sql 的重讀結論 ───────────────────
+  // 0035 是後台訂單刪除／封存＋名單刪除單筆。它在帳本上標了 orders_payments /
+  // order_expiry / session_seats / event_registrations（四個都是這支依賴的），
+  // 但 email_outbox / roster_pii / cron_jobs 都**不在** 0035 的 touches 裡——這支
+  // migration 沒有碰 email_copy、claim_order_notify()、dedupe_key、
+  // admin_event_roster、on_roster、pii_access_log、任何排程一個字。逐條確認過
+  // 為什麼安全：
+  //
+  //   · email_outbox 這張表**沒有 order_id 欄位、也沒有任何指向 orders 的外鍵**
+  //     （0022:169-186：to_email／subject／body 在 enqueue 當下就從 orders /
+  //     event_registrations join 好、寫死存進去，是完全去正規化的一列）。所以
+  //     admin_delete_order() 真的刪掉一張訂單時，不會有任何 cascade 或懸空外鍵
+  //     碰到 email_outbox——已經排進佇列的信（如果有的話）不受影響。
+  //   · claim_order_notify() 的閘門 1（payment_status 必須已結清）沒有被放寬，
+  //     而且**不可能與 admin_delete_order() 同時對同一張訂單成立**：
+  //     admin_delete_order() 只對 payment_status <> 'paid' 的訂單生效
+  //     （payment_status = 'paid' → order_is_paid，見它的第一道閘），而
+  //     claim_order_notify() 的閘門 1 要求的正是 payment_status 已結清——兩者的
+  //     判斷條件互斥，一張訂單不會同時符合「能被刪」又「該收付款成功信」。
+  //   · admin_delete_registration()（名單移除單筆）不會排信、不會清空
+  //     email_outbox，也不改變 on_roster 的定義（那個定義完全在 0021 §3 的 view
+  //     裡，0035 沒有 create or replace 那個 view）。
+  // 原樣成立。
+  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

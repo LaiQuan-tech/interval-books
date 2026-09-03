@@ -54,6 +54,14 @@
  *    標記匯款訂單，會讓資料庫從此說謊：後台的付款方式欄位變成假的，對帳報表把它
  *    算進刷卡手續費。admin_mark_order_paid() 存在的唯一理由就是保留原本的
  *    payment_method（0034 §5 檔頭），這個檔案呼叫的是它，不是 markOrderPaid()。
+ *
+ * ── 刪除／封存（0035）─────────────────────────────────────────────────────
+ * deleteAdminOrder() 呼叫 public.admin_delete_order()、archiveAdminOrder() 呼叫
+ * public.admin_archive_order()（見 supabase/migrations/0035_admin_order_registration_cleanup.sql
+ * §3／§4）。兩支都跟 markOrderPaidByAdmin() 一樣，只是把 RPC 的參數包起來、把
+ * `returns table` 的單例陣列拆開——**判斷本身在資料庫那一層**，這裡不重複判斷一次
+ * 「這張訂單能不能刪」，因為那個判斷需要鎖那一列（for update）才做得對，搬到這裡
+ * 會變成 read-then-write 的競態視窗。
  */
 import "@tanstack/react-start/server-only";
 import { supabaseAdmin } from "@/server/supabase-admin";
@@ -68,6 +76,13 @@ export type AdminOrderListScope = "transfer_pending" | "all";
 
 export type AdminOrderListFilter = {
   scope: AdminOrderListScope;
+  /**
+   * 顯示已封存（0035）。預設 false／undefined——列表照舊只看
+   * `archived_at is null`，吃 0035 §3 的 orders_not_archived_idx。設成 true 時
+   * 不加那個條件，讓已封存的訂單也一起回來（不是切成第三個 scope：封存是一個
+   * 可以疊加在任一個 scope 上的顯示開關，不是另一種篩選維度）。
+   */
+  includeArchived?: boolean;
 };
 
 /**
@@ -78,7 +93,7 @@ export type AdminOrderListFilter = {
  * 不准出現 'email' 或 'phone'，也不准查詢 order_addresses。
  */
 const LIST_COLUMNS =
-  "id, order_no, created_at, total, payment_method, payment_status, status, remittance_last5, customer_name";
+  "id, order_no, created_at, total, payment_method, payment_status, status, remittance_last5, customer_name, archived_at";
 
 export type AdminOrderListRow = {
   id: string;
@@ -91,6 +106,8 @@ export type AdminOrderListRow = {
   remittance_last5: string | null;
   /** 全名，不遮罩 —— 見檔頭。 */
   customer_name: string;
+  /** 非 null＝已封存（0035）。列表預設濾掉，見 AdminOrderListFilter.includeArchived。 */
+  archived_at: string | null;
 };
 
 /**
@@ -108,12 +125,19 @@ const LIST_LIMIT = 300;
  * partial index。
  *
  * scope='all'：不加上面那個條件，其餘（排序、上限）相同，給瀏覽全部訂單用。
+ *
+ * includeArchived 沒開時另外加 `archived_at is null`（0035），吃
+ * orders_not_archived_idx——已封存的訂單是已付款訂單裡刻意被使用者從列表移掉的
+ * 那一批，兩個 scope 都不該把它們找回來，除非明確打開這個開關。
  */
 export async function listAdminOrders(filter: AdminOrderListFilter): Promise<AdminOrderListRow[]> {
   let query = supabaseAdmin().from("orders").select(LIST_COLUMNS);
 
   if (filter.scope === "transfer_pending") {
     query = query.eq("payment_method", "transfer").neq("payment_status", "paid");
+  }
+  if (!filter.includeArchived) {
+    query = query.is("archived_at", null);
   }
 
   const { data, error } = await query.order("created_at", { ascending: false }).limit(LIST_LIMIT);
@@ -134,7 +158,7 @@ export async function listAdminOrders(filter: AdminOrderListFilter): Promise<Adm
 const DETAIL_COLUMNS =
   "id, order_no, created_at, paid_at, status, payment_status, payment_method, " +
   "subtotal, shipping_fee, discount, total, shipping_method, " +
-  "remittance_last5, remittance_reported_at, customer_name, customer_email, customer_phone";
+  "remittance_last5, remittance_reported_at, customer_name, customer_email, customer_phone, archived_at";
 
 type OrderDetailRawRow = {
   id: string;
@@ -152,6 +176,7 @@ type OrderDetailRawRow = {
   remittance_last5: string | null;
   remittance_reported_at: string | null;
   customer_name: string;
+  archived_at: string | null;
   /** 明文。只在這個函式內部活過 —— 回傳前一定被 maskEmail() 換掉，見下方。 */
   customer_email: string;
   /** 明文。理由同上，回傳前被 maskTail() 換掉。 */
@@ -208,6 +233,8 @@ export type AdminOrderDetail = {
   customer_phone_masked: string | null;
   items: AdminOrderItemRow[];
   addresses: AdminOrderAddress[];
+  /** 非 null＝已封存（0035）。 */
+  archived_at: string | null;
 };
 
 /** PostgREST 對 to-one embed 可能回物件或單元素陣列，兩種都吃（同 customer-orders.ts）。 */
@@ -322,6 +349,7 @@ export async function getAdminOrderDetail(orderId: string): Promise<AdminOrderDe
   }));
 
   return {
+    archived_at: o.archived_at,
     id: o.id,
     order_no: o.order_no,
     created_at: o.created_at,
@@ -395,6 +423,109 @@ export async function markOrderPaidByAdmin(input: {
   return {
     marked: row.marked === true,
     reason: row.reason as MarkOrderPaidReason,
+    order_no: row.order_no ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 刪除（0035）
+// ---------------------------------------------------------------------------
+
+export type DeleteOrderReason =
+  | "deleted"
+  | "order_not_found"
+  | "order_is_paid"
+  | "has_inventory_sale";
+
+export type DeleteOrderOutcome = {
+  deleted: boolean;
+  reason: DeleteOrderReason;
+  order_no: string | null;
+};
+
+/**
+ * 呼叫 public.admin_delete_order(p_order_id, p_actor_id)（0035 §3）。
+ *
+ * 未付款／已取消的訂單才刪得掉——已付款回 order_is_paid、已經進了 inv.sales 回
+ * has_inventory_sale，兩種都不是這裡判斷的，資料庫那一支已經鎖著訂單列做完了。
+ * 這裡只是把參數包起來、把 `returns table` 的單例陣列拆開，同
+ * markOrderPaidByAdmin() 的形狀。
+ */
+export async function deleteAdminOrder(input: {
+  orderId: string;
+  actorId: string;
+}): Promise<DeleteOrderOutcome> {
+  const { data, error } = await supabaseAdmin().rpc("admin_delete_order", {
+    p_order_id: input.orderId,
+    p_actor_id: input.actorId,
+  });
+
+  if (error) {
+    console.error(`[repo/orders-admin] delete 失敗：${error.code} ${error.message}`);
+    throw new Error(`[repo/orders-admin] 刪除訂單失敗：${error.code}`);
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { deleted?: boolean; reason?: string; order_no?: string | null }
+    | undefined;
+
+  if (!row || !row.reason) {
+    throw new Error("[repo/orders-admin] 刪除訂單沒有回傳結果");
+  }
+
+  return {
+    deleted: row.deleted === true,
+    reason: row.reason as DeleteOrderReason,
+    order_no: row.order_no ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 封存（0035）
+// ---------------------------------------------------------------------------
+
+export type ArchiveOrderReason = "archived" | "unarchived" | "order_not_found";
+
+export type ArchiveOrderOutcome = {
+  updated: boolean;
+  reason: ArchiveOrderReason;
+  order_no: string | null;
+};
+
+/**
+ * 呼叫 public.admin_archive_order(p_order_id, p_actor_id, p_archived)（0035 §4）。
+ *
+ * 已付款訂單唯一的「從列表移掉」路徑——不動名額、不動任何紀錄，隨時可以再呼叫一次
+ * （archived=false）復原。任何存在的訂單都能封存／取消封存，不像 deleteAdminOrder()
+ * 有 payment_status 的限制。
+ */
+export async function archiveAdminOrder(input: {
+  orderId: string;
+  actorId: string;
+  archived: boolean;
+}): Promise<ArchiveOrderOutcome> {
+  const { data, error } = await supabaseAdmin().rpc("admin_archive_order", {
+    p_order_id: input.orderId,
+    p_actor_id: input.actorId,
+    p_archived: input.archived,
+  });
+
+  if (error) {
+    console.error(`[repo/orders-admin] archive 失敗：${error.code} ${error.message}`);
+    throw new Error(`[repo/orders-admin] 封存訂單失敗：${error.code}`);
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { updated?: boolean; reason?: string; order_no?: string | null }
+    | undefined;
+
+  if (!row || !row.reason) {
+    throw new Error("[repo/orders-admin] 封存訂單沒有回傳結果");
+  }
+
+  return {
+    updated: row.updated === true,
+    reason: row.reason as ArchiveOrderReason,
     order_no: row.order_no ?? null,
   };
 }

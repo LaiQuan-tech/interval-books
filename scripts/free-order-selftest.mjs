@@ -224,7 +224,26 @@ assertMigrationDependencies(check, MIG_DIR, {
   //    收不到信（0022 那條路只由 webhook 與 /api/tasks/notify 觸發，而免費訂單沒有
   //    webhook）。0034 沒有動它——那是另一個洞，要修得動 0028 那條路的觸發點。
   // 原樣成立。
-  reviewedThrough: "0034_transfer_payment.sql",
+  // ── 0035_admin_order_registration_cleanup.sql 的重讀結論 ───────────────────
+  // 0035 是後台訂單刪除／封存＋名單刪除單筆，動到這支依賴的五個區域全部（欄位／
+  // 函式清單見 [7c] 之前那幾支自檢的重讀結論，這裡只交代與「免費訂單」的交集）：
+  //
+  //   · 免費訂單在結帳當下就被 settle_free_order() 推成 payment_status = 'paid'
+  //     （0028），而 admin_delete_order() 第一道閘就是 `payment_status = 'paid'
+  //     → order_is_paid`——**免費訂單天生刪不掉**，admin 對它只能呼叫
+  //     admin_archive_order()，而那支不動名額、不動 event_registrations、不動
+  //     payments／invoices，純粹設／清 archived_at。settle_free_order() 本人一個
+  //     字沒被 0035 碰到。
+  //   · order_expiry／invoice——同上幾支的結論：admin_delete_order() 沒有重寫
+  //     expire_unpaid_orders()，也沒有碰 invoice_backlog()；它讀 order_items 只是
+  //     為了逐一呼叫 release_session_seat() 與型錄庫存還原，不影響「total = 0 的
+  //     訂單不會被 expire 回收、也不會被排進開票佇列」這兩條規則。
+  //   · session_seats／event_registrations——admin_delete_registration()（移除
+  //     單筆報名）理論上可以用在免費活動的報名上，但那是 admin 主動的操作，不是
+  //     expire_unpaid_orders() 或任何自動排程會觸發的路徑，跟這支自檢守的「不會被
+  //     自動回收」是兩件不相交的事。
+  // 原樣成立。
+  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
 });
 
 // =============================================================================

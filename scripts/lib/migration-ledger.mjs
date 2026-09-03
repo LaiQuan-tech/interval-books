@@ -528,6 +528,51 @@ export const MIGRATION_LEDGER = Object.freeze([
       "inventory",
     ],
   },
+  {
+    file: "0035_admin_order_registration_cleanup.sql",
+    note: "後台終於有地方可以刪資料：orders.archived_at（封存，nullable，部分索引）、admin_delete_order()（未付款／已取消的訂單真的刪，擋已付款與已進 inv.sales 兩種）、admin_archive_order()（已付款訂單的可逆替身，只設／清 archived_at）、admin_delete_registration()（名單單筆移除，seats_taken 自動還 1）。三支都 security definer + search_path='' + 只 grant service_role",
+    // ⚠️ 這一列的 touches 是**用 AREAS 的識別字實際掃過這支剝過註解的 SQL 算出來
+    //    的**（node 對 stripSqlComments() 之後的檔案內容逐區跑 identifierRe()），
+    //    不是憑印象寫的；跑法留在交付回報裡。六個裡有兩個特別容易被少報：
+    //
+    //    · order_expiry（識別字 order_items）——admin_delete_order() 迴圈
+    //      `select id from public.order_items where order_id = p_order_id` 來逐一
+    //      呼叫 release_session_seat()，以及型錄庫存還原那段的
+    //      `from public.order_items oi`。這支**沒有**重寫 expire_unpaid_orders()
+    //      本人一個字，「order_expiry」這個標籤在這裡純粹是因為提到了
+    //      order_items 這張表，不是因為動了過期回收的邏輯。
+    //    · products_availability（識別字 products）——這是這支自己發現、任務書
+    //      沒提到的第五個坑（見 migration §1.5）：goods/book 若沒連 inv，走的是
+    //      `public.products.stock`，只在訂單還是 pending 時才需要跟著
+    //      admin_delete_order() 一起還原，用 `if v_order.status = 'pending'`
+    //      擋掉對已經被 expire_unpaid_orders() 處理過的訂單重複入帳。
+    //
+    //    其餘四個都直接對應到看得到的程式碼：orders_payments（alter table
+    //    orders、三支函式都收 p_order_id 查 public.orders）、session_seats
+    //    （event_sessions、release_session_seat、seats_taken 都在
+    //    admin_delete_order() 與 admin_delete_registration() 裡出現）、
+    //    event_registrations（admin_delete_registration() 直接 delete 那張表）、
+    //    inventory（識別字 inv.——has_inventory_sale 那道閘查的是 inv.sales，
+    //    release_inventory_reservations() 的呼叫則沒有把 "inv." 這個字面值帶進
+    //    這支檔案，是前面那個查詢帶進來的）。
+    //
+    //    不在 touches 裡、但看起來像會中的兩個：roster_pii（識別字
+    //    admin_event_roster／pii_access_log／on_roster）——這支完全沒有碰名單的
+    //    遮罩或明文出口，UI 端的警示文案讀的是既有的 payment_status／on_roster
+    //    欄位，SQL 這一層一個字都沒有新寫這三個識別字中的任何一個。admin_auth
+    //    （識別字 staff_permissions／is_admin／profiles）——p_actor_id 只是原樣
+    //    存進 raise log 的參數，SQL 本體完全沒有查 profiles 或
+    //    staff_permissions；授權在 TS 那一層的 adminFnMiddleware 做，不在這支
+    //    migration 裡。
+    touches: [
+      "orders_payments",
+      "order_expiry",
+      "products_availability",
+      "session_seats",
+      "event_registrations",
+      "inventory",
+    ],
+  },
 ]);
 
 /** 磁碟上的 migration 檔名，排序過。空目錄 = 丟例外（那不是「沒有違規」）。 */

@@ -25,14 +25,33 @@
  * ── 為什麼是「列表 + 點列開詳情 Dialog」，不是 /admin/orders/$id 子路由 ────────
  * 形狀照 _shell.sales.tsx（銷售紀錄）：詳情不需要自己的網址，訂單量對一間書店
  * 而言不到需要深連結分享的規模，Dialog 換頁面少一次 loader round trip。
+ *
+ * ── 刪除／封存（0035）─────────────────────────────────────────────────────
+ * 後台原本沒有任何一種「移除」：測試訂單清不掉，只能進 Supabase Dashboard 手改，
+ * 而手改最容易漏掉「把名額還回去」。這一期補兩顆按鈕，都在詳情 Dialog 裡、與
+ * 「標記已收款」同一個位置：
+ *
+ *   payment_status !== 'paid' → 「刪除」。呼叫 admin_delete_order()（0035 §3），
+ *     真的從資料庫拿掉——訂單、報名、付款嘗試（本來就沒有）、發票（本來就沒有）
+ *     一起消失，資料庫那一支會先還掉場次名額與庫存保留才刪。
+ *
+ *   payment_status === 'paid' → 「封存」／「取消封存」。呼叫
+ *     admin_archive_order()（0035 §4），只是設／清 orders.archived_at，紀錄與
+ *     名額完全不動、隨時可還原。封存後的訂單從兩個 scope 的預設列表都消失，要用
+ *     上面 Tabs 旁邊的「顯示已封存」開關才找得回來。
+ *
+ * 兩者的分界是 payment_status，不是 status——與資料庫那兩支函式的閘門一致
+ * （admin_delete_order() 用同一個條件擋已付款訂單），UI 這裡的判斷只是不要讓
+ * 使用者點出一個注定會被資料庫拒絕的按鈕，真正的邊界仍然在資料庫那一層。
  */
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Landmark, Loader2 } from "lucide-react";
+import { Archive, ArchiveRestore, Landmark, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -169,6 +188,7 @@ function AdminOrdersPage() {
   const { orders: initial } = Route.useLoaderData();
 
   const [scope, setScope] = useState<Scope>("transfer_pending");
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [orders, setOrders] = useState<AdminOrderListRow[]>(initial);
   const [loading, setLoading] = useState(false);
 
@@ -180,11 +200,18 @@ function AdminOrdersPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [marking, setMarking] = useState(false);
 
-  const load = useCallback(async (next: Scope) => {
+  // 刪除／封存（0035）。各自獨立的二次確認與 loading 旗標，同「標記已收款」不
+  // 共用一組的理由——三個動作彼此互斥（畫面上同時只會出現其中一顆按鈕），但分開
+  // 宣告讓每一段的 try/catch 不用互相判斷「現在是哪一種操作」。
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
+  const load = useCallback(async (next: Scope, archived: boolean) => {
     setLoading(true);
     try {
       const { listAdminOrders } = await import("@/lib/admin/fns/orders");
-      setOrders(await listAdminOrders({ data: { scope: next } }));
+      setOrders(await listAdminOrders({ data: { scope: next, includeArchived: archived } }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "訂單列表讀取失敗");
     } finally {
@@ -192,17 +219,19 @@ function AdminOrdersPage() {
     }
   }, []);
 
-  // 第一次不重打：loader 已經用預設 scope 抓過了（同 _shell.sales.tsx 的做法）。
-  const isInitial = scope === "transfer_pending" && orders === initial;
+  // 第一次不重打：loader 已經用預設 scope／includeArchived=false 抓過了（同
+  // _shell.sales.tsx 的做法）。
+  const isInitial = scope === "transfer_pending" && !includeArchived && orders === initial;
   useEffect(() => {
     if (isInitial) return;
-    void load(scope);
-  }, [scope, isInitial, load]);
+    void load(scope, includeArchived);
+  }, [scope, includeArchived, isInitial, load]);
 
   async function openDetail(id: string) {
     setSelectedId(id);
     setDetail(null);
     setNote("");
+    setDeleteConfirmOpen(false);
     setDetailLoading(true);
     try {
       const { getAdminOrderDetail } = await import("@/lib/admin/fns/orders");
@@ -227,6 +256,7 @@ function AdminOrdersPage() {
     setDetail(null);
     setNote("");
     setConfirmOpen(false);
+    setDeleteConfirmOpen(false);
   }
 
   /**
@@ -280,9 +310,81 @@ function AdminOrdersPage() {
       const { getAdminOrderDetail } = await import("@/lib/admin/fns/orders");
       const fresh = await getAdminOrderDetail({ data: { orderId: detail.id } });
       if (fresh) setDetail(fresh);
-      await load(scope);
+      await load(scope, includeArchived);
     } catch {
       toast.error("已處理，但畫面更新失敗，請重新整理頁面確認最新狀態");
+    }
+  }
+
+  /**
+   * 刪除未付款／已取消的訂單（0035，admin_delete_order()）。四種 reason 各自
+   * 講一句人話，不是只有成功／失敗兩種——has_inventory_sale 尤其要指路，因為
+   * 「不能刪」對使用者來說是個死路，除非畫面告訴他「改用封存」。
+   *
+   * 成功之後直接關掉整個詳情 Dialog（不像標記已收款是重讀同一張訂單的詳情）：
+   * 這張訂單已經不存在了，getAdminOrderDetail() 只會回 null，留著開等於顯示
+   * 一個「找不到」的空畫面。
+   */
+  async function submitDelete() {
+    if (!detail) return;
+    setDeleting(true);
+    try {
+      const { deleteAdminOrder } = await import("@/lib/admin/fns/orders");
+      const result = await deleteAdminOrder({ data: { orderId: detail.id } });
+
+      if (result.reason === "deleted") {
+        toast.success(`已刪除訂單 ${result.order_no}`);
+        setDeleteConfirmOpen(false);
+        setSelectedId(null);
+        setDetail(null);
+        await load(scope, includeArchived);
+      } else if (result.reason === "order_is_paid") {
+        toast.error(`訂單 ${result.order_no ?? ""} 已經收到款項，不能刪除——請改用「封存」`);
+      } else if (result.reason === "has_inventory_sale") {
+        toast.error(`訂單 ${result.order_no ?? ""} 已轉入銷售紀錄，不能刪除，請改用封存`);
+      } else {
+        toast.error("找不到這張訂單，可能已經被刪除");
+        setSelectedId(null);
+        setDetail(null);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "刪除失敗，請稍後再試");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  /**
+   * 封存／取消封存一張已付款訂單（0035，admin_archive_order()）。與標記已收款
+   * 同一個「動作與畫面刷新分開處理」的立場，但封存本身幾乎不會失敗（沒有
+   * payment_status 之類的閘門），所以這裡不特別拆兩段 try——失敗訊息就是失敗
+   * 訊息，不會有「其實已經成立、只是刷新失敗」這種需要分辨的情況。
+   */
+  async function submitArchive(archived: boolean) {
+    if (!detail) return;
+    setArchiving(true);
+    try {
+      const { archiveAdminOrder } = await import("@/lib/admin/fns/orders");
+      const result = await archiveAdminOrder({ data: { orderId: detail.id, archived } });
+
+      if (result.reason === "order_not_found") {
+        toast.error("找不到這張訂單，可能已經被刪除");
+        setSelectedId(null);
+        setDetail(null);
+        return;
+      }
+
+      toast.success(
+        archived ? `已封存訂單 ${result.order_no}` : `已取消封存訂單 ${result.order_no}`,
+      );
+      const { getAdminOrderDetail } = await import("@/lib/admin/fns/orders");
+      const fresh = await getAdminOrderDetail({ data: { orderId: detail.id } });
+      if (fresh) setDetail(fresh);
+      await load(scope, includeArchived);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "操作失敗，請稍後再試");
+    } finally {
+      setArchiving(false);
     }
   }
 
@@ -299,12 +401,18 @@ function AdminOrdersPage() {
         </p>
       </div>
 
-      <Tabs value={scope} onValueChange={(v) => setScope(v as Scope)}>
-        <TabsList>
-          <TabsTrigger value="transfer_pending">待收款的匯款訂單</TabsTrigger>
-          <TabsTrigger value="all">全部訂單</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <Tabs value={scope} onValueChange={(v) => setScope(v as Scope)}>
+          <TabsList>
+            <TabsTrigger value="transfer_pending">待收款的匯款訂單</TabsTrigger>
+            <TabsTrigger value="all">全部訂單</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Switch checked={includeArchived} onCheckedChange={setIncludeArchived} />
+          顯示已封存
+        </label>
+      </div>
 
       <div className="overflow-x-auto rounded-md border border-border">
         <Table>
@@ -348,6 +456,11 @@ function AdminOrdersPage() {
                 >
                   <TableCell className="whitespace-nowrap font-mono text-xs">
                     {o.order_no}
+                    {o.archived_at ? (
+                      <Badge variant="outline" className="ml-2 font-normal">
+                        已封存
+                      </Badge>
+                    ) : null}
                   </TableCell>
                   <TableCell className="max-w-[10rem] truncate">{o.customer_name}</TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
@@ -550,6 +663,51 @@ function AdminOrdersPage() {
                   這兩種情況。
                 </p>
               )}
+
+              {/* 刪除／封存（0035）。分界是 payment_status，與 admin_delete_order()
+                  在資料庫那一層擋已付款訂單的條件一致——這裡只是不要讓使用者點出一個
+                  注定會被拒絕的按鈕，真正的邊界仍在資料庫。 */}
+              {detail.payment_status === "paid" ? (
+                <section className="space-y-2 rounded-md border border-border p-3">
+                  <h3 className="text-sm font-medium">
+                    {detail.archived_at ? "取消封存" : "封存"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    已付款訂單不能刪除，封存是唯一的「從列表移掉」方式——不動名額、
+                    不動任何紀錄，隨時可以取消封存復原。
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="gap-1.5"
+                    disabled={archiving}
+                    onClick={() => void submitArchive(!detail.archived_at)}
+                  >
+                    {detail.archived_at ? (
+                      <ArchiveRestore className="h-4 w-4" />
+                    ) : (
+                      <Archive className="h-4 w-4" />
+                    )}
+                    {archiving ? "處理中…" : detail.archived_at ? "取消封存" : "封存"}
+                  </Button>
+                </section>
+              ) : (
+                <section className="space-y-2 rounded-md border border-destructive/40 p-3">
+                  <h3 className="text-sm font-medium text-destructive">刪除訂單</h3>
+                  <p className="text-xs text-muted-foreground">
+                    會連同這張訂單的報名一起移除，並釋放場次名額與庫存保留——這個動作
+                    無法復原。已經轉入銷售紀錄的訂單無法刪除（改用封存）。
+                  </p>
+                  <Button
+                    variant="destructive"
+                    className="gap-1.5"
+                    disabled={deleting}
+                    onClick={() => setDeleteConfirmOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    刪除訂單
+                  </Button>
+                </section>
+              )}
             </div>
           )}
         </DialogContent>
@@ -581,6 +739,32 @@ function AdminOrdersPage() {
               }}
             >
               {marking ? "標記中…" : "確定標記已收款"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>確定要刪除這張訂單嗎？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {detail ? `訂單 ${detail.order_no}，金額 ${money(detail.total)}。` : ""}
+              刪除後會連同這張訂單的所有報名一起移除，場次名額與庫存保留會自動釋放
+              ——這個動作無法復原。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                void submitDelete();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "刪除中…" : "確定刪除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

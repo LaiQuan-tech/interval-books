@@ -17,7 +17,12 @@ import { adminFnMiddleware } from "@/lib/admin/middleware";
 
 export const listAdminOrders = createServerFn({ method: "GET" })
   .middleware([adminFnMiddleware])
-  .inputValidator(z.object({ scope: z.enum(["transfer_pending", "all"]) }))
+  .inputValidator(
+    z.object({
+      scope: z.enum(["transfer_pending", "all"]),
+      includeArchived: z.boolean().optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const { listAdminOrders } = await import("@/server/repos/orders-admin");
     return await listAdminOrders(data);
@@ -66,4 +71,35 @@ export const markOrderPaidAdmin = createServerFn({ method: "POST" })
     }
 
     return result;
+  });
+
+/**
+ * 刪除一張未付款／已取消的訂單（0035，呼叫 admin_delete_order()）。
+ *
+ * actorId 同 markOrderPaidAdmin()：只認 context.admin.userId，data 裡沒有這個
+ * 欄位——呼叫端不能宣稱是誰做的。
+ */
+export const deleteAdminOrder = createServerFn({ method: "POST" })
+  .middleware([adminFnMiddleware])
+  .inputValidator(z.object({ orderId: z.string().trim().uuid() }))
+  .handler(async ({ data, context }) => {
+    const { deleteAdminOrder } = await import("@/server/repos/orders-admin");
+    return await deleteAdminOrder({ orderId: data.orderId, actorId: context.admin.userId });
+  });
+
+/**
+ * 封存／取消封存一張已付款訂單（0035，呼叫 admin_archive_order()）。純顯示狀態，
+ * 可逆——與 deleteAdminOrder() 不同，這裡沒有拒絕理由要處理，任何存在的訂單都
+ * 封存得動。
+ */
+export const archiveAdminOrder = createServerFn({ method: "POST" })
+  .middleware([adminFnMiddleware])
+  .inputValidator(z.object({ orderId: z.string().trim().uuid(), archived: z.boolean() }))
+  .handler(async ({ data, context }) => {
+    const { archiveAdminOrder } = await import("@/server/repos/orders-admin");
+    return await archiveAdminOrder({
+      orderId: data.orderId,
+      actorId: context.admin.userId,
+      archived: data.archived,
+    });
   });

@@ -347,7 +347,38 @@ assertMigrationDependencies(check, MIG_DIR, {
   //     admin_mark_order_paid() 是 security definer + 只 grant service_role，
   //     授權由呼叫端（後台 server function）負責，與這支守的東西無關。
   // 原樣成立。
-  reviewedThrough: "0034_transfer_payment.sql",
+  // ── 0035_admin_order_registration_cleanup.sql 的重讀結論 ───────────────────
+  // 0035 是後台訂單刪除／封存＋名單刪除單筆（新增 src/server/repos/
+  // event-registrations-admin.ts、fns/event-registrations.ts 多一支
+  // deleteAdminRegistration）。逐一對過這支依賴的七個區域：
+  //   · roster_pii **不在** 0035 的 touches 裡——沒有 create or replace
+  //     admin_event_roster、沒有碰 pii_access_log、沒有動 on_roster 的定義
+  //     （那個定義完全在 0021 §3 的 view 裡，0035 一行都沒改那個 view）。
+  //   · event_registrations / session_seats——admin_delete_registration()
+  //     （0035 §5）直接 delete public.event_registrations 一列並扣
+  //     event_sessions.seats_taken，但它是**新函式**，不是 create or replace
+  //     0020／0021 既有的任何一支；reveal_registration_contact() /
+  //     export_event_roster() / admin_event_roster 一個字都沒被動到。
+  //   · orders_payments / order_expiry——admin_delete_order() 加的欄位與函式，
+  //     跟名單的遮罩／明文出口無關；expire_unpaid_orders() 沒被重寫。
+  //   · inventory——admin_delete_order() 的 has_inventory_sale 檢查查 inv.sales，
+  //     跟 roster-csv 這支守的 inv.mask_email() 是同一個 schema 裡完全不相干
+  //     的兩支函式，inv.mask_email() 一個字沒被 0035 動到。
+  //   · admin_auth——0035 沒有碰 profiles / staff_permissions / is_admin()。
+  //     三支新函式的授權在 TS 那一層的 adminFnMiddleware 做，SQL 本體完全沒有
+  //     查 profiles 或 staff_permissions（p_actor_id 只是原樣存進 raise log）。
+  //
+  // ⚠️ 這一期新增或修改的兩支檔案落進 [7] 那條「碰 event_registrations 的檔案
+  //    不准自己寫一次 'paid'」的掃描範圍：src/lib/admin/fns/event-registrations.ts
+  //    （多了 deleteAdminRegistration，import 路徑字串含 event-registrations）。
+  //    確認過它剝掉註解之後沒有 "paid" 或 'paid' 這個字面值——新函式完全不判斷
+  //    付款狀態（已付款的報名也允許刪，是 user 的決定，見它的檔頭說明），根本
+  //    不需要讀 payment_status。新建的
+  //    src/server/repos/event-registrations-admin.ts 提到 event_registrations
+  //    的地方全部在會被 stripTs() 剝掉的註解裡，程式碼本體一次都沒有寫這個表名
+  //    字面值（只呼叫 RPC），所以**不會**落進這條掃描的範圍——[7] 段的
+  //    rosterTouchers 清單因此沒有變長。原樣成立（實跑驗證見交付回報）。
+  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
 });
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {
@@ -1090,18 +1121,35 @@ check(
 
 // ── server fn 那一層 ─────────────────────────────────────────────────────
 checkTrue(
-  "四支 fn 都掛 staffFnMiddleware()",
+  "四支既有 fn 都掛 staffFnMiddleware()",
   (regFnTs.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? []).length === 4,
 );
+// ⚠️ 0035 加了第五支 fn（deleteAdminRegistration），刻意掛 adminFnMiddleware 不是
+// staffFnMiddleware()——移除是會永久改變資料的動作，授權層級與上面四支「查看」不
+// 同（見 fns/event-registrations.ts 檔頭「為什麼 deleteAdminRegistration 掛
+// adminFnMiddleware」那一段）。這裡把「掛載數＝匯出數」的比對改成同時算兩種
+// middleware（同檔案 sessions 那一段本來就是這樣比對的，見 event-registration-
+// selftest.mjs 的對應斷言），並且明著釘住「剛好 1 支是 adminFnMiddleware」，
+// 這樣既有的四支被誤改成別的 middleware，或這一支被誤改回 staffFnMiddleware()，
+// 兩種方向都會轉紅。
 check(
-  "middleware 的掛載數 = 匯出的 server fn 數",
-  (regFnTs.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? []).length,
+  "middleware 的掛載數 = 匯出的 server fn 數（staffFnMiddleware() ＋ adminFnMiddleware 一起算）",
+  (regFnTs.match(/\.middleware\(\[(staffFnMiddleware\(\)|adminFnMiddleware)\]\)/g) ?? []).length,
   (regFnTs.match(/export const \w+ = createServerFn/g) ?? []).length,
 );
 check(
-  "每一支都檢查 event.roster.read",
+  "剛好 1 支掛 adminFnMiddleware（0035 的 deleteAdminRegistration）",
+  (regFnTs.match(/\.middleware\(\[adminFnMiddleware\]\)/g) ?? []).length,
+  1,
+);
+check(
+  "四支既有 fn 都檢查 event.roster.read（移除那支不需要——admin 已經是最高權限）",
   (stripTs(regFnTs).match(/requireRosterRead\(context\.staff\.permissions\)/g) ?? []).length,
-  (regFnTs.match(/export const \w+ = createServerFn/g) ?? []).length,
+  4,
+);
+checkTrue(
+  "deleteAdminRegistration 沒有呼叫 requireRosterRead（adminFnMiddleware 已經是完整授權）",
+  !/deleteAdminRegistration[\s\S]*?requireRosterRead/.test(stripTs(regFnTs)),
 );
 checkTrue(
   "權限從 context 重讀，不是前端送的",

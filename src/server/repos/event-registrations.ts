@@ -43,6 +43,13 @@
  *      與「有 N 位參加者」必須是同一句 SQL 的兩個面向（0020 §2）。這裡多一條
  *      insert 或 delete，那個不變量就沒了。
  *
+ *      0035 加了第五個、也是目前唯一的例外：admin 移除單筆報名。合法路徑是
+ *      src/server/repos/event-registrations-admin.ts 的 deleteAdminRegistration()
+ *      （呼叫 public.admin_delete_registration()）——它跟 release_session_seat()
+ *      一樣，刪一列與扣 1 個 seats_taken 是同一句 SQL，只是粒度改成單一列而不是
+ *      整個 order_item。**不要把它加進這個檔案**，理由同上：這個檔案的角色就是
+ *      「只讀」，那句話一旦有例外就會有人以為多加一個 delete 也沒關係。
+ *
  * ── 「誰在簽到表上」只定義一次 ─────────────────────────────────────────────
  *
  * `on_roster` 這個欄位在 0021 §3 的 view 裡算出來（`payment_status = 'paid'`），

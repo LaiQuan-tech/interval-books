@@ -1,10 +1,19 @@
 /**
- * event_registrations server functions —— 名單的四個入口。
+ * event_registrations server functions —— 名單的五個入口。
  *
  *   listSessionRoster           遮罩過的整場名單            ✗ 不寫 log
  *   countRegistrationsBySession 每場幾人（給列表頁）        ✗ 不寫 log
  *   revealRegistrationContact   一位參加者的明文聯絡方式    ✓ attendee_contact
  *   exportSessionRoster         整場明文，回一份 CSV 字串   ✓ roster_export（一列）
+ *   deleteAdminRegistration     移除單筆報名、名額自動還    0035，見下方獨立說明
+ *
+ * ── 為什麼 deleteAdminRegistration 掛 adminFnMiddleware，不是 staffFnMiddleware ──
+ * 上面四支都下放到 staffFnMiddleware() + event.roster.read（見下一段），移除是
+ * 唯一的例外。理由與 src/lib/admin/fns/orders.ts 整份檔案一致：這是一個會永久
+ * 改變資料的動作（刪這一列、扣那個場次的名額），與「查看」不是同一個授權層級。
+ * 被授權看簽到表的工讀生看得到「移除」這顆按鈕出現在畫面上，但按下去會在
+ * requireAdmin() 那一關被擋——側欄與按鈕的顯示邏輯只是不要給他一個一按就跳錯誤頁
+ * 的連結，見 src/routes/admin/_shell.tsx 檔頭。
  *
  * ── 分界是「遮罩 vs 明文」，不是「列表 vs 匯出」（0021 §0.1）─────────────
  * pii_access_log 要回答的是「有沒有人在亂查」（0019 §1.1）。名單頁一次顯示 30 個
@@ -45,7 +54,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { staffFnMiddleware } from "@/lib/admin/middleware";
+import { adminFnMiddleware, staffFnMiddleware } from "@/lib/admin/middleware";
 
 const uuid = z.string().trim().uuid();
 
@@ -132,4 +141,27 @@ export const exportSessionRoster = createServerFn({ method: "POST" })
       /** 這一次匯出的 pii_access_log id。畫面會把它印出來，讓人知道紀錄真的寫了。 */
       log_id: result.log_id,
     };
+  });
+
+// ---------------------------------------------------------------------------
+// 移除 —— admin only（0035）
+// ---------------------------------------------------------------------------
+
+/**
+ * 移除單筆報名、名額自動還回去（呼叫 public.admin_delete_registration()）。
+ *
+ * 已付款的報名也允許刪（user 決定）。這支不做「是不是已付款」的判斷、也不多回傳
+ * 一個欄位讓前端事後才知道——名單頁在彈出確認對話框「之前」就已經從
+ * listSessionRoster() 的結果知道這一列的 payment_status／on_roster，警告文案在
+ * 那裡顯示。
+ */
+export const deleteAdminRegistration = createServerFn({ method: "POST" })
+  .middleware([adminFnMiddleware])
+  .inputValidator(z.object({ registrationId: uuid }))
+  .handler(async ({ data, context }) => {
+    const { deleteAdminRegistration } = await import("@/server/repos/event-registrations-admin");
+    return await deleteAdminRegistration({
+      registrationId: data.registrationId,
+      actorId: context.admin.userId,
+    });
   });

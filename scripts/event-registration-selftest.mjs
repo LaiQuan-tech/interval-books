@@ -342,7 +342,33 @@ assertMigrationDependencies(check, MIG_DIR, {
   //   · cron_jobs——0034 **沒有動任何排程**。正式庫那支每 5 分鐘的
   //     expire-unpaid-orders 呼叫的是同一個函式名、同一組參數，換的只是函式本體。
   // 原樣成立。
-  reviewedThrough: "0034_transfer_payment.sql",
+  // ── 0035_admin_order_registration_cleanup.sql 的重讀結論 ───────────────────
+  // 🔴 0035 動到這支自檢的核心不變量所在的三支函式的**呼叫端**，但**沒有
+  //    create or replace 這三支函式本人**：reserve_session_seat()、
+  //    release_session_seat()、expire_unpaid_orders() 一個字都沒被改寫。逐條對過：
+  //
+  //   · admin_delete_order() 呼叫既有的 release_session_seat()（對這張訂單的
+  //     每一個 order_item 各呼叫一次）與既有的 release_inventory_reservations()，
+  //     順序照 0020:115-120 的規矩（先還、後刪），[5] 那三條逐字比對
+  //     RETURNS TABLE 形狀的斷言只看 expire_unpaid_orders()，不受影響。
+  //   · 🔴 admin_delete_registration()（名單移除單筆）是**新的、故意的例外**：
+  //     它不經過 release_session_seat()，直接刪一列 event_registrations 並把
+  //     seats_taken 減 1——這會讓「order_items.quantity = N ⇒ N 位參加者」
+  //     （0020 §2 的不變量）在被移除的那個 order_item 上不再成立（quantity 還是
+  //     3，但可能只剩 2 位登錄的參加者）。這是任務要求的行為（單一位取消，不能
+  //     連坐其他人），不是 bug，而且**這支自檢的斷言不會被它影響**：[17]–[23]
+  //     的併發測試建的資料全部只經過 reserve_session_seat()／
+  //     release_session_seat()／expire_unpaid_orders() 三支，從來不呼叫
+  //     admin_delete_registration()（那支的正確性由新的
+  //     admin-order-registration-cleanup-selftest.mjs 對真的 Postgres 驗，包含
+  //     「3 位刪 1 位、seats_taken 只減 1、另外 2 位還在」這條）。
+  //   · products_availability／session_seats／order_expiry——都是 admin_delete_
+  //     order() 函式本體裡提到 public.products／public.order_items 帶進來的標籤，
+  //     跟 0026／0029／0031／0034 對 admin_upsert_event_with_session() 是同一種
+  //     情況（函式重建/新函式本體帶進來，不是重寫既有函式）。
+  //   · cron_jobs 不在 0035 的 touches 裡——它沒有動任何排程。
+  // 原樣成立。
+  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
 });
 for (const f of [
   "0004_commerce_products.sql",
@@ -1110,16 +1136,35 @@ check("registrations repo 沒有 delete", /\.delete\(/.test(regRepoTs), false);
 // ⚠️ registrations 那一側在 0021 從 adminFnMiddleware 換成 staffFnMiddleware() +
 //    event.roster.read（0021 §4 的第九種權限）。sessions 那一側的**寫入**仍然是
 //    adminFnMiddleware，讀取跟著名單走 —— 場次本來就是 anon 讀得到的公開資訊。
+//
+// ⚠️ 0035 在 registrations 這一側加了第五支 fn（deleteAdminRegistration，移除單筆
+//    報名），刻意掛回 adminFnMiddleware——移除是會永久改變資料的動作，跟這裡在
+//    講的「查看／匯出」不是同一個授權層級，理由與 fns/orders.ts 整份檔案一致。
+//    下面兩條原本斷言「這個檔案只有 staffFnMiddleware、完全沒有
+//    adminFnMiddleware」，那句話從 0035 起不再成立，改成分別釘住兩件事：既有四支
+//    仍然是 staffFnMiddleware，而且剛好只有這一支新的是 adminFnMiddleware
+//    （不是既有四支裡的哪一支被誤改）。
 checkTrue(
   // stripTs 先把註解拿掉：檔頭那段講「Phase 1 掛的是 adminFnMiddleware」的說明
   // 不算掛載，但字面上會命中。
-  "registrations 的 fn 掛 staffFnMiddleware",
-  /staffFnMiddleware/.test(stripTs(regFnTs)) && !/adminFnMiddleware/.test(stripTs(regFnTs)),
+  "registrations 既有四支 fn 掛 staffFnMiddleware",
+  /staffFnMiddleware/.test(stripTs(regFnTs)),
+);
+checkTrue(
+  "0035 新增的 deleteAdminRegistration 掛 adminFnMiddleware（不是 staffFnMiddleware）",
+  /export const deleteAdminRegistration = createServerFn\(\{ method: "POST" \}\)\s*\n\s*\.middleware\(\[adminFnMiddleware\]\)/.test(
+    stripTs(regFnTs),
+  ),
 );
 check(
-  "middleware 的掛載數 = 匯出的 server fn 數（registrations）",
-  (regFnTs.match(/\.middleware\(\[staffFnMiddleware\(\)\]\)/g) ?? []).length,
+  "middleware 的掛載數 = 匯出的 server fn 數（registrations；staff＋admin 一起算）",
+  (regFnTs.match(/\.middleware\(\[(staffFnMiddleware\(\)|adminFnMiddleware)\]\)/g) ?? []).length,
   (regFnTs.match(/export const \w+ = createServerFn/g) ?? []).length,
+);
+check(
+  "剛好 1 支掛 adminFnMiddleware，其餘都掛 staffFnMiddleware()",
+  (regFnTs.match(/\.middleware\(\[adminFnMiddleware\]\)/g) ?? []).length,
+  1,
 );
 check(
   "middleware 的掛載數 = 匯出的 server fn 數（sessions）",

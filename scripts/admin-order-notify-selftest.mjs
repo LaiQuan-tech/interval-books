@@ -199,7 +199,25 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 當下**也會收到一封「待收款」通知（dedupe_key `order_placed_admin:`，與 0032 的
   // `order_notify_admin:` 刻意分開——共用會讓付款成功那封被去重掉）。下面每一條驗
   // 這封信內容的斷言都補上了 stage，並新增了 atOrderTime 那一版的對照。原樣成立。
-  reviewedThrough: "0034_transfer_payment.sql",
+  // ── 0035_admin_order_registration_cleanup.sql 的重讀結論 ───────────────────
+  // 0035 是後台訂單刪除／封存＋名單刪除單筆，動到這支自檢依賴的 orders_payments
+  // （加 orders.archived_at 一個 nullable 欄位、新增 admin_delete_order() /
+  // admin_archive_order() 兩支函式）。跟這支自檢的斷言完全不相交：
+  //
+  //   · 0035 沒有 alter site_settings（cms）、沒有碰 email_copy／email_outbox／
+  //     enqueue_admin_order_email()／claim_order_notify()（email_outbox）一個字。
+  //   · orders 那一側只是**加欄位、加函式**，getOrderForNotify()（0022 就有）與
+  //     renderAdminOrderNotificationEmail() 讀的欄位清單（customer_name／
+  //     payment_method／shipping_method／…）一個都沒被改型別或改語意；
+  //     archived_at 純粹是新增的、預設 null，不在任何一支通知函式的 select 清單裡。
+  //   · admin_delete_order() 會 cascade 刪掉 payments／invoices／
+  //     order_post_payment_log，但那是 admin 主動刪一張未付款訂單時的事——不是
+  //     0032／0034 這兩條通知路徑（下單當下、付款成功後）會經過的狀態轉移，兩者
+  //     不會同時發生在同一張訂單上（訂單被刪的當下已經不存在，claim_order_notify()
+  //     也無單可查）。
+  //
+  // 原樣成立。
+  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
 });
 
 // =============================================================================

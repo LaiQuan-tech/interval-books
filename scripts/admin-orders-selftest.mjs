@@ -17,9 +17,15 @@
  *             · 列表查詢的欄位字串裡沒有 email／phone，也不查 order_addresses。
  *             · 詳情裡的 customer_email／customer_phone 回傳前一定經過
  *               maskEmail()／maskTail()，回傳值裡沒有未遮罩的鍵。
- *             · 這一期沒有動到 src/server/repos/orders.ts（結帳路徑）、
- *               src/server/repos/payments.ts、四個金流檔、以及任何一支既有
- *               migration —— 也沒有新增 migration。
+ *             · 沒有動到 src/server/repos/orders.ts（結帳路徑）、
+ *               src/server/repos/payments.ts、四個金流檔，也沒有動到任何既有
+ *               migration（0001–0034）——0035 是這一期唯一允許新增的一支
+ *               （訂單刪除／封存＋名單刪除單筆，見 [6] 段對 supabase/migrations
+ *               目錄的比對方式）。
+ *             · 0035：repo 層的刪除／封存也只透過 admin_delete_order()／
+ *               admin_archive_order() 兩支 RPC（沒有 .delete()），畫面的分界是
+ *               payment_status === "paid"，四種／三種 reason 各自講人話（[3b]／
+ *               [7c]）。
  *           **永遠會跑。**
  *
  *   [動態]  直接 import() src/lib/admin/pii-mask.ts 本人（純函式、零 import，見那
@@ -29,7 +35,12 @@
  *   [連線]  對一個真的 PostgreSQL 跑 markOrderPaidByAdmin()，驅動**產線的程式碼
  *           本人**（不是重寫一次那句 SQL——見下面「為什麼是 shim」）。這一段驗的是
  *           這一期唯一會動到錢的動作：呼叫 admin_mark_order_paid() 之後
- *           payment_method 仍然是 'transfer'。
+ *           payment_method 仍然是 'transfer'。0035 加了 [9b]，同一個 shim 多驅動
+ *           deleteAdminOrder()／archiveAdminOrder() 兩支 TS 包裝一次——只驗參數
+ *           名稱與回傳值解析，admin_delete_order()／admin_archive_order() 本身的
+ *           商業邏輯（名額、逐表零變動、兩道拒絕閘）由
+ *           scripts/admin-order-registration-cleanup-selftest.mjs 對真的 Postgres
+ *           完整覆蓋，這裡不重複驗。
  *
  * ── 為什麼是 AST，不是 includes() ──────────────────────────────────────────
  * `.middleware([adminFnMiddleware])` 這幾個字如果只用字串比對，一段解釋「這一支
@@ -215,12 +226,25 @@ console.log("\n[2] 🔴 fns/orders.ts 的每一支 server fn 都掛 adminFnMiddl
     }
   }
 
+  // 0035 加了兩支：deleteAdminOrder／archiveAdminOrder（刪除／封存）。
   check(
-    "剛好 3 支 server fn（listAdminOrders／getAdminOrderDetail／markOrderPaidAdmin）",
+    "剛好 5 支 server fn（listAdminOrders／getAdminOrderDetail／markOrderPaidAdmin／deleteAdminOrder／archiveAdminOrder，0035 加了後兩支）",
     exported.map((e) => e.name).sort(),
-    ["getAdminOrderDetail", "listAdminOrders", "markOrderPaidAdmin"],
+    [
+      "archiveAdminOrder",
+      "deleteAdminOrder",
+      "getAdminOrderDetail",
+      "listAdminOrders",
+      "markOrderPaidAdmin",
+    ],
   );
-  for (const name of ["listAdminOrders", "getAdminOrderDetail", "markOrderPaidAdmin"]) {
+  for (const name of [
+    "listAdminOrders",
+    "getAdminOrderDetail",
+    "markOrderPaidAdmin",
+    "deleteAdminOrder",
+    "archiveAdminOrder",
+  ]) {
     const found = exported.find((e) => e.name === name);
     checkTrue(
       `🔴 ${name} 掛了 adminFnMiddleware`,
@@ -239,10 +263,16 @@ console.log("\n[2] 🔴 fns/orders.ts 的每一支 server fn 都掛 adminFnMiddl
   );
 
   // actorId 只能從 context 讀，不能是呼叫端 data 裡的欄位——同
-  // revealRegistrationContact() 的立場（見 fns/orders.ts 檔頭）。
+  // revealRegistrationContact() 的立場（見 fns/orders.ts 檔頭）。0035 的兩支新增
+  // fn 遵循同一條規矩。
   checkTrue(
     "markOrderPaidAdmin 的 actorId 讀自 context.admin.userId",
     /actorId:\s*context\.admin\.userId/.test(fnsSrc),
+  );
+  checkTrue(
+    "🔴 deleteAdminOrder／archiveAdminOrder 的 actorId 也讀自 context.admin.userId（0035）",
+    (fnsSrc.match(/actorId:\s*context\.admin\.userId/g) ?? []).length >= 3,
+    "三支動到訂單的 fn（標記已收款／刪除／封存）都不能讓呼叫端宣稱是誰做的。",
   );
   checkFalse(
     "🔴 inputValidator 的 schema 裡沒有 actorId 這個欄位（不能由前端宣稱是誰做的）",
@@ -280,6 +310,46 @@ console.log("\n[3] repo/orders-admin.ts 的寫入面");
   for (const p of ["p_order_id", "p_actor_id", "p_note"]) {
     checkTrue(`🔴 RPC 呼叫帶了具名參數 ${p}`, rpcCallSrc.includes(`${p}:`));
   }
+}
+
+// =============================================================================
+// [3b] 🔴 repo/orders-admin.ts —— 刪除／封存也只透過 RPC（0035）
+// =============================================================================
+console.log("\n[3b] 🔴 repo/orders-admin.ts 的刪除／封存也只透過 RPC");
+{
+  checkFalse(
+    "🔴 整個檔案沒有任何一句 .delete(（刪除唯一的路徑是 admin_delete_order RPC）",
+    /\.delete\(/.test(repoSrc),
+  );
+  checkTrue(
+    "呼叫的 RPC 名稱是 admin_delete_order",
+    /supabaseAdmin\(\)\.rpc\(\s*"admin_delete_order"/.test(repoSrc),
+  );
+  checkTrue(
+    "呼叫的 RPC 名稱是 admin_archive_order",
+    /supabaseAdmin\(\)\.rpc\(\s*"admin_archive_order"/.test(repoSrc),
+  );
+  const deleteRpcSrc = sliceBetween(repoSrc, 'supabaseAdmin().rpc("admin_delete_order"', ");");
+  for (const p of ["p_order_id", "p_actor_id"]) {
+    checkTrue(`🔴 admin_delete_order 呼叫帶了具名參數 ${p}`, deleteRpcSrc.includes(`${p}:`));
+  }
+  const archiveRpcSrc = sliceBetween(repoSrc, 'supabaseAdmin().rpc("admin_archive_order"', ");");
+  for (const p of ["p_order_id", "p_actor_id", "p_archived"]) {
+    checkTrue(`🔴 admin_archive_order 呼叫帶了具名參數 ${p}`, archiveRpcSrc.includes(`${p}:`));
+  }
+
+  // reason 值域必須逐字對到 migration 0035 §3／§4 給的四個／三個字串——不是憑印象
+  // 重打一次，這裡直接比對型別宣告裡的字面值。
+  checkTrue(
+    "DeleteOrderReason 逐字包含四個值",
+    /"deleted"\s*\|\s*"order_not_found"\s*\|\s*"order_is_paid"\s*\|\s*"has_inventory_sale"/.test(
+      repoSrc,
+    ),
+  );
+  checkTrue(
+    "ArchiveOrderReason 逐字包含三個值",
+    /"archived"\s*\|\s*"unarchived"\s*\|\s*"order_not_found"/.test(repoSrc),
+  );
 }
 
 // =============================================================================
@@ -348,8 +418,16 @@ console.log("\n[5] 詳情頁的聯絡資訊一定經過遮罩");
 }
 
 // =============================================================================
-// [6] 🔴 沒動到：結帳路徑、markOrderPaid、四個金流檔、任何既有／新增 migration
+// [6] 🔴 沒動到：結帳路徑、markOrderPaid、四個金流檔；0001–0034 逐檔不動，
+//     0035 是這一期唯一允許的新增
 // =============================================================================
+// ⚠️ 這一段的斷言在 0034 那一版寫的是「supabase/migrations 整個目錄 git status
+//    必須是空的」，因為那一版真的沒有新增 migration。0035 這一期的任務書明講要
+//    加一支新 migration（訂單刪除／封存、名單刪除），所以「整個目錄零 diff」這句
+//    話從這裡起不再成立——但它原本要守的事**沒有變**：0001–0034 逐檔不准被改一個
+//    位元組。所以拆成兩段各自驗：非 migration 的六個保護檔仍然要求零 diff；
+//    migration 目錄改成「0001–0034 這 34 個檔名各自的 git status 必須是空的，
+//    而整個目錄的 diff 只准剛好是新增一個 0035 開頭的檔案」。
 console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄問 git）");
 {
   const PROTECTED = [
@@ -359,7 +437,6 @@ console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄�
     "src/server/blackcat.ts",
     "src/server/blackcat-webhook.ts",
     "src/server/payuni-webhook.ts",
-    "supabase/migrations",
   ];
   let statusOut = "";
   let gitOk = true;
@@ -378,14 +455,50 @@ console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄�
   }
   checkTrue("`git status` 執行成功（在一個 git repo 裡跑）", gitOk);
   check(
-    "🔴 這六個檔案＋整個 supabase/migrations 目錄：git status 乾淨（沒有新增、沒有修改）",
+    "🔴 這六個檔案：git status 乾淨（結帳路徑與四個金流檔一個位元組都沒動）",
     statusOut.trim(),
     "",
     `實際輸出：\n${statusOut}`,
   );
 
+  let migStatusOut = "";
+  let migGitOk = true;
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["status", "--porcelain=v1", "--", "supabase/migrations"],
+      { cwd: ROOT },
+    );
+    migStatusOut = stdout;
+  } catch (err) {
+    migGitOk = false;
+    migStatusOut = String(err.message ?? err);
+  }
+  checkTrue("`git status` 對 supabase/migrations 執行成功", migGitOk);
+
+  const migLines = migStatusOut
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const unexpected = migLines.filter((l) => !/^\?\? supabase\/migrations\/0035_.*\.sql$/.test(l));
+  check(
+    "🔴 supabase/migrations：0001–0034 逐檔零 diff，唯一允許的變動是新增一個 0035_*.sql",
+    unexpected.join("\n") || "（無）",
+    "（無）",
+    `實際輸出：\n${migStatusOut}`,
+  );
+  checkTrue(
+    "🔴 0035_*.sql 真的是新增的（狀態碼 ??，不是修改既有檔）",
+    migLines.some((l) => /^\?\? supabase\/migrations\/0035_.*\.sql$/.test(l)),
+    `實際輸出：\n${migStatusOut}`,
+  );
+
   const migFiles = readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql"));
-  check("supabase/migrations 剛好 34 個 .sql 檔（0001–0034，沒有新增）", migFiles.length, 34);
+  check(
+    "supabase/migrations 剛好 35 個 .sql 檔（0001–0034 原封不動 + 0035 新增）",
+    migFiles.length,
+    35,
+  );
 }
 
 // =============================================================================
@@ -424,7 +537,14 @@ console.log("\n[7b] 標記已收款的可用範圍，以及標記結果與畫面
     "card／atm／cvs_cod／test_paid／free 卡在待付款時不該出現這顆按鈕——那些正常都由金流商 webhook 自動結清，卡住代表要去查金流商後台，不是對銀行對帳單。",
   );
 
-  const submitFnSrc = sliceBetween(routeSrc, "async function submitMarkPaid", "return (");
+  // ⚠️ 結尾界標改成下一支函式的宣告，不是 "return ("——0035 在 submitMarkPaid 與
+  //    JSX 的 return ( 之間插了 submitDelete／submitArchive 兩支新函式，繼續切到
+  //    "return (" 會把那兩支的 try 也算進來，讓下面的 tryCount 斷言失真。
+  const submitFnSrc = sliceBetween(
+    routeSrc,
+    "async function submitMarkPaid",
+    "async function submitDelete",
+  );
   checkTrue("抓得到 submitMarkPaid 的函式本體", submitFnSrc.length > 200);
   const tryCount = (submitFnSrc.match(/\btry\s*\{/g) ?? []).length;
   check(
@@ -441,6 +561,89 @@ console.log("\n[7b] 標記已收款的可用範圍，以及標記結果與畫面
     "如果重讀畫面那段的 catch 也講「標記失敗」，就是同一個矛盾 toast 的 bug 換句話重演。",
   );
   checkTrue("重讀畫面失敗有自己的訊息，不是「標記失敗」", /畫面更新失敗/.test(submitFnSrc));
+}
+
+// =============================================================================
+// [7c] 🔴 刪除／封存（0035）：分界是 payment_status，四種 reason 各自講人話
+// =============================================================================
+console.log("\n[7c] 🔴 刪除／封存的分界與 reason 文案");
+{
+  // 畫面分界與資料庫閘門用同一個條件：payment_status === "paid" → 只給封存，
+  // 其餘 → 只給刪除。routeSrc 已經被 stripTs() 拿掉註解，所以不能用「刪除／封存」
+  // 那段 JSX 註解當界標（stripTs 會把整段 /* … */ 連同分隔符一起清空）；改用
+  // **最後一次**出現的 `payment_status === "paid" ? (`——檔案裡只有兩次，第一次是
+  // [7b] 驗過的「標記已收款」那段純文字分支，第二次才是這個新區塊。
+  const lastBranchAt = routeSrc.lastIndexOf('detail.payment_status === "paid" ? (');
+  checkTrue(
+    '🔴 payment_status === "paid" 的三元運算剛好出現兩次',
+    (routeSrc.match(/detail\.payment_status === "paid" \? \(/g) ?? []).length === 2,
+  );
+  const archiveOrDeleteSrc =
+    lastBranchAt === -1
+      ? ""
+      : routeSrc.slice(lastBranchAt, routeSrc.indexOf("</Dialog>", lastBranchAt));
+  checkTrue("抓得到「刪除／封存」那個新區塊", archiveOrDeleteSrc.length > 200);
+  checkTrue(
+    '🔴 新區塊用 payment_status === "paid" 分流封存／刪除',
+    /detail\.payment_status === "paid" \? \(/.test(archiveOrDeleteSrc),
+  );
+  checkTrue(
+    "🔴 paid 分支呼叫 submitArchive，非 paid 分支開刪除確認",
+    /submitArchive/.test(archiveOrDeleteSrc) &&
+      /setDeleteConfirmOpen\(true\)/.test(archiveOrDeleteSrc),
+  );
+
+  // 四種 reason 各自的訊息，逐一比對關鍵字，不是只驗字串存在。
+  checkTrue(
+    "🔴 has_inventory_sale 講人話「已轉入銷售紀錄，不能刪除，請改用封存」",
+    /已轉入銷售紀錄，不能刪除，請改用封存/.test(routeSrc),
+  );
+  checkTrue(
+    "🔴 order_is_paid 講人話並指向封存",
+    /已經收到款項，不能刪除/.test(routeSrc) && /封存/.test(routeSrc),
+  );
+  checkTrue("order_not_found（刪除）另有訊息", /找不到這張訂單，可能已經被刪除/.test(routeSrc));
+  checkTrue(
+    "刪除成功後直接關掉詳情 Dialog（訂單已經不在了，不是重讀 getAdminOrderDetail）",
+    /setSelectedId\(null\);\s*\n\s*setDetail\(null\);\s*\n\s*await load\(scope, includeArchived\);/.test(
+      submitDeleteSrc(routeSrc),
+    ),
+  );
+
+  // 封存／取消封存的按鈕文字要跟著 archived_at 換。
+  checkTrue(
+    "封存按鈕文字依 archived_at 換成「取消封存」／「封存」",
+    /detail\.archived_at \? "取消封存" : "封存"/.test(routeSrc),
+  );
+
+  // 「顯示已封存」開關：畫面狀態與 fns 呼叫都要接上 includeArchived。
+  checkTrue("有「顯示已封存」開關", /顯示已封存/.test(routeSrc));
+  checkTrue(
+    "🔴 開關接的是 includeArchived 這個 state（不是裝飾用的）",
+    /checked=\{includeArchived\}/.test(routeSrc) &&
+      /onCheckedChange=\{setIncludeArchived\}/.test(routeSrc),
+  );
+  checkTrue(
+    "🔴 load() 把 includeArchived 傳給 listAdminOrders",
+    /includeArchived: archived/.test(routeSrc),
+  );
+  checkTrue(
+    "🔴 fns/orders.ts 的 listAdminOrders inputValidator 收 includeArchived",
+    /includeArchived: z\.boolean\(\)\.optional\(\)/.test(fnsSrc),
+  );
+
+  // AlertDialog 的確認文案要提到「無法復原」與「還原名額」的效果。
+  const deleteAlertSrc = sliceBetween(routeSrc, "確定要刪除這張訂單嗎？", "</AlertDialog>");
+  checkTrue("抓得到刪除確認對話框", deleteAlertSrc.length > 100);
+  checkTrue(
+    "🔴 刪除確認文案提到會連帶移除報名並釋放名額",
+    /報名一起移除/.test(deleteAlertSrc) && /名額/.test(deleteAlertSrc),
+  );
+}
+
+/** 從 submitMarkPaid 到檔尾抓出 submitDelete 的函式本體（給上面那條反空殼比對用）。 */
+function submitDeleteSrc(src) {
+  return sliceBetween(src, "async function submitDelete", "async function submitArchive");
 }
 
 // =============================================================================
@@ -535,6 +738,8 @@ async function must(sql, single = true) {
   return r.rows;
 }
 const one = (rows) => (Array.isArray(rows) && rows.length > 0 ? rows[0] : null);
+/** 0035 的連線段用得到——同 remittance-selftest.mjs 的同名 helper。 */
+const num = (rows) => Number(one(rows)?.n ?? -1);
 
 /**
  * shim：只實作 markOrderPaidByAdmin() 真的會用到的 `.rpc()`。理由與
@@ -709,6 +914,94 @@ if (!PG_URL) {
     });
     check("不存在的訂單 → reason === 'order_not_found'", r4.reason, "order_not_found");
     check("   order_no 是 null", r4.order_no, null);
+
+    // ─────────────────────────────────────────────────────────────────────
+    // deleteAdminOrder() / archiveAdminOrder()（0035）—— 同一支 shim，多驅動
+    // 兩個 TS 包裝。這裡不重新驗 admin_delete_order() / admin_archive_order()
+    // 本身的商業邏輯（那是 admin-order-registration-cleanup-selftest.mjs 的
+    // [14]-[19] 段對真的 Postgres 逐表 md5 比對過的事）——只驗這一層 TS 包裝：
+    // 參數名稱有沒有傳對、PostgREST 包成陣列還是物件的回傳值有沒有解析對。
+    // ─────────────────────────────────────────────────────────────────────
+    console.log("\n[9b] 連線段：deleteAdminOrder() / archiveAdminOrder()（0035，同一個 shim）");
+    await must(
+      `
+      insert into public.orders (customer_name, customer_email, customer_phone, subtotal, total, idempotency_key)
+      values
+        ('自檢','ao-selftest@example.invalid','0900000000',500,500,'${KEY_PREFIX}del-pending'),
+        ('自檢','ao-selftest@example.invalid','0900000000',500,500,'${KEY_PREFIX}archive-paid');
+      update public.orders set status='processing', payment_status='paid', paid_at=now()
+       where idempotency_key = '${KEY_PREFIX}archive-paid';
+    `,
+      false,
+    );
+    const delPendingId = one(
+      await must(`select id from public.orders where idempotency_key = '${KEY_PREFIX}del-pending'`),
+    )?.id;
+    const archivePaidId = one(
+      await must(
+        `select id from public.orders where idempotency_key = '${KEY_PREFIX}archive-paid'`,
+      ),
+    )?.id;
+    checkTrue(
+      "反空殼：載得動產線的 deleteAdminOrder／archiveAdminOrder",
+      typeof ordersAdmin.deleteAdminOrder === "function" &&
+        typeof ordersAdmin.archiveAdminOrder === "function",
+    );
+
+    const delResult = await ordersAdmin.deleteAdminOrder({
+      orderId: delPendingId,
+      actorId: ACTOR_ID,
+    });
+    check("🔴 刪未付款訂單：reason === 'deleted'", delResult.reason, "deleted");
+    check("deleted === true", delResult.deleted, true);
+    check(
+      "訂單真的不見了",
+      num(await must(`select count(*)::int n from public.orders where id = '${delPendingId}'`)),
+      0,
+    );
+
+    const delPaidResult = await ordersAdmin.deleteAdminOrder({
+      orderId: archivePaidId,
+      actorId: ACTOR_ID,
+    });
+    check(
+      "🔴 刪已付款訂單：reason === 'order_is_paid'（TS 包裝正確傳回拒絕理由）",
+      delPaidResult.reason,
+      "order_is_paid",
+    );
+    check("deleted === false", delPaidResult.deleted, false);
+
+    const archiveResult = await ordersAdmin.archiveAdminOrder({
+      orderId: archivePaidId,
+      actorId: ACTOR_ID,
+      archived: true,
+    });
+    check("🔴 封存已付款訂單：reason === 'archived'", archiveResult.reason, "archived");
+    check("updated === true", archiveResult.updated, true);
+    check(
+      "archived_at 真的被設了",
+      Boolean(
+        one(
+          await must(
+            `select archived_at is not null ok from public.orders where id = '${archivePaidId}'`,
+          ),
+        )?.ok,
+      ),
+      true,
+    );
+
+    const unarchiveResult = await ordersAdmin.archiveAdminOrder({
+      orderId: archivePaidId,
+      actorId: ACTOR_ID,
+      archived: false,
+    });
+    check("🔴 取消封存：reason === 'unarchived'", unarchiveResult.reason, "unarchived");
+    check(
+      "archived_at 真的被清掉了",
+      one(await must(`select archived_at from public.orders where id = '${archivePaidId}'`))
+        ?.archived_at,
+      null,
+    );
 
     await must(CLEANUP_SQL, false);
     checkTrue(
