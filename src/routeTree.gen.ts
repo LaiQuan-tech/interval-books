@@ -18,6 +18,7 @@ import { Route as CurationRouteImport } from './routes/curation'
 import { Route as CuratedRouteImport } from './routes/curated'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CartRouteImport } from './routes/cart'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShopIndexRouteImport } from './routes/shop.index'
@@ -29,9 +30,14 @@ import { Route as VendorShellRouteImport } from './routes/vendor/_shell'
 import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
 import { Route as EventsSlugRouteImport } from './routes/events.$slug'
 import { Route as CheckoutCompleteRouteImport } from './routes/checkout.complete'
+import { Route as AuthConfirmRouteImport } from './routes/auth.confirm'
 import { Route as AdminPendingRouteImport } from './routes/admin/pending'
 import { Route as AdminLoginRouteImport } from './routes/admin/login'
 import { Route as AdminShellRouteImport } from './routes/admin/_shell'
+import { Route as AccountResetRouteImport } from './routes/account_.reset'
+import { Route as AccountRegisterRouteImport } from './routes/account_.register'
+import { Route as AccountLoginRouteImport } from './routes/account_.login'
+import { Route as AccountForgotRouteImport } from './routes/account_.forgot'
 import { Route as VendorShellIndexRouteImport } from './routes/vendor/_shell.index'
 import { Route as AdminShellIndexRouteImport } from './routes/admin/_shell.index'
 import { Route as VendorShellProductsRouteImport } from './routes/vendor/_shell.products'
@@ -109,6 +115,11 @@ const CartRoute = CartRouteImport.update({
   path: '/cart',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -164,6 +175,11 @@ const CheckoutCompleteRoute = CheckoutCompleteRouteImport.update({
   path: '/checkout/complete',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthConfirmRoute = AuthConfirmRouteImport.update({
+  id: '/auth/confirm',
+  path: '/auth/confirm',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminPendingRoute = AdminPendingRouteImport.update({
   id: '/admin/pending',
   path: '/admin/pending',
@@ -177,6 +193,26 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
 const AdminShellRoute = AdminShellRouteImport.update({
   id: '/admin/_shell',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountResetRoute = AccountResetRouteImport.update({
+  id: '/account_/reset',
+  path: '/account/reset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRegisterRoute = AccountRegisterRouteImport.update({
+  id: '/account_/register',
+  path: '/account/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountLoginRoute = AccountLoginRouteImport.update({
+  id: '/account_/login',
+  path: '/account/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountForgotRoute = AccountForgotRouteImport.update({
+  id: '/account_/forgot',
+  path: '/account/forgot',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VendorShellIndexRoute = VendorShellIndexRouteImport.update({
@@ -346,6 +382,7 @@ const AdminShellEventsIdRoute = AdminShellEventsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/account': typeof AccountRoute
   '/cart': typeof CartRoute
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
@@ -355,9 +392,14 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/publications': typeof PublicationsRoute
   '/visit': typeof VisitRoute
+  '/account/forgot': typeof AccountForgotRoute
+  '/account/login': typeof AccountLoginRoute
+  '/account/register': typeof AccountRegisterRoute
+  '/account/reset': typeof AccountResetRoute
   '/admin': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/admin/pending': typeof AdminPendingRoute
+  '/auth/confirm': typeof AuthConfirmRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/events/$slug': typeof EventsSlugRoute
   '/shop/$slug': typeof ShopSlugRoute
@@ -402,6 +444,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/account': typeof AccountRoute
   '/cart': typeof CartRoute
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
@@ -411,8 +454,13 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/publications': typeof PublicationsRoute
   '/visit': typeof VisitRoute
+  '/account/forgot': typeof AccountForgotRoute
+  '/account/login': typeof AccountLoginRoute
+  '/account/register': typeof AccountRegisterRoute
+  '/account/reset': typeof AccountResetRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/pending': typeof AdminPendingRoute
+  '/auth/confirm': typeof AuthConfirmRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/events/$slug': typeof EventsSlugRoute
   '/shop/$slug': typeof ShopSlugRoute
@@ -457,6 +505,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/account': typeof AccountRoute
   '/cart': typeof CartRoute
   '/contact': typeof ContactRoute
   '/curated': typeof CuratedRoute
@@ -466,9 +515,14 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/publications': typeof PublicationsRoute
   '/visit': typeof VisitRoute
+  '/account_/forgot': typeof AccountForgotRoute
+  '/account_/login': typeof AccountLoginRoute
+  '/account_/register': typeof AccountRegisterRoute
+  '/account_/reset': typeof AccountResetRoute
   '/admin/_shell': typeof AdminShellRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/admin/pending': typeof AdminPendingRoute
+  '/auth/confirm': typeof AuthConfirmRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/events/$slug': typeof EventsSlugRoute
   '/shop/$slug': typeof ShopSlugRoute
@@ -515,6 +569,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/account'
     | '/cart'
     | '/contact'
     | '/curated'
@@ -524,9 +579,14 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/publications'
     | '/visit'
+    | '/account/forgot'
+    | '/account/login'
+    | '/account/register'
+    | '/account/reset'
     | '/admin'
     | '/admin/login'
     | '/admin/pending'
+    | '/auth/confirm'
     | '/checkout/complete'
     | '/events/$slug'
     | '/shop/$slug'
@@ -571,6 +631,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/account'
     | '/cart'
     | '/contact'
     | '/curated'
@@ -580,8 +641,13 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/publications'
     | '/visit'
+    | '/account/forgot'
+    | '/account/login'
+    | '/account/register'
+    | '/account/reset'
     | '/admin/login'
     | '/admin/pending'
+    | '/auth/confirm'
     | '/checkout/complete'
     | '/events/$slug'
     | '/shop/$slug'
@@ -625,6 +691,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/account'
     | '/cart'
     | '/contact'
     | '/curated'
@@ -634,9 +701,14 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/publications'
     | '/visit'
+    | '/account_/forgot'
+    | '/account_/login'
+    | '/account_/register'
+    | '/account_/reset'
     | '/admin/_shell'
     | '/admin/login'
     | '/admin/pending'
+    | '/auth/confirm'
     | '/checkout/complete'
     | '/events/$slug'
     | '/shop/$slug'
@@ -682,6 +754,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  AccountRoute: typeof AccountRoute
   CartRoute: typeof CartRoute
   ContactRoute: typeof ContactRoute
   CuratedRoute: typeof CuratedRoute
@@ -691,9 +764,14 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   PublicationsRoute: typeof PublicationsRoute
   VisitRoute: typeof VisitRoute
+  AccountForgotRoute: typeof AccountForgotRoute
+  AccountLoginRoute: typeof AccountLoginRoute
+  AccountRegisterRoute: typeof AccountRegisterRoute
+  AccountResetRoute: typeof AccountResetRoute
   AdminShellRoute: typeof AdminShellRouteWithChildren
   AdminLoginRoute: typeof AdminLoginRoute
   AdminPendingRoute: typeof AdminPendingRoute
+  AuthConfirmRoute: typeof AuthConfirmRoute
   CheckoutCompleteRoute: typeof CheckoutCompleteRoute
   EventsSlugRoute: typeof EventsSlugRoute
   ShopSlugRoute: typeof ShopSlugRoute
@@ -768,6 +846,13 @@ declare module '@tanstack/react-router' {
       path: '/cart'
       fullPath: '/cart'
       preLoaderRoute: typeof CartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -847,6 +932,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckoutCompleteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/confirm': {
+      id: '/auth/confirm'
+      path: '/auth/confirm'
+      fullPath: '/auth/confirm'
+      preLoaderRoute: typeof AuthConfirmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/pending': {
       id: '/admin/pending'
       path: '/admin/pending'
@@ -866,6 +958,34 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account_/reset': {
+      id: '/account_/reset'
+      path: '/account/reset'
+      fullPath: '/account/reset'
+      preLoaderRoute: typeof AccountResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account_/register': {
+      id: '/account_/register'
+      path: '/account/register'
+      fullPath: '/account/register'
+      preLoaderRoute: typeof AccountRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account_/login': {
+      id: '/account_/login'
+      path: '/account/login'
+      fullPath: '/account/login'
+      preLoaderRoute: typeof AccountLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account_/forgot': {
+      id: '/account_/forgot'
+      path: '/account/forgot'
+      fullPath: '/account/forgot'
+      preLoaderRoute: typeof AccountForgotRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/vendor/_shell/': {
@@ -1192,6 +1312,7 @@ const VendorShellRouteWithChildren = VendorShellRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  AccountRoute: AccountRoute,
   CartRoute: CartRoute,
   ContactRoute: ContactRoute,
   CuratedRoute: CuratedRoute,
@@ -1201,9 +1322,14 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   PublicationsRoute: PublicationsRoute,
   VisitRoute: VisitRoute,
+  AccountForgotRoute: AccountForgotRoute,
+  AccountLoginRoute: AccountLoginRoute,
+  AccountRegisterRoute: AccountRegisterRoute,
+  AccountResetRoute: AccountResetRoute,
   AdminShellRoute: AdminShellRouteWithChildren,
   AdminLoginRoute: AdminLoginRoute,
   AdminPendingRoute: AdminPendingRoute,
+  AuthConfirmRoute: AuthConfirmRoute,
   CheckoutCompleteRoute: CheckoutCompleteRoute,
   EventsSlugRoute: EventsSlugRoute,
   ShopSlugRoute: ShopSlugRoute,

@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { ShoppingBag } from "lucide-react";
+import { ShoppingBag, UserRound } from "lucide-react";
 import { useLang, useT } from "@/i18n/LanguageContext";
 import { LANGS } from "@/i18n/types";
 import { useCartCount, useCartHydrated } from "@/lib/cart";
@@ -71,10 +71,12 @@ export function SiteHeader() {
             ))}
           </span>
 
+          <AccountLink label={t(ui.nav.account)} />
           <CartLink label={t(ui.nav.cart)} />
         </nav>
 
         <div className="flex items-center gap-1 lg:hidden">
+          <AccountLink label={t(ui.nav.account)} onNavigate={() => setOpen(false)} />
           <CartLink label={t(ui.nav.cart)} onNavigate={() => setOpen(false)} />
           <button
             aria-label="Menu"
@@ -130,6 +132,14 @@ export function SiteHeader() {
             >
               {t(ui.nav.cart)}
             </Link>
+            <Link
+              to="/account"
+              onClick={() => setOpen(false)}
+              activeProps={{ className: "text-foreground font-medium" }}
+              className="text-foreground/75"
+            >
+              {t(ui.nav.account)}
+            </Link>
           </nav>
         </div>
       )}
@@ -164,6 +174,28 @@ function CartLink({ label, onNavigate }: { label: string; onNavigate?: () => voi
           {count}
         </span>
       )}
+    </Link>
+  );
+}
+
+/**
+ * 客人帳號的入口（2026-09-03）。刻意用圖示、不佔用文字導覽的五格——見上面 NAV
+ * 那段「九格 → 五格」的理由，同一個空間預算。
+ *
+ * 一律指到 /account，不在頁首自己判斷有沒有登入：那一頁自己的 beforeLoad 會導去
+ * /account/login（見 routes/account.tsx 檔頭）。這裡不重複判斷一次，避免登入
+ * 狀態的判斷分散在兩個地方。
+ */
+function AccountLink({ label, onNavigate }: { label: string; onNavigate?: () => void }) {
+  return (
+    <Link
+      to="/account"
+      onClick={onNavigate}
+      aria-label={label}
+      title={label}
+      className="flex h-10 w-10 items-center justify-center text-foreground/80 transition-colors hover:text-foreground"
+    >
+      <UserRound className="h-5 w-5" aria-hidden="true" />
     </Link>
   );
 }

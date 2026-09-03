@@ -290,6 +290,7 @@ walk(ast.header.program, (n) => {
 });
 check("SiteHeader 只用這幾個 nav key", sorted(headerNavKeys), [
   "aboutStore",
+  "account",
   "cart",
   "events",
   "home",

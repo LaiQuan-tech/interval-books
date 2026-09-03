@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-02T07:21:39.891Z",
+  "generatedAt": "2026-09-03T02:39:28.871Z",
   "summary": {
-    "routesAudited": 17,
+    "routesAudited": 23,
     "redirectRoutes": 4,
     "redirectRouteList": [
       "/contact",
@@ -9,7 +9,7 @@
       "/publications",
       "/visit"
     ],
-    "metaAudited": 13,
+    "metaAudited": 19,
     "languages": [
       "zh",
       "en",
@@ -31,12 +31,48 @@
         "ogTitle",
         "ogDescription"
       ],
-      "approxChecks": 156
+      "approxChecks": 228
     }
   },
   "routes": {
     "/about": {
       "file": "src/routes/about.tsx",
+      "ok": true,
+      "redirect": false,
+      "issues": []
+    },
+    "/account": {
+      "file": "src/routes/account.tsx",
+      "ok": true,
+      "redirect": false,
+      "issues": []
+    },
+    "/account_.forgot": {
+      "file": "src/routes/account_.forgot.tsx",
+      "ok": true,
+      "redirect": false,
+      "issues": []
+    },
+    "/account_.login": {
+      "file": "src/routes/account_.login.tsx",
+      "ok": true,
+      "redirect": false,
+      "issues": []
+    },
+    "/account_.register": {
+      "file": "src/routes/account_.register.tsx",
+      "ok": true,
+      "redirect": false,
+      "issues": []
+    },
+    "/account_.reset": {
+      "file": "src/routes/account_.reset.tsx",
+      "ok": true,
+      "redirect": false,
+      "issues": []
+    },
+    "/auth.confirm": {
+      "file": "src/routes/auth.confirm.tsx",
       "ok": true,
       "redirect": false,
       "issues": []

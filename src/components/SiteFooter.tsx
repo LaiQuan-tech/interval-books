@@ -84,6 +84,9 @@ export function SiteFooter() {
             © {new Date().getFullYear()} {t(ui.footer.rights)}
           </p>
           <div className="flex gap-5">
+            <Link to="/account" className="hover-underline">
+              {t(ui.footer.account)}
+            </Link>
             <Link to="/curation" className="hover-underline">
               {t(ui.nav.curation)}
             </Link>
