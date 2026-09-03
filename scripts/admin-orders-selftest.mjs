@@ -1,0 +1,706 @@
+#!/usr/bin/env node
+/**
+ * admin-orders-selftest.mjs —— 後台訂單頁（列表／詳情／標記已收款）的自檢
+ *
+ * 分三段，理由與 remittance-selftest / event-registration-selftest 相同：這支測試
+ * 在沒有資料庫的機器上也必須有意義。
+ *
+ *   [靜態]  讀 src/lib/admin/fns/orders.ts、src/server/repos/orders-admin.ts、
+ *           src/routes/admin/_shell.orders.tsx、src/routes/admin/_shell.tsx 的原始
+ *           碼，並用 `git status`／`git diff` 對真的工作目錄問「這一期不該碰的檔案
+ *           有沒有被碰到」。守的是設計不變量：
+ *             · fns/orders.ts 每一支 server fn 都掛 adminFnMiddleware（AST 比對，
+ *               不是 includes()——見下方「為什麼是 AST」）。
+ *             · repo 層完全不寫入 orders 表（沒有任何一句 .update()），標記已收款
+ *               只透過 admin_mark_order_paid() 這支 RPC，而且參數名稱是
+ *               p_order_id／p_actor_id／p_note。
+ *             · 列表查詢的欄位字串裡沒有 email／phone，也不查 order_addresses。
+ *             · 詳情裡的 customer_email／customer_phone 回傳前一定經過
+ *               maskEmail()／maskTail()，回傳值裡沒有未遮罩的鍵。
+ *             · 這一期沒有動到 src/server/repos/orders.ts（結帳路徑）、
+ *               src/server/repos/payments.ts、四個金流檔、以及任何一支既有
+ *               migration —— 也沒有新增 migration。
+ *           **永遠會跑。**
+ *
+ *   [動態]  直接 import() src/lib/admin/pii-mask.ts 本人（純函式、零 import，見那
+ *           個檔案檔頭），窮舉遮罩演算法的案例——包含 0021 §2 記錄過的那個真 bug
+ *           （keepTail=0 時 `slice(-0)` 等於 `slice(0)`）的迴歸測試。**永遠會跑。**
+ *
+ *   [連線]  對一個真的 PostgreSQL 跑 markOrderPaidByAdmin()，驅動**產線的程式碼
+ *           本人**（不是重寫一次那句 SQL——見下面「為什麼是 shim」）。這一段驗的是
+ *           這一期唯一會動到錢的動作：呼叫 admin_mark_order_paid() 之後
+ *           payment_method 仍然是 'transfer'。
+ *
+ * ── 為什麼是 AST，不是 includes() ──────────────────────────────────────────
+ * `.middleware([adminFnMiddleware])` 這幾個字如果只用字串比對，一段解釋「這一支
+ * 為什麼要掛 adminFnMiddleware」的註解就能把斷言餵成假的綠燈——而且是在**相反的
+ * 方向**上綠：程式碼真的把 middleware 拿掉時，只要註解還留著，includes() 一樣通
+ * 過。所以下面走 @babel/parser 的 AST：只認函式呼叫鏈裡 `.middleware(...)` 的陣列
+ * 引數是不是真的有 Identifier `adminFnMiddleware`，註解與字串內容進不了這個節點
+ * （同 scripts/nav-consolidation-selftest.mjs 檔頭的理由）。
+ *
+ * ── 為什麼 [連線] 段是 shim，不是重寫一次那句 SQL ──────────────────────────
+ * 理由與 remittance-selftest.mjs 檔頭逐字相同：在測試裡重寫一次
+ * `supabaseAdmin().rpc("admin_mark_order_paid", …)` 拿去跑，驗到的是這支測試寫得
+ * 對不對，不是 src/server/repos/orders-admin.ts 那支 markOrderPaidByAdmin() 寫得
+ * 對不對。這裡把 `@/server/supabase-admin` 換成一個只實作 `.rpc()`（這支函式唯一
+ * 用到的方法）的 shim，被測的仍然是那個檔案本人：它傳了什麼參數名稱、怎麼解析
+ * PostgREST 包成陣列還是物件的回傳值，全部原封不動地跑到真的 Postgres 上。
+ *
+ * `admin_mark_order_paid()` 本身的正確性（保留 payment_method、四種 reason、稽核
+ * 列、grants）已經由 scripts/remittance-selftest.mjs 的 [16] 段完整覆蓋——那支測
+ * 試直接對資料庫送 SQL，不經過這個檔案的任何程式碼。這裡不重複驗那件事，只驗
+ * markOrderPaidByAdmin() 這個 TypeScript 包裝本身：參數名稱有沒有傳對、回傳值有
+ * 沒有解析對、而且**透過這一層呼叫之後**，資料庫裡的 payment_method 真的還是
+ * 'transfer'（見任務驗收條件那一條 🔴）。
+ *
+ * ⚠️ **這支測試永遠不碰正式庫。** 它沿用 remittance-selftest.mjs 的
+ *    REMITTANCE_SELFTEST_PG_URL——同一個變數，不另外發明一個（0034 的資料庫事實
+ *    是這兩支測試共同的地基：orders.payment_method 認得 'transfer'、
+ *    admin_mark_order_paid() 存在）。沒設就整段 skip（會印出來，不會靜悄悄消
+ *    失）。指令與建庫方式見 remittance-selftest.mjs 檔頭；這支不套 migration，直
+ *    接假設那個資料庫已經套到 0034（跑 remittance-selftest.mjs 的
+ *    REMITTANCE_SELFTEST_APPLY=1 一次就會有）。
+ *
+ *     REMITTANCE_SELFTEST_PG_URL=postgres:///ib_0034_test \
+ *     node scripts/admin-orders-selftest.mjs
+ *
+ * 測試資料一律用 idempotency_key like 'ao-selftest-%' 做記號，執行前先清掉上一輪
+ * 留下的（同 remittance-selftest.mjs 的 KEY_PREFIX 手法），不會撞到那支測試自己
+ * 的 'rmt34-%' 前綴。
+ */
+
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
+import { registerHooks } from "node:module";
+import { parse as parseJs } from "@babel/parser";
+
+const execFileAsync = promisify(execFile);
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const SELF = "scripts/admin-orders-selftest.mjs";
+
+const FNS_PATH = join(ROOT, "src/lib/admin/fns/orders.ts");
+const REPO_PATH = join(ROOT, "src/server/repos/orders-admin.ts");
+const MASK_PATH = join(ROOT, "src/lib/admin/pii-mask.ts");
+const ROUTE_PATH = join(ROOT, "src/routes/admin/_shell.orders.tsx");
+const SHELL_PATH = join(ROOT, "src/routes/admin/_shell.tsx");
+const MIG_DIR = join(ROOT, "supabase/migrations");
+
+// -----------------------------------------------------------------------------
+// 迷你測試框架（與 remittance-selftest.mjs 同一套，逐檔各自一份是這個 repo 的慣例）
+// -----------------------------------------------------------------------------
+let pass = 0;
+let fail = 0;
+const skipped = [];
+
+const red = (s) => `\x1b[31m${s}\x1b[0m`;
+const green = (s) => `\x1b[32m${s}\x1b[0m`;
+const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
+
+function check(label, actual, expected, hint) {
+  if (JSON.stringify(actual) === JSON.stringify(expected)) {
+    pass += 1;
+    console.log(green(`  ✓ ${label}`));
+  } else {
+    fail += 1;
+    console.log(red(`  ✗ ${label}`));
+    console.log(red(`      期望 ${JSON.stringify(expected)}，實得 ${JSON.stringify(actual)}`));
+    if (hint) console.log(red(`      ${hint}`));
+  }
+}
+const checkTrue = (label, value, hint) => check(label, value === true, true, hint);
+const checkFalse = (label, value, hint) => check(label, value === false, true, hint);
+
+/** 讀原始碼。**檔案不存在 = 丟例外**，不是回空字串（見 run-selftests.mjs 守門 4）。 */
+function readFile(p) {
+  if (!existsSync(p)) {
+    throw new Error(
+      `selftest 讀不到檔案：${p}（路徑打錯，或檔案被改名／搬走了。這裡刻意不回空字串——` +
+        `回空字串會讓所有「確認原始碼裡沒有 X」的否定斷言靜默通過。）`,
+    );
+  }
+  return readFileSync(p, "utf8");
+}
+
+/** 拿掉 TypeScript／SQL 的行內與區塊註解（同 remittance-selftest.mjs 的 stripTs）。 */
+function stripTs(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1"))
+    .join("\n");
+}
+
+/** 從 startMarker 切到下一個 endMarker（找不到 endMarker 就切到檔尾）。 */
+function sliceBetween(src, startMarker, endMarker) {
+  const start = src.indexOf(startMarker);
+  if (start === -1) return "";
+  const end = src.indexOf(endMarker, start + startMarker.length);
+  return end === -1 ? src.slice(start) : src.slice(start, end);
+}
+
+console.log("═══ 後台訂單頁自檢（列表／詳情／標記已收款）═══");
+
+// =============================================================================
+// [1] 反空殼：四個檔案都在，都不是空檔
+// =============================================================================
+console.log("\n[1] 檔案盤點");
+for (const [label, p] of [
+  ["fns/orders.ts", FNS_PATH],
+  ["repo/orders-admin.ts", REPO_PATH],
+  ["lib/admin/pii-mask.ts", MASK_PATH],
+  ["routes/admin/_shell.orders.tsx", ROUTE_PATH],
+]) {
+  checkTrue(`${label} 存在`, existsSync(p));
+}
+const fnsSrcRaw = readFile(FNS_PATH);
+const repoSrcRaw = readFile(REPO_PATH);
+const routeSrcRaw = readFile(ROUTE_PATH);
+const shellSrc = readFile(SHELL_PATH);
+checkTrue("fns/orders.ts 不是空檔", fnsSrcRaw.length > 500);
+checkTrue("repo/orders-admin.ts 不是空檔", repoSrcRaw.length > 2000);
+checkTrue("_shell.orders.tsx 不是空檔", routeSrcRaw.length > 2000);
+
+const fnsSrc = stripTs(fnsSrcRaw);
+const repoSrc = stripTs(repoSrcRaw);
+const routeSrc = stripTs(routeSrcRaw);
+
+// =============================================================================
+// [2] 🔴 fns/orders.ts —— 每一支 server fn 都掛 adminFnMiddleware（AST）
+// =============================================================================
+console.log("\n[2] 🔴 fns/orders.ts 的每一支 server fn 都掛 adminFnMiddleware");
+{
+  const ast = parseJs(fnsSrcRaw, { sourceType: "module", plugins: ["typescript"] });
+
+  /** createServerFn(...).middleware([...]).inputValidator(...).handler(...) 這條鏈，
+   *  沿著 CallExpression 往下走到底看有沒有 createServerFn，以及沿路有沒有一個
+   *  .middleware([adminFnMiddleware])。 */
+  function isServerFnChain(node) {
+    let cur = node;
+    while (cur?.type === "CallExpression") {
+      const callee = cur.callee;
+      if (callee.type === "Identifier" && callee.name === "createServerFn") return true;
+      cur = callee.type === "MemberExpression" ? callee.object : null;
+    }
+    return false;
+  }
+  function hasAdminMiddleware(node) {
+    let cur = node;
+    while (cur?.type === "CallExpression") {
+      const callee = cur.callee;
+      if (callee.type === "MemberExpression" && callee.property?.name === "middleware") {
+        const arg = cur.arguments[0];
+        if (arg?.type === "ArrayExpression") {
+          for (const el of arg.elements) {
+            if (el?.type === "Identifier" && el.name === "adminFnMiddleware") return true;
+          }
+        }
+      }
+      cur = callee.type === "MemberExpression" ? callee.object : null;
+    }
+    return false;
+  }
+
+  const exported = [];
+  for (const stmt of ast.program.body) {
+    if (stmt.type !== "ExportNamedDeclaration" || stmt.declaration?.type !== "VariableDeclaration")
+      continue;
+    for (const d of stmt.declaration.declarations) {
+      if (d.id?.type !== "Identifier" || !d.init || !isServerFnChain(d.init)) continue;
+      exported.push({ name: d.id.name, admin: hasAdminMiddleware(d.init) });
+    }
+  }
+
+  check(
+    "剛好 3 支 server fn（listAdminOrders／getAdminOrderDetail／markOrderPaidAdmin）",
+    exported.map((e) => e.name).sort(),
+    ["getAdminOrderDetail", "listAdminOrders", "markOrderPaidAdmin"],
+  );
+  for (const name of ["listAdminOrders", "getAdminOrderDetail", "markOrderPaidAdmin"]) {
+    const found = exported.find((e) => e.name === name);
+    checkTrue(
+      `🔴 ${name} 掛了 adminFnMiddleware`,
+      found?.admin === true,
+      "AST 掃過整條 .middleware(...) 呼叫鏈，找不到就是真的沒掛，不是註解騙過字串比對。",
+    );
+  }
+
+  checkTrue(
+    "import 的是 adminFnMiddleware，不是 staffFnMiddleware",
+    fnsSrc.includes('import { adminFnMiddleware } from "@/lib/admin/middleware"'),
+  );
+  checkFalse(
+    "沒有 import staffFnMiddleware（這一頁不下放給門市人員，見檔頭）",
+    fnsSrc.includes("staffFnMiddleware"),
+  );
+
+  // actorId 只能從 context 讀，不能是呼叫端 data 裡的欄位——同
+  // revealRegistrationContact() 的立場（見 fns/orders.ts 檔頭）。
+  checkTrue(
+    "markOrderPaidAdmin 的 actorId 讀自 context.admin.userId",
+    /actorId:\s*context\.admin\.userId/.test(fnsSrc),
+  );
+  checkFalse(
+    "🔴 inputValidator 的 schema 裡沒有 actorId 這個欄位（不能由前端宣稱是誰做的）",
+    /z\.object\(\s*\{\s*orderId[\s\S]{0,200}actorId/.test(fnsSrc),
+  );
+}
+
+// =============================================================================
+// [3] repo/orders-admin.ts —— 不寫 orders 表、只透過 RPC 標記已收款
+// =============================================================================
+console.log("\n[3] repo/orders-admin.ts 的寫入面");
+{
+  checkFalse(
+    "🔴 整個檔案沒有任何一句 .update(（唯一的寫入路徑是 admin_mark_order_paid RPC）",
+    /\.update\(/.test(repoSrc),
+  );
+  checkFalse(
+    "🔴 沒有 import markOrderPaid（那支會把 payment_method 寫成 card）",
+    /\bmarkOrderPaid\b/.test(repoSrc.replace(/markOrderPaidByAdmin|markOrderPaidAdmin/g, "")),
+  );
+  checkFalse(
+    "🔴 沒有 import src/server/repos/orders.ts（結帳路徑，這一期不依賴它）",
+    repoSrc.includes('from "@/server/repos/orders"'),
+  );
+  checkFalse(
+    "沒有 import src/server/repos/payments.ts",
+    repoSrc.includes('"@/server/repos/payments"'),
+  );
+
+  checkTrue(
+    "呼叫的 RPC 名稱是 admin_mark_order_paid",
+    /supabaseAdmin\(\)\.rpc\(\s*"admin_mark_order_paid"/.test(repoSrc),
+  );
+  const rpcCallSrc = sliceBetween(repoSrc, "supabaseAdmin().rpc(", ");");
+  for (const p of ["p_order_id", "p_actor_id", "p_note"]) {
+    checkTrue(`🔴 RPC 呼叫帶了具名參數 ${p}`, rpcCallSrc.includes(`${p}:`));
+  }
+}
+
+// =============================================================================
+// [4] 🔴 列表：欄位裡沒有 email／phone，也不查 order_addresses
+// =============================================================================
+console.log("\n[4] 🔴 列表回傳不含完整 email／電話／地址");
+{
+  const listColsMatch = repoSrc.match(/const LIST_COLUMNS =\s*\n?\s*"([^"]*)"/);
+  checkTrue("抓得到 LIST_COLUMNS 這個常數", Boolean(listColsMatch));
+  const listCols = listColsMatch?.[1] ?? "";
+  checkTrue("反空殼：LIST_COLUMNS 真的有內容", listCols.length > 20);
+  checkFalse("🔴 LIST_COLUMNS 裡沒有 'email'", listCols.includes("email"));
+  checkFalse("🔴 LIST_COLUMNS 裡沒有 'phone'", listCols.includes("phone"));
+
+  const listFnSrc = sliceBetween(
+    repoSrc,
+    "export async function listAdminOrders",
+    "const DETAIL_COLUMNS =",
+  );
+  checkTrue("抓得到 listAdminOrders 的函式本體", listFnSrc.length > 50);
+  checkFalse("🔴 listAdminOrders 完全不查 order_addresses", listFnSrc.includes("order_addresses"));
+
+  // 路由檔本身也不可以繞過 repo 另外要欄位——列表頁只認 AdminOrderListRow 這個型別。
+  checkFalse(
+    "🔴 _shell.orders.tsx 的原始碼裡沒有裸的 .customer_email／.customer_phone",
+    /\.customer_email\b(?!_masked)/.test(routeSrc) ||
+      /\.customer_phone\b(?!_masked)/.test(routeSrc),
+  );
+}
+
+// =============================================================================
+// [5] 詳情：明文回傳前一定經過遮罩
+// =============================================================================
+console.log("\n[5] 詳情頁的聯絡資訊一定經過遮罩");
+{
+  const detailFnSrc = sliceBetween(
+    repoSrc,
+    "export async function getAdminOrderDetail",
+    "export async function markOrderPaidByAdmin",
+  );
+  checkTrue("抓得到 getAdminOrderDetail 的函式本體", detailFnSrc.length > 200);
+
+  checkTrue(
+    "🔴 customer_email_masked 是 maskEmail(o.customer_email) 算出來的",
+    /customer_email_masked:\s*maskEmail\(o\.customer_email\)/.test(detailFnSrc),
+  );
+  checkTrue(
+    "🔴 customer_phone_masked 是 maskTail(o.customer_phone, 4) 算出來的",
+    /customer_phone_masked:\s*maskTail\(o\.customer_phone,\s*4\)/.test(detailFnSrc),
+  );
+  checkFalse("🔴 回傳值裡沒有未遮罩的 customer_email 鍵", detailFnSrc.includes("customer_email:"));
+  checkFalse("🔴 回傳值裡沒有未遮罩的 customer_phone 鍵", detailFnSrc.includes("customer_phone:"));
+  checkTrue(
+    "地址的電話也經過 maskTail(r.phone, 4)",
+    /phone_masked:\s*maskTail\(r\.phone,\s*4\)/.test(detailFnSrc),
+  );
+  checkFalse(
+    "🔴 沒有查詢 order_addresses.street（門牌完全不回傳）",
+    /\bstreet\b/.test(detailFnSrc),
+  );
+
+  checkTrue(
+    "import 了 maskEmail／maskTail",
+    repoSrc.includes('import { maskEmail, maskTail } from "@/lib/admin/pii-mask"'),
+  );
+}
+
+// =============================================================================
+// [6] 🔴 沒動到：結帳路徑、markOrderPaid、四個金流檔、任何既有／新增 migration
+// =============================================================================
+console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄問 git）");
+{
+  const PROTECTED = [
+    "src/server/repos/orders.ts",
+    "src/server/repos/payments.ts",
+    "src/server/payuni.ts",
+    "src/server/blackcat.ts",
+    "src/server/blackcat-webhook.ts",
+    "src/server/payuni-webhook.ts",
+    "supabase/migrations",
+  ];
+  let statusOut = "";
+  let gitOk = true;
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["status", "--porcelain=v1", "--", ...PROTECTED],
+      {
+        cwd: ROOT,
+      },
+    );
+    statusOut = stdout;
+  } catch (err) {
+    gitOk = false;
+    statusOut = String(err.message ?? err);
+  }
+  checkTrue("`git status` 執行成功（在一個 git repo 裡跑）", gitOk);
+  check(
+    "🔴 這六個檔案＋整個 supabase/migrations 目錄：git status 乾淨（沒有新增、沒有修改）",
+    statusOut.trim(),
+    "",
+    `實際輸出：\n${statusOut}`,
+  );
+
+  const migFiles = readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql"));
+  check("supabase/migrations 剛好 34 個 .sql 檔（0001–0034，沒有新增）", migFiles.length, 34);
+}
+
+// =============================================================================
+// [7] 側欄：有一個 admin-only 的入口指到 /admin/orders
+// =============================================================================
+console.log("\n[7] 側欄有訂單的入口");
+{
+  const shellStripped = stripTs(shellSrc);
+  const navItemSrc = sliceBetween(shellStripped, '{ to: "/admin/orders"', "},");
+  checkTrue("_shell.tsx 有 /admin/orders 這個項目", navItemSrc.length > 5);
+  checkTrue("label 是「訂單」", navItemSrc.includes('label: "訂單"'));
+  checkTrue(
+    "🔴 staff: false（門市人員看不到連結——真正的授權邊界在 fns/orders.ts）",
+    /staff:\s*false/.test(navItemSrc),
+  );
+  checkTrue("import 了 Landmark 圖示", shellSrc.includes("Landmark"));
+}
+
+// =============================================================================
+// [8] 動態：src/lib/admin/pii-mask.ts 本人（純函式，直接 import 產線那一份）
+// =============================================================================
+console.log("\n[8] 遮罩演算法（動態呼叫 src/lib/admin/pii-mask.ts）");
+{
+  const mask = await import(pathToFileURL(MASK_PATH).href);
+  checkTrue("反空殼：載得動 maskTail", typeof mask.maskTail === "function");
+  checkTrue("反空殼：載得動 maskEmail", typeof mask.maskEmail === "function");
+
+  // ── maskTail：逐字對照 inv.mask_tail() 的每一種分支 ────────────────────
+  check("null → null", mask.maskTail(null, 4), null);
+  check("undefined → null", mask.maskTail(undefined, 4), null);
+  check("空字串 → null", mask.maskTail("", 4), null);
+  check("全空白 → null", mask.maskTail("   ", 4), null);
+  check("手機遮尾 4 碼（同 0021 §3 電話的遮罩）", mask.maskTail("0912345678", 4), "******5678");
+  check("銀行帳號遮尾 4 碼", mask.maskTail("1234567890", 4), "******7890");
+  check("身分證字號留首 1 碼、遮尾 2 碼", mask.maskTail("A123456789", 2, 1), "A*******89");
+  check("統一編號遮尾 2 碼", mask.maskTail("12345678", 2), "******78");
+  check("長度剛好等於 keepTail → 整串星號（太短不遮尾）", mask.maskTail("1234", 4), "****");
+  check("長度小於 keepTail+keepHead → 整串星號", mask.maskTail("12", 4, 1), "**");
+  checkTrue("首尾空白會先被 trim 掉", mask.maskTail("  12345  ", 2) === "***45");
+  check(
+    "🔴 keepTail=0 時不是 slice(-0) 的那個真 bug：尾巴不會被整段接回去",
+    mask.maskTail("alice", 0, 1),
+    "a****",
+    "0021 §2 記錄的 bug 是 TS 版把 v.slice(-0) 當成 v.slice(0)，導致整段字串被接回去。",
+  );
+  check("keepTail=0、keepHead=0 → 全部星號", mask.maskTail("hello", 0), "*****");
+
+  // ── maskEmail：逐字對照 inv.mask_email() 的每一種分支 ──────────────────
+  check("null → null", mask.maskEmail(null), null);
+  check("空字串 → null", mask.maskEmail(""), null);
+  check(
+    "一般信箱：留首碼 1 碼與完整 domain",
+    mask.maskEmail("alice@example.com"),
+    "a****@example.com",
+  );
+  check(
+    "單字元 local part → 整個 local part 變一顆星",
+    mask.maskEmail("a@example.com"),
+    "*@example.com",
+  );
+  check(
+    "🔴 迴歸測試：'ab@x.com' 必須遮成 'a*@x.com'，不是 0021 記錄的那個真 bug 'a*ab@x.com'",
+    mask.maskEmail("ab@x.com"),
+    "a*@x.com",
+  );
+  // "notanemail" 10 碼，maskTail(v,2)：留尾 2 碼、其餘 8 碼變星號。
+  check("沒有 @ 的字串當一般值處理（遮尾 2 碼）", mask.maskEmail("notanemail"), "********il");
+  // "@x.com" 6 碼整串（含開頭的 @）當一般值跑 maskTail(v,2)：留尾 2 碼「om」。
+  check(
+    "@ 是第一個字元（local part 是空的）→ 當一般字串遮尾 2 碼",
+    mask.maskEmail("@x.com"),
+    "****om",
+  );
+  // local part 用**最後一個** @ 切開 → "a@b"（3 碼）。maskTail("a@b", 0, 1)：留頭 1
+  // 碼「a」，其餘 2 碼（"@b"）變星號 → "a**"；domain 是最後一段 "@c.com"。
+  check(
+    "以最後一個 @ 切開（'a@b@c.com' 這種不合法但存得進去的值）",
+    mask.maskEmail("a@b@c.com"),
+    "a**@c.com",
+  );
+}
+
+// -----------------------------------------------------------------------------
+// [9] 連線段：markOrderPaidByAdmin() —— 驅動產線的程式碼本人
+// -----------------------------------------------------------------------------
+const PG_URL = process.env.REMITTANCE_SELFTEST_PG_URL;
+
+async function q(sql, single = true) {
+  const text = single
+    ? `select coalesce(json_agg(t), '[]'::json)::text from (\n${sql.trim().replace(/;\s*$/, "")}\n) t`
+    : sql;
+  try {
+    const { stdout } = await execFileAsync(
+      "psql",
+      ["-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-d", PG_URL, "-c", text],
+      { maxBuffer: 16 * 1024 * 1024 },
+    );
+    if (!single) return { ok: true, error: null, rows: [] };
+    return { ok: true, error: null, rows: JSON.parse(stdout.trim() || "[]") };
+  } catch (err) {
+    return { ok: false, error: String(err.stderr ?? err.message ?? err), rows: [] };
+  }
+}
+async function must(sql, single = true) {
+  const r = await q(sql, single);
+  if (!r.ok)
+    throw new Error(`SQL 失敗：${r.error.slice(0, 400)}\n--- SQL ---\n${sql.slice(0, 600)}`);
+  return r.rows;
+}
+const one = (rows) => (Array.isArray(rows) && rows.length > 0 ? rows[0] : null);
+
+/**
+ * shim：只實作 markOrderPaidByAdmin() 真的會用到的 `.rpc()`。理由與
+ * remittance-selftest.mjs 檔頭同一句：多實作就是多一份沒有人在驗的假資料庫。
+ */
+const SHIM = { runSql: null };
+globalThis.__ADMIN_ORDERS_SELFTEST__ = SHIM;
+
+const sqlLit = (v) => {
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return `'${String(v).replace(/'/g, "''")}'`;
+};
+
+SHIM.rpc = async (name, args) => {
+  const params = Object.entries(args ?? {})
+    .map(([k, v]) => `${k} => ${sqlLit(v)}`)
+    .join(", ");
+  const r = await SHIM.runSql(`select public.${name}(${params}) as v`);
+  if (!r.ok) return { data: null, error: { code: "SHIM", message: r.error.slice(0, 300) } };
+  return { data: r.rows[0]?.v ?? null, error: null };
+};
+
+const SHIM_SRC = [
+  "const mk = globalThis.__ADMIN_ORDERS_SELFTEST__;",
+  "export const supabaseAdmin = () => ({ rpc: (n, a) => mk.rpc(n, a) });",
+].join("\n");
+
+registerHooks({
+  resolve(spec, ctx, next) {
+    if (spec === "@/server/supabase-admin") {
+      return { url: "stub:supabase-admin", shortCircuit: true };
+    }
+    if (spec.startsWith("@/")) {
+      return {
+        url: pathToFileURL(join(ROOT, "src", `${spec.slice(2)}.ts`)).href,
+        shortCircuit: true,
+      };
+    }
+    return next(spec, ctx);
+  },
+  load(url, ctx, next) {
+    if (url === "stub:supabase-admin") {
+      return { format: "module", source: SHIM_SRC, shortCircuit: true };
+    }
+    return next(url, ctx);
+  },
+});
+
+SHIM.runSql = async (sql) => q(sql);
+
+const KEY_PREFIX = "ao-selftest-";
+const ACTOR_ID = "22222222-2222-2222-2222-222222222222";
+const CLEANUP_SQL = `
+delete from public.payments where order_id in (select id from public.orders where idempotency_key like '${KEY_PREFIX}%');
+delete from public.orders where idempotency_key like '${KEY_PREFIX}%';
+`;
+
+if (!PG_URL) {
+  skipped.push("連線段（缺 REMITTANCE_SELFTEST_PG_URL）");
+  console.log(yellow("\n[9] 連線段 —— 跳過：沒有 REMITTANCE_SELFTEST_PG_URL"));
+  console.log(yellow("     設好之後重跑，才會驗到 markOrderPaidByAdmin() 對真資料庫的行為。"));
+  console.log(yellow("     指令見本檔檔頭（沿用 remittance-selftest.mjs 的同一個變數）。"));
+} else {
+  try {
+    console.log("\n[9] 連線段：markOrderPaidByAdmin()（產線程式碼 + 真的資料庫）");
+
+    checkTrue(
+      "前置：資料庫已經套到 0034（admin_mark_order_paid 存在）",
+      Boolean(
+        one(
+          await must(
+            `select to_regprocedure('public.admin_mark_order_paid(uuid,uuid,text)') is not null ok`,
+          ),
+        )?.ok,
+      ),
+      "沒有的話先照 remittance-selftest.mjs 檔頭的 REMITTANCE_SELFTEST_APPLY=1 套一次。",
+    );
+
+    await must(CLEANUP_SQL, false);
+    await must(
+      `
+      insert into public.orders (customer_name, customer_email, customer_phone,
+                                 subtotal, total, idempotency_key, payment_method,
+                                 remittance_last5, remittance_reported_at)
+      values
+        ('自檢','ao-selftest@example.invalid','0900000000',500,500,
+         '${KEY_PREFIX}pending','transfer','54321', now()),
+        ('自檢','ao-selftest@example.invalid','0900000000',500,500,
+         '${KEY_PREFIX}cancelled','transfer', null, null);
+      update public.orders set status = 'cancelled', cancelled_at = now()
+       where idempotency_key = '${KEY_PREFIX}cancelled';
+    `,
+      false,
+    );
+
+    const pendingId = one(
+      await must(`select id from public.orders where idempotency_key = '${KEY_PREFIX}pending'`),
+    )?.id;
+    const cancelledId = one(
+      await must(`select id from public.orders where idempotency_key = '${KEY_PREFIX}cancelled'`),
+    )?.id;
+    checkTrue("前置：兩張測試訂單都建起來了", Boolean(pendingId) && Boolean(cancelledId));
+
+    // 動態 import 產線的 repo 檔案本人——這一支從此走的是上面註冊的 module hook。
+    const ordersAdmin = await import(pathToFileURL(REPO_PATH).href);
+    checkTrue(
+      "反空殼：載得動產線的 markOrderPaidByAdmin",
+      typeof ordersAdmin.markOrderPaidByAdmin === "function",
+    );
+
+    // ── 正常路徑：標記成功 ──────────────────────────────────────────────
+    const r1 = await ordersAdmin.markOrderPaidByAdmin({
+      orderId: pendingId,
+      actorId: ACTOR_ID,
+      note: "對到 9/3 01:15 那筆",
+    });
+    check("✅ reason === 'marked'", r1.reason, "marked");
+    check("marked === true", r1.marked, true);
+    checkTrue("回傳的 order_no 有值", typeof r1.order_no === "string" && r1.order_no.length > 0);
+
+    const after = one(
+      await must(
+        `select status, payment_status, payment_method, (paid_at is not null) p
+           from public.orders where id = '${pendingId}'`,
+      ),
+    );
+    check("status → processing", after?.status, "processing");
+    check("payment_status → paid", after?.payment_status, "paid");
+    check(
+      "🔴 透過 markOrderPaidByAdmin() 標記之後，payment_method 仍然是 'transfer'（不是 'card'）",
+      after?.payment_method,
+      "transfer",
+      "如果這裡變成 'card'，代表程式碼不小心改叫了 payments.ts 的 markOrderPaid()，或直接 UPDATE 覆蓋了 payment_method。",
+    );
+    checkTrue("paid_at 有值", after?.p === true);
+
+    // ── 冪等：第二次呼叫 ────────────────────────────────────────────────
+    const r2 = await ordersAdmin.markOrderPaidByAdmin({
+      orderId: pendingId,
+      actorId: ACTOR_ID,
+      note: null,
+    });
+    check("第二次呼叫 → reason === 'already_paid'（冪等）", r2.reason, "already_paid");
+    check("   marked === false", r2.marked, false);
+    check(
+      "   payment_method 仍然沒有被第二次呼叫動到",
+      one(await must(`select payment_method pm from public.orders where id = '${pendingId}'`))?.pm,
+      "transfer",
+    );
+
+    // ── 已取消的訂單不准被標成已付款 ────────────────────────────────────
+    const r3 = await ordersAdmin.markOrderPaidByAdmin({
+      orderId: cancelledId,
+      actorId: ACTOR_ID,
+      note: null,
+    });
+    check("🔴 已取消的訂單 → reason === 'order_not_pending'", r3.reason, "order_not_pending");
+    check("   marked === false", r3.marked, false);
+    check(
+      "   它仍然是 cancelled，沒有被推回 paid",
+      one(await must(`select status s from public.orders where id = '${cancelledId}'`))?.s,
+      "cancelled",
+    );
+
+    // ── 不存在的訂單 ────────────────────────────────────────────────────
+    const r4 = await ordersAdmin.markOrderPaidByAdmin({
+      orderId: "00000000-0000-0000-0000-000000000000",
+      actorId: ACTOR_ID,
+      note: null,
+    });
+    check("不存在的訂單 → reason === 'order_not_found'", r4.reason, "order_not_found");
+    check("   order_no 是 null", r4.order_no, null);
+
+    await must(CLEANUP_SQL, false);
+    checkTrue(
+      "收尾：測試訂單清乾淨了",
+      Number(
+        one(
+          await must(
+            `select count(*)::int n from public.orders where idempotency_key like '${KEY_PREFIX}%'`,
+          ),
+        )?.n,
+      ) === 0,
+    );
+  } catch (err) {
+    fail += 1;
+    console.log(red(`\n  ✗ 連線段中斷：${String(err.message ?? err).slice(0, 800)}`));
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 收尾
+// -----------------------------------------------------------------------------
+console.log(`\n${"─".repeat(52)}`);
+if (skipped.length > 0) {
+  console.log(yellow(`略過 ${skipped.length} 段：`));
+  for (const s of skipped) console.log(yellow(`  • ${s}`));
+}
+console.log(`##SELFTEST## file=${SELF} pass=${pass} fail=${fail}`);
+if (fail === 0) {
+  console.log(green(`✓ 全部通過：${pass} passed, 0 failed\n`));
+  process.exit(0);
+} else {
+  console.log(red(`✗ 有失敗：${pass} passed, ${fail} failed\n`));
+  process.exit(1);
+}

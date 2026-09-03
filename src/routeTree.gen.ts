@@ -46,6 +46,7 @@ import { Route as AdminShellProductsRouteImport } from './routes/admin/_shell.pr
 import { Route as AdminShellPosRouteImport } from './routes/admin/_shell.pos'
 import { Route as AdminShellPhonesRouteImport } from './routes/admin/_shell.phones'
 import { Route as AdminShellPagesRouteImport } from './routes/admin/_shell.pages'
+import { Route as AdminShellOrdersRouteImport } from './routes/admin/_shell.orders'
 import { Route as AdminShellNewsRouteImport } from './routes/admin/_shell.news'
 import { Route as AdminShellJourneysRouteImport } from './routes/admin/_shell.journeys'
 import { Route as AdminShellInventoryVendorsRouteImport } from './routes/admin/_shell.inventory-vendors'
@@ -248,6 +249,11 @@ const AdminShellPagesRoute = AdminShellPagesRouteImport.update({
   path: '/pages',
   getParentRoute: () => AdminShellRoute,
 } as any)
+const AdminShellOrdersRoute = AdminShellOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AdminShellRoute,
+} as any)
 const AdminShellNewsRoute = AdminShellNewsRouteImport.update({
   id: '/news',
   path: '/news',
@@ -375,6 +381,7 @@ export interface FileRoutesByFullPath {
   '/admin/inventory-vendors': typeof AdminShellInventoryVendorsRoute
   '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
+  '/admin/orders': typeof AdminShellOrdersRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/phones': typeof AdminShellPhonesRoute
   '/admin/pos': typeof AdminShellPosRoute
@@ -428,6 +435,7 @@ export interface FileRoutesByTo {
   '/admin/inventory-vendors': typeof AdminShellInventoryVendorsRoute
   '/admin/journeys': typeof AdminShellJourneysRoute
   '/admin/news': typeof AdminShellNewsRoute
+  '/admin/orders': typeof AdminShellOrdersRoute
   '/admin/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/phones': typeof AdminShellPhonesRoute
   '/admin/pos': typeof AdminShellPosRoute
@@ -484,6 +492,7 @@ export interface FileRoutesById {
   '/admin/_shell/inventory-vendors': typeof AdminShellInventoryVendorsRoute
   '/admin/_shell/journeys': typeof AdminShellJourneysRoute
   '/admin/_shell/news': typeof AdminShellNewsRoute
+  '/admin/_shell/orders': typeof AdminShellOrdersRoute
   '/admin/_shell/pages': typeof AdminShellPagesRouteWithChildren
   '/admin/_shell/phones': typeof AdminShellPhonesRoute
   '/admin/_shell/pos': typeof AdminShellPosRoute
@@ -541,6 +550,7 @@ export interface FileRouteTypes {
     | '/admin/inventory-vendors'
     | '/admin/journeys'
     | '/admin/news'
+    | '/admin/orders'
     | '/admin/pages'
     | '/admin/phones'
     | '/admin/pos'
@@ -594,6 +604,7 @@ export interface FileRouteTypes {
     | '/admin/inventory-vendors'
     | '/admin/journeys'
     | '/admin/news'
+    | '/admin/orders'
     | '/admin/pages'
     | '/admin/phones'
     | '/admin/pos'
@@ -649,6 +660,7 @@ export interface FileRouteTypes {
     | '/admin/_shell/inventory-vendors'
     | '/admin/_shell/journeys'
     | '/admin/_shell/news'
+    | '/admin/_shell/orders'
     | '/admin/_shell/pages'
     | '/admin/_shell/phones'
     | '/admin/_shell/pos'
@@ -954,6 +966,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminShellPagesRouteImport
       parentRoute: typeof AdminShellRoute
     }
+    '/admin/_shell/orders': {
+      id: '/admin/_shell/orders'
+      path: '/orders'
+      fullPath: '/admin/orders'
+      preLoaderRoute: typeof AdminShellOrdersRouteImport
+      parentRoute: typeof AdminShellRoute
+    }
     '/admin/_shell/news': {
       id: '/admin/_shell/news'
       path: '/news'
@@ -1107,6 +1126,7 @@ interface AdminShellRouteChildren {
   AdminShellInventoryVendorsRoute: typeof AdminShellInventoryVendorsRoute
   AdminShellJourneysRoute: typeof AdminShellJourneysRoute
   AdminShellNewsRoute: typeof AdminShellNewsRoute
+  AdminShellOrdersRoute: typeof AdminShellOrdersRoute
   AdminShellPagesRoute: typeof AdminShellPagesRouteWithChildren
   AdminShellPhonesRoute: typeof AdminShellPhonesRoute
   AdminShellPosRoute: typeof AdminShellPosRoute
@@ -1136,6 +1156,7 @@ const AdminShellRouteChildren: AdminShellRouteChildren = {
   AdminShellInventoryVendorsRoute: AdminShellInventoryVendorsRoute,
   AdminShellJourneysRoute: AdminShellJourneysRoute,
   AdminShellNewsRoute: AdminShellNewsRoute,
+  AdminShellOrdersRoute: AdminShellOrdersRoute,
   AdminShellPagesRoute: AdminShellPagesRouteWithChildren,
   AdminShellPhonesRoute: AdminShellPhonesRoute,
   AdminShellPosRoute: AdminShellPosRoute,

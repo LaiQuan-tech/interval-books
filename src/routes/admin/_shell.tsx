@@ -15,6 +15,7 @@ import {
   ClipboardList,
   FileText,
   Handshake,
+  Landmark,
   LayoutDashboard,
   LogOut,
   Mic,
@@ -140,6 +141,11 @@ const NAV_GROUPS = [
     label: "電商",
     items: [
       { to: "/admin/products", label: "商品", icon: Package, staff: false },
+      // 訂單列表／詳情／標記已收款（0034 的匯款付款方式）。staff: false——這一頁
+      // 看得到客人的姓名與遮罩後的聯絡方式，而且「標記已收款」動到錢，
+      // src/lib/admin/fns/orders.ts 每一支都掛 adminFnMiddleware，門市人員打不進
+      // 來。這裡只是不要給他一個一按就跳錯誤頁的連結。
+      { to: "/admin/orders", label: "訂單", icon: Landmark, staff: false },
       // 活動場次與報名名單（0020／0021）。名額搬離 products 之後，「這場還剩幾個
       // 位子」只有這裡答得出來。
       //
