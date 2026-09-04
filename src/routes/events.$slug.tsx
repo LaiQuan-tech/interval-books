@@ -283,9 +283,15 @@ function EventDetail() {
       {event.imageKey ? (
         <section className="container-editorial pb-16">
           <div className="aspect-[21/9] w-full overflow-hidden bg-muted">
+            {/* 沒有 loading="lazy"：這張通常是這頁的第一塊視覺內容（LCP 候選），
+                lazy 反而會延後它，跟「載入速度優化」的目標反著走。width/height
+                只是 21:9 的比例佔位，容器的 aspect-[21/9] 才是真正決定版面的
+                CSS——兩者都設是保險，不是互相取代。 */}
             <img
               src={imageFor(event.imageKey, "")}
               alt={t(event.title)}
+              width={1260}
+              height={540}
               className="h-full w-full object-cover"
             />
           </div>
@@ -317,6 +323,9 @@ function EventDetail() {
                 <img
                   src={imageFor(event.speaker.imageKey, "")}
                   alt={event.speaker.name}
+                  loading="lazy"
+                  width={160}
+                  height={160}
                   className="h-32 w-32 shrink-0 rounded-full object-cover sm:h-40 sm:w-40"
                 />
               ) : null}
@@ -346,7 +355,14 @@ function EventDetail() {
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
               {event.galleryKeys.map((key, i) => (
                 <div key={`${key}-${i}`} className="aspect-square overflow-hidden bg-muted">
-                  <img src={imageFor(key, "")} alt="" className="h-full w-full object-cover" />
+                  <img
+                    src={imageFor(key, "")}
+                    alt=""
+                    loading="lazy"
+                    width={600}
+                    height={600}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
               ))}
             </div>

@@ -305,9 +305,11 @@ checkTrue(
 // 講者：event.speaker 非 null 才畫這一整塊；塊內的照片再另外判斷
 // event.speaker.imageKey 非空——**兩層判斷都要在**，因為講者可以只填名字（還沒
 // 上傳照片），那時候只印名字，不能因為外層判斷過了就對 imageFor() 少一道防線。
+// 視窗上限 2026-09 從 600 調到 800，理由與下面相簿那條一樣：講者照的 <img> 補了
+// loading="lazy" + width/height，把這個區塊撐到 662 字元。
 checkTrue(
   "講者區：先判斷 event.speaker 非 null，沒有資料就整塊 null",
-  /event\.speaker \? \([\s\S]{0,600}?\)\s*:\s*null/.test(detailCode),
+  /event\.speaker \? \([\s\S]{0,800}?\)\s*:\s*null/.test(detailCode),
 );
 checkTrue(
   "講者照片：區塊內再判斷 event.speaker.imageKey 非空，才呼叫 imageFor()",
@@ -318,9 +320,12 @@ checkTrue(
 
 // 相簿：event.galleryKeys.length > 0 才畫，陣列本身空的時候整塊 null；陣列裡
 // 每一張圖也是透過 imageFor() 解析，不是自己另外兜一條路徑。
+// 視窗上限 2026-09 從 700 調到 900：載入速度優化這一期給相簿的 <img> 加了
+// loading="lazy" + width/height（下方單獨斷言），多出來的屬性把這個區塊撐到
+// 773 字元，超過舊上限；900 留一點餘裕但仍然是有界視窗，不是「比對到檔尾」。
 checkTrue(
   "相簿：先判斷 event.galleryKeys.length > 0，沒有照片就整塊 null",
-  /event\.galleryKeys\.length > 0 \? \([\s\S]{0,700}?\)\s*:\s*null/.test(detailCode),
+  /event\.galleryKeys\.length > 0 \? \([\s\S]{0,900}?\)\s*:\s*null/.test(detailCode),
 );
 checkTrue(
   "相簿：陣列裡每一張圖都呼叫 imageFor()",
@@ -343,6 +348,54 @@ checkTrue(
   /export function imageFor/.test(stripTs(readFile("src/lib/images.ts"))),
 );
 checkTrue("而列表頁仍然用得到它", /imageFor\(/.test(indexCode));
+
+// =============================================================================
+// [5b] 三張圖的 loading／width／height（2026-09 前台載入速度優化）
+// =============================================================================
+console.log("\n[5b] 大圖／講者照片／相簿——lazy 與 width/height");
+// 三個 <img> 各自獨立抽出來比對，不用有界視窗的正則猜邊界——比對範圍是「這個
+// <img> 標籤本身」，多寬都不會被別的標籤污染，也不會因為屬性順序調整而碎掉。
+function imgTagContaining(code, marker) {
+  const markerIdx = code.indexOf(marker);
+  if (markerIdx === -1) return null;
+  const tagStart = code.lastIndexOf("<img", markerIdx);
+  const tagEnd = code.indexOf("/>", markerIdx);
+  if (tagStart === -1 || tagEnd === -1) return null;
+  return code.slice(tagStart, tagEnd + 2);
+}
+
+const coverImg = imgTagContaining(detailCode, 'imageFor(event.imageKey, "")');
+const speakerImg = imgTagContaining(detailCode, 'imageFor(event.speaker.imageKey, "")');
+const galleryImg = imgTagContaining(detailCode, "imageFor(key,");
+
+checkTrue(
+  "三個 <img> 標籤都抽得到（大圖／講者照片／相簿）",
+  coverImg !== null && speakerImg !== null && galleryImg !== null,
+);
+
+// 大圖：**不** lazy。這通常是頁面第一塊視覺內容（LCP 候選），lazy 會延後它，
+// 跟「載入速度優化」的目標反著走——這是刻意的判斷，不是漏加，所以要有一條
+// 斷言把它釘住，否則哪天有人「順手」幫大圖也補一個 loading="lazy" 不會被發現。
+checkFalse(
+  '大圖沒有 loading="lazy"（它通常是 LCP 候選，lazy 會延後它）',
+  /loading=/.test(coverImg ?? ""),
+);
+checkTrue(
+  "大圖有 width/height（21:9 佔位；容器的 aspect-[21/9] 已經定版面，這裡是保險）",
+  /width=\{1260\}/.test(coverImg ?? "") && /height=\{540\}/.test(coverImg ?? ""),
+);
+
+// 講者照與相簿：頁面下半部，補 lazy 是零風險、見效最快的一刀。
+checkTrue('講者照有 loading="lazy"', /loading="lazy"/.test(speakerImg ?? ""));
+checkTrue(
+  "講者照有 width/height",
+  /width=\{160\}/.test(speakerImg ?? "") && /height=\{160\}/.test(speakerImg ?? ""),
+);
+checkTrue('相簿每張圖有 loading="lazy"', /loading="lazy"/.test(galleryImg ?? ""));
+checkTrue(
+  "相簿每張圖有 width/height",
+  /width=\{600\}/.test(galleryImg ?? "") && /height=\{600\}/.test(galleryImg ?? ""),
+);
 
 // =============================================================================
 // [6] 場次區：空的時候要有文案，不是整塊消失
