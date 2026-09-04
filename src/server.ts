@@ -47,6 +47,7 @@
  */
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { BLACKCAT_APN_PATH, BLACKCAT_RETURN_PATH } from "@/server/blackcat";
+import { cacheControlFor } from "@/server/cache-policy";
 import { PAYUNI_WEBHOOK_PATH } from "@/server/payuni";
 import {
   INVOICE_TASK_PATH,
@@ -95,6 +96,23 @@ export default {
       return handleNotifyTask(request);
     }
 
-    return (startFetch as (req: Request, ...a: unknown[]) => Promise<Response>)(request, ...rest);
+    const response = await (startFetch as (req: Request, ...a: unknown[]) => Promise<Response>)(
+      request,
+      ...rest,
+    );
+
+    // HTML 快取（2026-09 前台載入速度優化）：白名單制的 Cache-Control 覆寫，見
+    // src/server/cache-policy.ts 檔頭——這裡不是新加一條攔截路徑（上面那六條的
+    // 規矩不適用），是在 startFetch 已經算出真正的回應之後，只換掉 Cache-Control
+    // 這一個標頭。body 直接原封傳遞（不 buffer、不解析），SSR streaming 不受影響。
+    const cacheControl = cacheControlFor(pathname, request.method, response.status);
+    if (cacheControl === null) return response;
+    const headers = new Headers(response.headers);
+    headers.set("cache-control", cacheControl);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
   },
 };
