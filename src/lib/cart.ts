@@ -51,7 +51,7 @@ import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Localized } from "@/i18n/types";
-import type { ShopProduct, ShopProductType, ShopSession } from "@/lib/shop";
+import type { ShopProduct, ShopProductCard, ShopProductType, ShopSession } from "@/lib/shop";
 import { remainingFor, remainingForSession } from "@/lib/shop";
 
 /**
@@ -375,9 +375,16 @@ export function useCartSubtotal(): number {
  * Passing null for a booking is not rejected here (the store has no business
  * throwing), but it produces a line the checkout will refuse, so the product
  * page must never offer an "add" button before a sitting is chosen.
+ *
+ * `p: ShopProductCard` (2026-09, was `ShopProduct`) — nothing below reads
+ * `.description`, and widening to the card shape lets /shop's publications
+ * tab call this directly with its (description-less) card products instead
+ * of re-deriving an "add to cart" input by hand. ShopProduct still satisfies
+ * this type (it has every ShopProductCard field plus one), so every existing
+ * caller (shop.$slug.tsx's detail page) is unaffected.
  */
 export function cartInputFor(
-  p: ShopProduct,
+  p: ShopProductCard,
   qty: number,
   session: ShopSession | null = null,
 ): CartInput {

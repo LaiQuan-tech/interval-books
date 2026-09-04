@@ -357,6 +357,12 @@ type SelectOptions = {
   order?: string;
   /** Restricts the query to rows where `eq[0]` equals `eq[1]`. */
   eq?: [column: string, value: string];
+  /**
+   * Restricts the query to rows where `in[0]` is one of `in[1]`.
+   * Additive (2026-09) — fetchPages() below is the only caller so far; every
+   * existing `select()` call only ever passed `eq`/`order` and is unaffected.
+   */
+  in?: [column: string, values: string[]];
 };
 
 /** Runs a PostgREST query, returning null instead of throwing on any failure. */
@@ -370,6 +376,7 @@ async function select(
   try {
     let query = db.from(table).select(columns);
     if (options.eq) query = query.eq(options.eq[0], options.eq[1]);
+    if (options.in) query = query.in(options.in[0], options.in[1]);
     if (options.order) query = query.order(options.order, { ascending: true });
     const { data, error } = await query;
     if (error || !Array.isArray(data)) {
@@ -518,6 +525,129 @@ export async function fetchPage(slug: string): Promise<PageContent | null> {
 
   const lists: Record<string, PageListEntry[]> = {};
   for (const row of listRows ?? []) {
+    const key = str(row.list_key);
+    const label = loc(row.label);
+    if (!key || !label) continue;
+    (lists[key] ??= []).push({
+      label,
+      note: loc(row.note),
+      imageKey: nullableStr(row.image_key),
+    });
+  }
+
+  return {
+    slug: str(page.slug, slug),
+    metaTitle,
+    metaDescription,
+    ogTitle: loc(page.og_title),
+    ogDescription: loc(page.og_description),
+    ogImageKey: nullableStr(page.og_image_key),
+    eyebrowPrefix: nullableStr(page.eyebrow_prefix),
+    eyebrowSuffix: loc(page.eyebrow_suffix),
+    headerTitle: loc(page.header_title),
+    headerIntro: loc(page.header_intro),
+    blocks,
+    lists,
+  };
+}
+
+/**
+ * Batched counterpart of fetchPage() — one round trip per table (three total)
+ * instead of one round trip per table *per slug*. Written for
+ * src/routes/shop.index.tsx, whose loader used to call fetchPage() three
+ * times (shop/publications/curated) — nine Supabase round trips for page
+ * copy alone, on every single /shop request.
+ *
+ * Deliberately NOT implemented by extracting fetchPage()'s row-mapping into a
+ * helper shared with fetchPage() itself: fetchPage() is called from nearly
+ * every route on the site (home, events, about, privacy, journeys...), and
+ * this addition only needs to serve /shop. Keeping fetchPage() byte-for-byte
+ * unchanged means none of its other ~20 callers can be touched by this
+ * change, at the cost of toPageContent() below duplicating (not sharing)
+ * fetchPage()'s row->PageContent mapping. If the pages/page_blocks/
+ * page_list_items column list ever changes, both functions need the same
+ * edit — grep for `og_description` to find both call sites.
+ *
+ * Failure semantics match fetchPage() *per slug*: a slug whose `pages` row is
+ * missing (or has no title/description, same guard as fetchPage()) maps to
+ * `null` in the returned record — exactly what a single fetchPage(slug) call
+ * would have returned for it — so one bad or missing page can never drag the
+ * other requested slugs down with it. All three reads finish (or fail) before
+ * any per-slug mapping runs, so there is no scenario where slug A's outcome
+ * depends on slug B's row being well-formed.
+ */
+export async function fetchPages(slugs: string[]): Promise<Record<string, PageContent | null>> {
+  const unique = [...new Set(slugs)];
+  if (unique.length === 0) return {};
+
+  const [pageRows, blockRows, listRows] = await Promise.all([
+    select(
+      "pages",
+      "slug,meta_title,meta_description,og_title,og_description,og_image_key,eyebrow_prefix,eyebrow_suffix,header_title,header_intro",
+      { in: ["slug", unique] },
+    ),
+    select("page_blocks", "page_slug,block_key,value,sort_order", {
+      in: ["page_slug", unique],
+      order: "sort_order",
+    }),
+    select("page_list_items", "page_slug,list_key,label,note,image_key,sort_order", {
+      in: ["page_slug", unique],
+      order: "sort_order",
+    }),
+  ]);
+
+  const blocksBySlug = new Map<string, Row[]>();
+  for (const row of blockRows ?? []) {
+    const pageSlug = str(row.page_slug);
+    if (!pageSlug) continue;
+    const bucket = blocksBySlug.get(pageSlug) ?? [];
+    bucket.push(row);
+    blocksBySlug.set(pageSlug, bucket);
+  }
+
+  const listsBySlug = new Map<string, Row[]>();
+  for (const row of listRows ?? []) {
+    const pageSlug = str(row.page_slug);
+    if (!pageSlug) continue;
+    const bucket = listsBySlug.get(pageSlug) ?? [];
+    bucket.push(row);
+    listsBySlug.set(pageSlug, bucket);
+  }
+
+  const result: Record<string, PageContent | null> = {};
+  for (const slug of unique) {
+    const page = (pageRows ?? []).find((r) => str(r.slug) === slug);
+    result[slug] = page
+      ? toPageContent(slug, page, blocksBySlug.get(slug) ?? [], listsBySlug.get(slug) ?? [])
+      : null;
+  }
+  return result;
+}
+
+/**
+ * Row(s) -> PageContent. Used only by fetchPages() above — see that
+ * function's comment for why this is a separate copy of fetchPage()'s
+ * mapping rather than a shared extraction.
+ */
+function toPageContent(
+  slug: string,
+  page: Row,
+  blockRows: Row[],
+  listRows: Row[],
+): PageContent | null {
+  const metaTitle = loc(page.meta_title);
+  const metaDescription = loc(page.meta_description);
+  if (!metaTitle || !metaDescription) return null;
+
+  const blocks: Record<string, Localized> = {};
+  for (const row of blockRows) {
+    const key = str(row.block_key);
+    const value = loc(row.value);
+    if (key && value) blocks[key] = value;
+  }
+
+  const lists: Record<string, PageListEntry[]> = {};
+  for (const row of listRows) {
     const key = str(row.list_key);
     const label = loc(row.label);
     if (!key || !label) continue;

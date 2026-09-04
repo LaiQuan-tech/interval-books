@@ -22,10 +22,10 @@ import { ProductsPanel } from "@/components/shop/ProductsPanel";
 import { PublicationsPanel } from "@/components/shop/PublicationsPanel";
 import { useT } from "@/i18n/LanguageContext";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { eyebrowOf, fetchCuratedThemes, fetchPage, pageText } from "@/lib/cms";
+import { eyebrowOf, fetchCuratedThemes, fetchPages, pageText } from "@/lib/cms";
 import { imageFor } from "@/lib/images";
-import { fetchPublications } from "@/lib/publications";
-import { fetchActiveProducts, fetchActiveProductsByIds } from "@/lib/shop";
+import { fetchPublicationsForList } from "@/lib/publications";
+import { fetchActiveProductsForList } from "@/lib/shop";
 import curatedImg from "@/assets/curated-objects.jpg";
 
 /** Fallback copy — used only when the Supabase read fails. */
@@ -76,28 +76,43 @@ export const Route = createFileRoute("/shop/")({
   },
   loader: async () => {
     // 三個分頁的內容一次讀完。換分頁只是換 search param，不重跑 loader，
-    // 所以這裡多讀的兩份不會在每次點擊時重來一遍。
-    const [shopPage, publicationsPage, curatedPage, catalogue, publications, curatedThemes] =
-      await Promise.all([
-        fetchPage("shop"),
-        fetchPage("publications"),
-        fetchPage("curated"),
-        fetchActiveProducts(),
-        fetchPublications(),
-        fetchCuratedThemes(),
-      ]);
-    // 第二次讀取只問「這幾個 id 現在賣得動嗎」。刊物讀失敗時 ids 是空的，
-    // fetchActiveProductsByIds 直接回空集合，不會多打一次網路。
-    const publicationProducts = await fetchActiveProductsByIds(
-      publications.publications.map((p) => p.productId).filter((id): id is string => id !== null),
-    );
+    // 所以這裡讀的東西不會在每次點擊時重來一遍。
+    //
+    // 2026-09 前台載入速度優化，這裡改了兩件事：
+    //
+    //   1. 頁面文案原本是三次 fetchPage() 各自打三個查詢（九次網路往返），改成
+    //      一次 fetchPages()——三個查詢，各用 slug IN (shop, publications,
+    //      curated) 一次問三頁。見 src/lib/cms.ts#fetchPages 檔頭，失敗語意
+    //      （單一 slug 讀壞只影響那個 slug）與原本逐一呼叫 fetchPage() 一致。
+    //
+    //   2. 商品目錄原本讀兩次：fetchActiveProducts()（商品分頁的完整清單）之後
+    //      再 fetchActiveProductsByIds()（地方刊物分頁核對可購買狀態）。但後者
+    //      的 id 集合必然是前者的子集——兩邊都只挑 status='active'，後者只是多
+    //      加一個 id IN (...)——所以那是同一份資料被查兩次、序列化兩次（含完整
+    //      三語 description）。改成 fetchActiveProductsForList()：只查一次、不含
+    //      description（列表頁沒有一處會印出它，見 ProductsPanel/
+    //      PublicationsPanel），兩個分頁共用同一份 catalogue。見
+    //      src/lib/shop.ts#fetchActiveProductsForList 檔頭，含實測的 SSR payload
+    //      大小數字。
+    //
+    //   3. 刊物清單原本用 fetchPublications()，126 筆每筆都帶完整三語 intro——
+    //      量到光是這一份就佔了頁面 ~330KB 裡的 ~227KB，而 intro 只有點開某一本
+    //      的「刊物介紹」才會顯示，預設全部收合。改成 fetchPublicationsForList()
+    //      （不含 intro/externalUrl），點開哪一本才現查那一本——見
+    //      src/lib/publications.ts#fetchPublicationDetail 與
+    //      src/components/shop/PublicationsPanel.tsx。
+    const [pages, catalogue, publications, curatedThemes] = await Promise.all([
+      fetchPages(["shop", "publications", "curated"]),
+      fetchActiveProductsForList(),
+      fetchPublicationsForList(),
+      fetchCuratedThemes(),
+    ]);
     return {
-      page: shopPage,
-      publicationsPage,
-      curatedPage,
+      page: pages.shop,
+      publicationsPage: pages.publications,
+      curatedPage: pages.curated,
       catalogue,
       publications,
-      publicationProducts,
       curatedThemes,
     };
   },
@@ -120,15 +135,8 @@ export const Route = createFileRoute("/shop/")({
 
 function Shop() {
   const t = useT();
-  const {
-    page,
-    publicationsPage,
-    curatedPage,
-    catalogue,
-    publications,
-    publicationProducts,
-    curatedThemes,
-  } = Route.useLoaderData();
+  const { page, publicationsPage, curatedPage, catalogue, publications, curatedThemes } =
+    Route.useLoaderData();
   const { tab } = Route.useSearch();
   const active: ShopTab = tab ?? "products";
   const p = pageText(page);
@@ -180,11 +188,7 @@ function Shop() {
 
       <div className="pt-12" data-testid={`shop-panel-${active}`}>
         {active === "publications" ? (
-          <PublicationsPanel
-            page={publicationsPage}
-            list={publications}
-            catalogue={publicationProducts}
-          />
+          <PublicationsPanel page={publicationsPage} list={publications} catalogue={catalogue} />
         ) : active === "curated" ? (
           <CuratedPanel page={curatedPage} curatedThemes={curatedThemes} />
         ) : (

@@ -373,31 +373,43 @@ checkTrue(
 
 const shopLoader = propValue(shopRoute.options, "loader");
 const loaderCalls = calledFunctions(shopLoader);
+// 2026-09 前台載入速度優化改了這裡呼叫的函式（不是這支測試原本要守的「三分頁
+// 接線」本身）：三次 fetchPage() 併成一次 fetchPages()，商品目錄的
+// fetchActiveProducts()+fetchActiveProductsByIds()（讀兩次、大量重疊）併成一次
+// fetchActiveProductsForList()，刊物目錄的 fetchPublications()（126 筆每筆帶
+// 完整三語 intro，點開才會用到）換成 fetchPublicationsForList()（不含 intro，
+// 見 lib/publications.ts）。下面同時測「新名字真的被呼叫」與「舊名字真的不再
+// 出現」——只測前者的話，舊呼叫留著沒刪掉也會誤判成通過。
 for (const fn of [
-  "fetchPage",
-  "fetchActiveProducts",
-  "fetchPublications",
+  "fetchPages",
+  "fetchActiveProductsForList",
+  "fetchPublicationsForList",
   "fetchCuratedThemes",
-  "fetchActiveProductsByIds",
 ]) {
   checkTrue(`/shop loader 真的呼叫 ${fn}()`, loaderCalls.has(fn));
 }
-const fetchPageSlugs = new Set();
+for (const fn of [
+  "fetchPage",
+  "fetchActiveProducts",
+  "fetchActiveProductsByIds",
+  "fetchPublications",
+]) {
+  checkFalse(`/shop loader 不再呼叫 ${fn}()（改用批次／單次讀取版本）`, loaderCalls.has(fn));
+}
+
+let fetchPagesArgSlugs = null;
 walk(shopLoader, (n) => {
-  if (
-    n.type === "CallExpression" &&
-    n.callee?.type === "Identifier" &&
-    n.callee.name === "fetchPage"
-  ) {
-    const s = strOf(n.arguments[0]);
-    if (s) fetchPageSlugs.add(s);
-  }
+  if (n.type !== "CallExpression") return;
+  if (n.callee?.type !== "Identifier" || n.callee.name !== "fetchPages") return;
+  const arg = unwrap(n.arguments[0]);
+  if (arg?.type !== "ArrayExpression") return;
+  fetchPagesArgSlugs = arg.elements.map((el) => strOf(el)).filter((s) => s !== null);
 });
-check("/shop loader 讀三列 page（三個分頁各自的文案都還是後台驅動）", sorted(fetchPageSlugs), [
-  "curated",
-  "publications",
-  "shop",
-]);
+check(
+  "/shop loader 用 fetchPages([...]) 一次批次讀三個 slug（三個分頁各自的文案都還是後台驅動）",
+  fetchPagesArgSlugs ? sorted(new Set(fetchPagesArgSlugs)) : null,
+  ["curated", "publications", "shop"],
+);
 
 // loader 回傳物件的 key
 const loaderReturnKeys = new Set();
@@ -422,11 +434,16 @@ walk(ast.shop.program, (n) => {
 });
 checkTrue("/shop 從 Route.useLoaderData() 解構（不是自己 fetch）", useLoaderNames.size > 0);
 
+// 2026-09：PublicationsPanel 的 catalogue prop 從專用的 publicationProducts
+// （另一次 fetchActiveProductsByIds() 讀出來的、與 catalogue 大量重疊的子集）
+// 改成直接共用 catalogue——見上面 loader 那段。ProductsPanel 與
+// PublicationsPanel 現在指到同一個 useLoaderData 變數，這正是這支測試 ①②③
+// 要守的「prop 是不是真的接到 loader」，只是這次兩個 Panel 接到同一條線。
 const PANEL_WIRING = [
   { name: "ProductsPanel", props: { page: "page", catalogue: "catalogue" } },
   {
     name: "PublicationsPanel",
-    props: { page: "publicationsPage", list: "publications", catalogue: "publicationProducts" },
+    props: { page: "publicationsPage", list: "publications", catalogue: "catalogue" },
   },
   { name: "CuratedPanel", props: { page: "curatedPage", curatedThemes: "curatedThemes" } },
 ];
@@ -449,10 +466,36 @@ for (const panel of PANEL_WIRING) {
 
 // 反向守門：Panel 自己不可以偷讀資料。它們只能收 props —— 否則 [3] ①②③
 // 全綠但頁面其實是 Panel 自己去撈的，路由那條線斷了也看不出來。
+//
+// 2026-09 前台載入速度優化加了唯一一個例外：PublicationsPanel.tsx 裡的
+// fetchPublicationDetail()，使用者點開某一本刊物的「刊物介紹」才會被呼叫
+// （見 src/lib/publications.ts#fetchPublicationDetail 檔頭）。這條守門原本要
+// 防的是「初始頁面資料繞過 loader、自己偷撈」——fetchPublicationDetail 不是
+// 初始資料，它是點擊之後才發生的動作，跟 handleAdd() 呼叫 addItem()（購物車
+// mutation）是同一個類別，不是這條規則想擋的那種。允許清單只放這一個名字，
+// 任何其他 fetch* 仍然會讓下面轉紅。
+const PANEL_FETCH_ALLOWLIST = {
+  productsPanel: [],
+  publicationsPanel: ["fetchPublicationDetail"],
+  curatedPanel: [],
+};
 for (const key of ["productsPanel", "publicationsPanel", "curatedPanel"]) {
   const fns = calledFunctions(ast[key]);
-  const fetchers = [...fns].filter((f) => f.startsWith("fetch"));
-  check(`${FILES[key]} 自己不呼叫任何 fetch*（資料只能從 /shop 流進來）`, fetchers, []);
+  const allowed = new Set(PANEL_FETCH_ALLOWLIST[key]);
+  const fetchers = [...fns].filter((f) => f.startsWith("fetch") && !allowed.has(f));
+  check(
+    `${FILES[key]} 自己不呼叫任何未列入白名單的 fetch*（資料只能從 /shop 流進來，白名單：${
+      PANEL_FETCH_ALLOWLIST[key].join(", ") || "（無）"
+    }）`,
+    fetchers,
+    [],
+  );
+  if (allowed.size > 0) {
+    checkTrue(
+      `  ${FILES[key]} 真的呼叫了白名單裡的 ${[...allowed].join(", ")}`,
+      [...allowed].every((f) => fns.has(f)),
+    );
+  }
 }
 
 // =============================================================================

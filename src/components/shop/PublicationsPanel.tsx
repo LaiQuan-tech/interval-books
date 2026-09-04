@@ -15,7 +15,7 @@
  * 下一次載入這一頁就長出購買鈕。
  */
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PriceTag, StockBadge } from "@/components/shop/ShopBits";
 import { useT } from "@/i18n/LanguageContext";
@@ -24,14 +24,15 @@ import { pageText, type PageContent } from "@/lib/cms";
 import { cartInputFor, useCart } from "@/lib/cart";
 import { imageFor } from "@/lib/images";
 import {
+  fetchPublicationDetail,
   presentRegionGroups,
   regionGroupOf,
   SHEET_LABELS,
-  type PublicationEntry,
+  type PublicationListEntry,
+  type PublicationListResult,
   type PublicationSheet,
-  type PublicationsResult,
 } from "@/lib/publications";
-import { isSoldOut, remainingFor, type ShopListResult, type ShopProduct } from "@/lib/shop";
+import { isSoldOut, remainingFor, type ShopListCardResult, type ShopProductCard } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
 import bookstoreImg from "@/assets/bookstore-interior.jpg";
 
@@ -53,6 +54,12 @@ const COPY = {
   issuesLabel: { zh: "集數", en: "Issues", ja: "号" },
   readMore: { zh: "刊物介紹", en: "About this title", ja: "この刊行物について" },
   visitSite: { zh: "前往刊物網站", en: "Visit publication site", ja: "刊行物のサイトへ" },
+  detailLoading: { zh: "載入中…", en: "Loading…", ja: "読み込み中…" },
+  detailUnavailable: {
+    zh: "刊物介紹暫時無法載入，請稍後再試。",
+    en: "Could not load this introduction. Please try again shortly.",
+    ja: "紹介文を読み込めませんでした。しばらくしてからお試しください。",
+  },
   displayOnly: {
     zh: "此本僅供店內展示",
     en: "On display in store only",
@@ -95,8 +102,8 @@ export function PublicationsPanel({
   catalogue,
 }: {
   page: PageContent | null;
-  list: PublicationsResult;
-  catalogue: ShopListResult;
+  list: PublicationListResult;
+  catalogue: ShopListCardResult;
 }) {
   const t = useT();
   const p = pageText(page);
@@ -262,8 +269,8 @@ export function PanelIntro({ title, intro }: { title: string; intro: string }) {
 }
 
 type CardProps = {
-  entry: PublicationEntry;
-  product: ShopProduct | null;
+  entry: PublicationListEntry;
+  product: ShopProductCard | null;
   open: boolean;
   onToggle: () => void;
   text: ReturnType<typeof pageText>;
@@ -271,6 +278,20 @@ type CardProps = {
   addToCartLabel: string;
   viewProductLabel: string;
 };
+
+/**
+ * 「刊物介紹」展開內容——intro／externalUrl 不在 list props 裡（見
+ * lib/publications.ts#PublicationListEntry 檔頭），點開才現查那一本。
+ *
+ * "idle" 一路留著直到真的展開過一次；展開後轉 "loading" → "loaded"／"error"
+ * 就不會回頭，收合再展開不會重打一次網路（跟這個 storefront 其餘地方「loader
+ * 只讀一次、不重複讀」是同一種姿態，只是這裡的「loader」換成使用者的一次點擊）。
+ */
+type DetailState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "loaded"; intro: Localized; externalUrl: string | null }
+  | { status: "error" };
 
 function PublicationCard({
   entry,
@@ -284,6 +305,38 @@ function PublicationCard({
 }: CardProps) {
   const t = useT();
   const addItem = useCart((s) => s.addItem);
+  const [detail, setDetail] = useState<DetailState>({ status: "idle" });
+
+  // ⚠️ deps 只有 [open, entry.id]，刻意不含 detail.status。
+  //
+  // 原本寫成 `[open, detail.status, entry.id]`：effect 裡 setDetail("loading")
+  // 之後，status 從 idle 變成 loading 又會讓這個 effect 自己重跑一次——重跑會
+  // 先執行上一輪的 cleanup（把上一輪那個 fetch 的 `cancelled` 設成
+  // true），但新的這一輪一看 `detail.status !== "idle"` 就直接 return，不會
+  // 開一個新的 fetch 去接手。結果是唯一在飛的那個 fetch 已經被標成
+  // cancelled，它的 `.then()` 回來時直接被吞掉——畫面永遠卡在
+  // 「Loading…」，用瀏覽器點開任何一本刊物都能重現。
+  //
+  // 拿掉 detail.status 之後，這個 effect 只在 open／entry.id 真的改變時才會
+  // 重新建立（重新展開同一本會再打一次，這是刻意的取捨：比起用
+  // ref 精確快取「這本已經查過」，重複一次小小的單列查詢便宜得多，也不會
+  // 卡在上面這個坑裡）。
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setDetail({ status: "loading" });
+    fetchPublicationDetail(entry.id).then((result) => {
+      if (cancelled) return;
+      setDetail(
+        result
+          ? { status: "loaded", intro: result.intro, externalUrl: result.externalUrl }
+          : { status: "error" },
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, entry.id]);
 
   const soldOut = product !== null && isSoldOut(product);
   const remaining = product ? remainingFor(product) : null;
@@ -342,18 +395,30 @@ function PublicationCard({
 
         {open && (
           <div className="mt-4 border-l-2 border-clay/40 pl-5">
-            <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-              {t(entry.intro)}
-            </p>
-            {entry.externalUrl && (
-              <a
-                href={entry.externalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-4 inline-block text-xs tracking-widest text-clay hover-underline"
-              >
-                {t(text.block("visitSite", COPY.visitSite))} →
-              </a>
+            {detail.status === "loaded" ? (
+              <>
+                <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+                  {t(detail.intro)}
+                </p>
+                {detail.externalUrl && (
+                  <a
+                    href={detail.externalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-block text-xs tracking-widest text-clay hover-underline"
+                  >
+                    {t(text.block("visitSite", COPY.visitSite))} →
+                  </a>
+                )}
+              </>
+            ) : detail.status === "error" ? (
+              <p className="text-sm text-muted-foreground">
+                {t(text.block("detailUnavailable", COPY.detailUnavailable))}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {t(text.block("detailLoading", COPY.detailLoading))}
+              </p>
             )}
           </div>
         )}

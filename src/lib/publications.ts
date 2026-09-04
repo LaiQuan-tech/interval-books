@@ -87,6 +87,130 @@ function toEntry(r: Row): PublicationEntry | null {
   };
 }
 
+/**
+ * Card-shaped publication — everything PublicationEntry has except `intro`
+ * and `externalUrl`. Both fields only ever appear inside the "刊物介紹"
+ * expand panel in PublicationsPanel.tsx, which starts closed for every card
+ * and never runs a route loader on toggle (same "loader preloads once, no
+ * per-interaction refetch" shape as the rest of this storefront). /shop's
+ * loader used to preload all 126 publications' `intro` up front regardless —
+ * measured at roughly 227KB of the page's ~330KB SSR payload (2026-09 前台
+ * 載入速度優化), almost all of it text nobody reads unless they click "+" on
+ * that specific title.
+ *
+ * fetchPublicationsForList() below is the list-safe read (used by /shop);
+ * fetchPublicationDetail() fetches the two omitted fields for exactly one
+ * publication, on demand, when its card is expanded — see
+ * PublicationsPanel.tsx. fetchPublications() above is left untouched (still
+ * correct, just currently unused after this change) rather than deleted,
+ * matching this file's existing functions/types, which nothing else in the
+ * repo imports as of this writing — a later cleanup pass can remove it once
+ * that is confirmed to still hold.
+ */
+export type PublicationListEntry = Omit<PublicationEntry, "intro" | "externalUrl">;
+
+const CARD_COLUMNS =
+  "id, slug, sheet, seq, title, publisher, region, issues, cover_image_key, product_id";
+
+function toCardEntry(r: Row): PublicationListEntry | null {
+  const id = typeof r.id === "string" ? r.id : null;
+  const slug = typeof r.slug === "string" ? r.slug : null;
+  const sheet = r.sheet === "tw" || r.sheet === "jp" ? r.sheet : null;
+  const title = loc(r.title);
+  const publisher = loc(r.publisher);
+  if (!id || !slug || !sheet || !title || !publisher) return null;
+  return {
+    id,
+    slug,
+    sheet,
+    seq: typeof r.seq === "number" ? r.seq : 0,
+    title,
+    publisher,
+    region: typeof r.region === "string" ? r.region : "",
+    issues: nullableStr(r.issues),
+    coverImageKey: nullableStr(r.cover_image_key),
+    productId: nullableStr(r.product_id),
+  };
+}
+
+export type PublicationListResult = {
+  publications: PublicationListEntry[];
+  unavailable: boolean;
+};
+
+export async function fetchPublicationsForList(): Promise<PublicationListResult> {
+  const db = supabase;
+  if (!db) {
+    console.warn("[publications] unavailable — Supabase is not configured");
+    return { publications: [], unavailable: true };
+  }
+  try {
+    const { data, error } = await db
+      .from("publications")
+      .select(CARD_COLUMNS)
+      .eq("is_published", true)
+      .order("sheet", { ascending: false }) // tw 先於 jp
+      .order("sort_order", { ascending: true })
+      .order("seq", { ascending: true });
+
+    if (error || !Array.isArray(data)) {
+      console.warn(`[publications] unavailable — ${error?.message ?? "unexpected response shape"}`);
+      return { publications: [], unavailable: true };
+    }
+    const publications: PublicationListEntry[] = [];
+    for (const row of data as unknown as Row[]) {
+      const e = toCardEntry(row);
+      if (e) publications.push(e);
+    }
+    return { publications, unavailable: false };
+  } catch (err) {
+    console.warn(
+      `[publications] unavailable — ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return { publications: [], unavailable: true };
+  }
+}
+
+/**
+ * The two fields a publication card only needs once expanded. Runs the same
+ * anon client as every other read in this file (see the header — RLS, not
+ * this function, is what keeps unpublished rows out of reach), called
+ * directly from the browser by PublicationsPanel's "刊物介紹" toggle.
+ *
+ * `null` means "could not read it" — the caller must show a temporarily-
+ * unavailable state, never blank text standing in for a real (empty) intro.
+ * `id` comes from a row the visitor can already see in the list they were
+ * just shown, so this is not exposing anything fetchPublicationsForList()
+ * did not already make visible for that same row.
+ */
+export async function fetchPublicationDetail(
+  id: string,
+): Promise<{ intro: Localized; externalUrl: string | null } | null> {
+  const db = supabase;
+  if (!db) return null;
+  try {
+    const { data, error } = await db
+      .from("publications")
+      .select("intro, external_url")
+      .eq("id", id)
+      .eq("is_published", true)
+      .maybeSingle();
+    if (error || !data) {
+      console.warn(`[publications] detail unavailable for ${id} — ${error?.message ?? "no row"}`);
+      return null;
+    }
+    const row = data as unknown as Row;
+    const intro = loc(row.intro);
+    if (!intro) return null;
+    return { intro, externalUrl: nullableStr(row.external_url) };
+  } catch (err) {
+    console.warn(
+      `[publications] detail unavailable for ${id} — ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
 export async function fetchPublications(): Promise<PublicationsResult> {
   const db = supabase;
   if (!db) {
@@ -215,8 +339,14 @@ export function regionGroupsFor(sheet: PublicationSheet): RegionGroup[] {
   return sheet === "tw" ? TW_GROUPS : JP_GROUPS;
 }
 
-/** 一本刊物的地域分類鍵。找不到就是 REGION_GROUP_OTHER.key。 */
-export function regionGroupOf(entry: PublicationEntry): string {
+/**
+ * 一本刊物的地域分類鍵。找不到就是 REGION_GROUP_OTHER.key。
+ *
+ * 參數型別是 PublicationListEntry（2026-09）：只讀 sheet/region，intro／
+ * externalUrl 從來沒被用過。PublicationEntry 仍然能直接傳進來（它是
+ * PublicationListEntry 多兩個欄位），呼叫端不必轉型。
+ */
+export function regionGroupOf(entry: PublicationListEntry): string {
   for (const g of regionGroupsFor(entry.sheet)) {
     if (g.match.some((m) => entry.region.includes(m))) return g.key;
   }
@@ -225,7 +355,7 @@ export function regionGroupOf(entry: PublicationEntry): string {
 
 /** 這批刊物實際用到的地域分類，照 regionGroupsFor 的順序，其他放最後。 */
 export function presentRegionGroups(
-  entries: PublicationEntry[],
+  entries: PublicationListEntry[],
   sheet: PublicationSheet,
 ): RegionGroup[] {
   const used = new Set(entries.filter((e) => e.sheet === sheet).map(regionGroupOf));

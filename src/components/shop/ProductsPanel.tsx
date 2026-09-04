@@ -13,7 +13,7 @@ import { useT } from "@/i18n/LanguageContext";
 import type { Localized } from "@/i18n/types";
 import { pageText, type PageContent } from "@/lib/cms";
 import { imageFor } from "@/lib/images";
-import { isSoldOut, remainingFor, SHOP_PRODUCT_TYPES, type ShopListResult } from "@/lib/shop";
+import { isSoldOut, remainingFor, SHOP_PRODUCT_TYPES, type ShopListCardResult } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
 import curatedImg from "@/assets/curated-objects.jpg";
 
@@ -51,7 +51,7 @@ export function ProductsPanel({
   heroAlt,
 }: {
   page: PageContent | null;
-  catalogue: ShopListResult;
+  catalogue: ShopListCardResult;
   heroAlt: string;
 }) {
   const t = useT();

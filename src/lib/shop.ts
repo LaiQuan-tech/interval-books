@@ -138,6 +138,21 @@ export type ShopProduct = {
   showSeatsRemaining: boolean;
 };
 
+/**
+ * 卡片形狀的商品——`ShopProduct` 拿掉 `description`。
+ *
+ * 為什麼要有這個型別：/shop 三個分頁（商品／地方刊物／主理人的選品）沒有一處會
+ * 印出商品的 description——那是 /shop/$slug 詳情頁專屬的長文（見該路由
+ * `{t(product.description)}` 那一段）。但 2026-09 之前 /shop 的 loader 仍然用
+ * `fetchActiveProducts()` 撈整份 ShopProduct，於是 43 件商品 × 三語
+ * description（一次還撈兩份，見 fetchActiveProductsForList 檔頭）全部被塞進
+ * SSR payload，一個字都沒有畫出來。
+ *
+ * `Omit<ShopProduct, "description">` 而不是獨立重寫一個型別：欄位清單永遠跟著
+ * ShopProduct 走，日後 ShopProduct 加欄位不會漏掉這裡。
+ */
+export type ShopProductCard = Omit<ShopProduct, "description">;
+
 export type ShopListResult = {
   products: ShopProduct[];
   /**
@@ -153,6 +168,12 @@ export type ShopProductResult = {
   unavailable: boolean;
 };
 
+/** Card-shaped counterpart of ShopListResult — see ShopProductCard. */
+export type ShopListCardResult = {
+  products: ShopProductCard[];
+  unavailable: boolean;
+};
+
 /**
  * Every column the storefront needs — and nothing else. Deliberately does not
  * include `status` (see ShopProduct) or `source_type`/`source_id`, which are a
@@ -160,6 +181,10 @@ export type ShopProductResult = {
  */
 const COLUMNS =
   "id, slug, product_type, title, summary, description, price, compare_at_price, stock, capacity, seats_taken, image_key, requires_shipping, sort_order, show_seats_remaining";
+
+/** Same as COLUMNS, minus `description` — see ShopProductCard. */
+const CARD_COLUMNS =
+  "id, slug, product_type, title, summary, price, compare_at_price, stock, capacity, seats_taken, image_key, requires_shipping, sort_order, show_seats_remaining";
 
 // -----------------------------------------------------------------------------
 // Row mapping
@@ -232,6 +257,44 @@ function toProduct(r: Row): ShopProduct | null {
   };
 }
 
+/**
+ * Card-shaped counterpart of toProduct() — same validation, minus
+ * `description`. Deliberately NOT implemented by calling toProduct() and
+ * dropping a field: toProduct() is on the checkout/cart read path
+ * (fetchActiveProducts/fetchActiveProductsByIds/fetchActiveProductBySlug,
+ * consumed by /cart, /checkout and /shop/$slug) and this file's own header
+ * says price/seat correctness has exactly one source of truth — this function
+ * stays a self-contained sibling so nothing on that path is touched by the
+ * /shop list-page slimming.
+ */
+function toProductCard(r: Row): ShopProductCard | null {
+  const id = typeof r.id === "string" ? r.id : null;
+  const slug = typeof r.slug === "string" ? r.slug : null;
+  const title = loc(r.title);
+  const summary = loc(r.summary);
+  if (!id || !slug || !title || !summary) return null;
+  if (!isProductType(r.product_type)) return null;
+
+  return {
+    id,
+    slug,
+    productType: r.product_type,
+    title,
+    summary,
+    price: int(r.price, 0),
+    compareAtPrice: nullableInt(r.compare_at_price),
+    stock: nullableInt(r.stock),
+    capacity: nullableInt(r.capacity),
+    seatsTaken: int(r.seats_taken, 0),
+    sessions: [],
+    imageKey: nullableStr(r.image_key),
+    requiresShipping: r.requires_shipping !== false,
+    sortOrder: int(r.sort_order, 0),
+    availableCapped: null,
+    showSeatsRemaining: r.show_seats_remaining !== false,
+  };
+}
+
 function logFailure(what: string, message: string) {
   console.warn(`[shop] ${what} unavailable — ${message}`);
 }
@@ -248,8 +311,14 @@ function logFailure(what: string, message: string) {
  *
  * The view is readable by anon and exposes exactly three columns. It has no
  * path to inv.products — anon does not even hold USAGE on that schema.
+ *
+ * 參數型別是 ShopProductCard 不是 ShopProduct（2026-09）：這支函式只讀寫
+ * id/productType/availableCapped/sessions，不碰 description，所以縮成兩者共同
+ * 的形狀讓 /shop 列表頁的卡片型別也能直接呼叫它——不必為了拿到「可售量」另外
+ * 兜一份邏輯。ShopProduct 仍然可以照舊傳進來（它是 ShopProductCard 多一個欄位），
+ * 既有呼叫端一行都不用改。
  */
-async function attachAvailability(products: ShopProduct[]): Promise<void> {
+async function attachAvailability(products: ShopProductCard[]): Promise<void> {
   const db = supabase;
   if (!db || products.length === 0) return;
   try {
@@ -327,8 +396,12 @@ function toSession(r: Row): ShopSession | null {
  *
  * Only queried for event/journey products, so an all-books catalogue makes no
  * extra round trip at all.
+ *
+ * ShopProductCard parameter type — same reasoning as attachAvailability()
+ * above: only id/productType/sessions are touched, description is never
+ * read, existing ShopProduct[] callers stay valid unchanged.
  */
-async function attachSessions(products: ShopProduct[]): Promise<void> {
+async function attachSessions(products: ShopProductCard[]): Promise<void> {
   const db = supabase;
   const bookings = products.filter((p) => p.productType === "event" || p.productType === "journey");
   if (!db || bookings.length === 0) return;
@@ -409,8 +482,12 @@ export function remainingForSession(s: ShopSession): number {
  *   NULL so the two numbers can never disagree) and products that are not
  *   stock-managed at all, for which the view reports the cap — i.e. "plenty",
  *   which is the same thing the old `null` return meant to a shopper.
+ *
+ * 參數型別是 ShopProductCard（2026-09）：這裡只讀 productType/sessions/stock/
+ * availableCapped，description 從來沒被用過。/shop 的卡片與詳情頁的完整商品都
+ * 能直接傳進來（ShopProduct 是 ShopProductCard 多一欄），呼叫端不必轉型。
  */
-export function remainingFor(p: ShopProduct): number | null {
+export function remainingFor(p: ShopProductCard): number | null {
   if (p.productType === "event" || p.productType === "journey") {
     if (p.sessions.length === 0) return 0;
     return p.sessions.reduce((max, s) => Math.max(max, remainingForSession(s)), 0);
@@ -420,7 +497,7 @@ export function remainingFor(p: ShopProduct): number | null {
 }
 
 /** True when nothing more can be added. `remaining === null` is never sold out. */
-export function isSoldOut(p: ShopProduct): boolean {
+export function isSoldOut(p: ShopProductCard): boolean {
   const remaining = remainingFor(p);
   return remaining !== null && remaining <= 0;
 }
@@ -456,6 +533,61 @@ export async function fetchActiveProducts(): Promise<ShopListResult> {
     const products: ShopProduct[] = [];
     for (const row of data as unknown as Row[]) {
       const p = toProduct(row);
+      if (p) products.push(p);
+    }
+    await Promise.all([attachAvailability(products), attachSessions(products)]);
+    return { products, unavailable: false };
+  } catch (err) {
+    logFailure("products", err instanceof Error ? err.message : String(err));
+    return { products: [], unavailable: true };
+  }
+}
+
+/**
+ * Card-shaped counterpart of fetchActiveProducts() — same query, minus
+ * `description` (CARD_COLUMNS vs COLUMNS). Written for `/shop`
+ * (src/routes/shop.index.tsx), whose loader used to call
+ * fetchActiveProducts() for the "products" tab's card grid *and*
+ * fetchActiveProductsByIds() a second time for the "local publications" tab
+ * — even though the second call's ids are always a subset of the first call's
+ * results (both filter on `status = 'active'`; fetchActiveProductsByIds just
+ * adds an `id IN (...)`). Every product referenced by a publication was
+ * therefore serialized into the SSR payload *twice*, full description
+ * included both times — measured at 43 `description` + 40 `summary` blocks,
+ * 65,771 CJK characters, on the live site (2026-09).
+ *
+ * The fix here is column-level (this function); src/routes/shop.index.tsx
+ * additionally stopped calling fetchActiveProductsByIds() at all and now
+ * hands this same result to both the products tab and the publications tab —
+ * see that route's loader comment.
+ *
+ * Never call this for /shop/$slug or anything checkout/cart-adjacent — those
+ * need the full ShopProduct (description) or already have their own
+ * unmodified read (fetchActiveProducts/fetchActiveProductsByIds/
+ * fetchActiveProductBySlug, all untouched by this addition).
+ */
+export async function fetchActiveProductsForList(): Promise<ShopListCardResult> {
+  const db = supabase;
+  if (!db) {
+    logFailure("products", "Supabase is not configured");
+    return { products: [], unavailable: true };
+  }
+  try {
+    const { data, error } = await db
+      .from("products")
+      .select(CARD_COLUMNS)
+      .eq("status", "active")
+      .order("sort_order", { ascending: true })
+      .order("id", { ascending: true });
+
+    if (error || !Array.isArray(data)) {
+      logFailure("products", error?.message ?? "unexpected response shape");
+      return { products: [], unavailable: true };
+    }
+
+    const products: ShopProductCard[] = [];
+    for (const row of data as unknown as Row[]) {
+      const p = toProductCard(row);
       if (p) products.push(p);
     }
     await Promise.all([attachAvailability(products), attachSessions(products)]);

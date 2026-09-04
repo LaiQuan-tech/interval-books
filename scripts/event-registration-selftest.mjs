@@ -834,8 +834,11 @@ for (const [file, src] of [["src/routes/cart.tsx", readFile(join(ROOT, "src/rout
 // --- shop.ts ----------------------------------------------------------------
 checkTrue("shop.ts 匯出 remainingForSession", /export function remainingForSession\(/.test(shopTs));
 // remainingFor 對 event/journey 不可以再讀 p.capacity —— 0020 之後那是 null。
+// 參數型別 2026-09 從 ShopProduct 放寬成 ShopProductCard（/shop 列表頁瘦身，見
+// src/lib/shop.ts#remainingFor 檔頭）——純型別放寬，函式本體邏輯沒有變，這裡
+// 切函式本體的起點字串跟著更新。
 const remainingForBody = shopTs.slice(
-  shopTs.indexOf("export function remainingFor(p: ShopProduct)"),
+  shopTs.indexOf("export function remainingFor(p: ShopProductCard)"),
   shopTs.indexOf("export function isSoldOut"),
 );
 checkTrue("反空殼：切得出 remainingFor", remainingForBody.length > 100);
