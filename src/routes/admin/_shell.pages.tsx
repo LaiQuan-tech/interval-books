@@ -8,7 +8,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { listPages } from "@/lib/admin/fns/pages";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 /**
@@ -29,6 +28,7 @@ import { formatUpdatedAt } from "@/lib/admin/format";
  */
 export const Route = createFileRoute("/admin/_shell/pages")({
   loader: async () => {
+    const { listPages } = await import("@/lib/admin/fns/pages");
     const pages = await listPages();
     return { pages };
   },

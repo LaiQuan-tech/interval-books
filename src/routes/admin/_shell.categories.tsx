@@ -44,12 +44,7 @@ import {
 } from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { eventCategorySchema, type EventCategoryFormValues } from "@/lib/admin/schemas";
-import {
-  listEventCategories,
-  removeEventCategory,
-  upsertEventCategory,
-} from "@/lib/admin/fns/event-categories";
-import { countEventsByCategory } from "@/lib/admin/fns/events";
+import type { listEventCategories } from "@/lib/admin/fns/event-categories";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type EventCategoryRow = Awaited<ReturnType<typeof listEventCategories>>[number];
@@ -66,6 +61,8 @@ const EMPTY_LOCALIZED = { zh: "", en: "", ja: "" };
  */
 export const Route = createFileRoute("/admin/_shell/categories")({
   loader: async () => {
+    const { listEventCategories } = await import("@/lib/admin/fns/event-categories");
+    const { countEventsByCategory } = await import("@/lib/admin/fns/events");
     const [categories, counts] = await Promise.all([
       listEventCategories(),
       countEventsByCategory(),
@@ -112,6 +109,7 @@ function AdminEventCategoriesPage() {
   async function handleSubmit(values: EventCategoryFormValues) {
     setSubmitting(true);
     try {
+      const { upsertEventCategory } = await import("@/lib/admin/fns/event-categories");
       // Editing keeps the original id no matter what the (disabled) field
       // holds — see the "id" FormField below for why it is locked on edit.
       await upsertEventCategory({ data: editing ? { ...values, id: editing.id } : values });
@@ -129,6 +127,7 @@ function AdminEventCategoriesPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeEventCategory } = await import("@/lib/admin/fns/event-categories");
       await removeEventCategory({ data: { id: deleteTarget.id } });
       toast.success("已刪除分類");
       setDeleteTarget(null);

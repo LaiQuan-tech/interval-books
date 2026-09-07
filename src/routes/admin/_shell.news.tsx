@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { newsSchema, type NewsFormValues } from "@/lib/admin/schemas";
-import { listNews, removeNews, upsertNews } from "@/lib/admin/fns/news";
+import type { listNews } from "@/lib/admin/fns/news";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type NewsRow = Awaited<ReturnType<typeof listNews>>[number];
@@ -54,6 +54,7 @@ const EMPTY_LOCALIZED = { zh: "", en: "", ja: "" };
 
 export const Route = createFileRoute("/admin/_shell/news")({
   loader: async () => {
+    const { listNews } = await import("@/lib/admin/fns/news");
     const news = await listNews();
     return { news };
   },
@@ -101,6 +102,7 @@ function AdminNewsPage() {
   async function handleSubmit(values: NewsFormValues) {
     setSubmitting(true);
     try {
+      const { upsertNews } = await import("@/lib/admin/fns/news");
       await upsertNews({ data: editing ? { ...values, id: editing.id } : values });
       toast.success(editing ? "已更新消息" : "已新增消息");
       setDialogOpen(false);
@@ -116,6 +118,7 @@ function AdminNewsPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeNews } = await import("@/lib/admin/fns/news");
       await removeNews({ data: { id: deleteTarget.id } });
       toast.success("已刪除消息");
       setDeleteTarget(null);

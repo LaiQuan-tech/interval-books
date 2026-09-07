@@ -72,14 +72,8 @@ import {
   type PublicationFormValues,
   type PublicationLinkFormValues,
 } from "@/lib/admin/schemas";
-import {
-  linkPublicationToInventory,
-  listPublicationNameMatches,
-  listPublications,
-  unlinkPublication,
-  updatePublication,
-} from "@/lib/admin/fns/publications";
-import {
+import type { listPublicationNameMatches, listPublications } from "@/lib/admin/fns/publications";
+import type {
   listInventoryCandidates,
   listListedInventoryProducts,
 } from "@/lib/admin/fns/inventory-listing";
@@ -88,6 +82,10 @@ import bookstoreImg from "@/assets/bookstore-interior.jpg";
 
 export const Route = createFileRoute("/admin/_shell/publications")({
   loader: async () => {
+    const { listPublications, listPublicationNameMatches } =
+      await import("@/lib/admin/fns/publications");
+    const { listInventoryCandidates, listListedInventoryProducts } =
+      await import("@/lib/admin/fns/inventory-listing");
     const [publications, nameMatches, candidates, listed] = await Promise.all([
       listPublications(),
       listPublicationNameMatches(),
@@ -157,6 +155,7 @@ function AdminPublicationsPage() {
   async function handleSave(values: PublicationFormValues) {
     setBusy(true);
     try {
+      const { updatePublication } = await import("@/lib/admin/fns/publications");
       await updatePublication({ data: values });
       toast.success("已儲存");
       setEditTarget(null);
@@ -171,6 +170,7 @@ function AdminPublicationsPage() {
   async function handleLink(values: PublicationLinkFormValues) {
     setBusy(true);
     try {
+      const { linkPublicationToInventory } = await import("@/lib/admin/fns/publications");
       await linkPublicationToInventory({ data: values });
       toast.success("已連結，前台立刻可以買");
       setLinkTarget(null);
@@ -186,6 +186,7 @@ function AdminPublicationsPage() {
     if (!unlinkTarget) return;
     setBusy(true);
     try {
+      const { unlinkPublication } = await import("@/lib/admin/fns/publications");
       await unlinkPublication({ data: { publication_id: unlinkTarget.id } });
       toast.success("已解除連結（進銷存的庫存與紀錄不受影響）");
       setUnlinkTarget(null);

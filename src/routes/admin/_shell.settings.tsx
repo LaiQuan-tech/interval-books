@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { siteSettingsSchema, type SiteSettingsFormValues } from "@/lib/admin/schemas";
-import { getSiteSettings, updateSiteSettings } from "@/lib/admin/fns/site-settings";
+import type { getSiteSettings } from "@/lib/admin/fns/site-settings";
 
 type SiteSettingsData = Awaited<ReturnType<typeof getSiteSettings>>;
 
@@ -29,6 +29,7 @@ type SiteSettingsData = Awaited<ReturnType<typeof getSiteSettings>>;
  */
 export const Route = createFileRoute("/admin/_shell/settings")({
   loader: async () => {
+    const { getSiteSettings } = await import("@/lib/admin/fns/site-settings");
     const settings = await getSiteSettings();
     return { settings };
   },
@@ -74,6 +75,7 @@ function AdminSettingsPage() {
 
   async function handleSubmit(values: SiteSettingsFormValues) {
     try {
+      const { updateSiteSettings } = await import("@/lib/admin/fns/site-settings");
       await updateSiteSettings({ data: values });
       toast.success("已儲存全站設定");
       await router.invalidate();

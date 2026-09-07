@@ -53,7 +53,7 @@ import {
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { ImageField } from "@/components/admin/ImageField";
 import { productSchema, type ProductFormValues } from "@/lib/admin/schemas";
-import { listProducts, removeProduct, upsertProduct } from "@/lib/admin/fns/products";
+import type { listProducts } from "@/lib/admin/fns/products";
 import { imageFor, curatedObjects } from "@/lib/images";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
@@ -123,6 +123,7 @@ function inventoryLabel(p: ProductRow): string {
 
 export const Route = createFileRoute("/admin/_shell/products")({
   loader: async () => {
+    const { listProducts } = await import("@/lib/admin/fns/products");
     const products = await listProducts();
     return { products };
   },
@@ -178,6 +179,7 @@ function AdminProductsPage() {
   async function handleSubmit(values: ProductFormValues) {
     setSubmitting(true);
     try {
+      const { upsertProduct } = await import("@/lib/admin/fns/products");
       await upsertProduct({ data: editing ? { ...values, id: editing.id } : values });
       toast.success(editing ? "已更新商品" : "已新增商品");
       setDialogOpen(false);
@@ -193,6 +195,7 @@ function AdminProductsPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeProduct } = await import("@/lib/admin/fns/products");
       await removeProduct({ data: { id: deleteTarget.id } });
       toast.success("已刪除商品");
       setDeleteTarget(null);

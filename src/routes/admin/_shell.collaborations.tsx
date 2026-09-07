@@ -44,11 +44,7 @@ import {
 } from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { collaborationSchema, type CollaborationFormValues } from "@/lib/admin/schemas";
-import {
-  listCollaborations,
-  removeCollaboration,
-  upsertCollaboration,
-} from "@/lib/admin/fns/collaborations";
+import type { listCollaborations } from "@/lib/admin/fns/collaborations";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type CollaborationRow = Awaited<ReturnType<typeof listCollaborations>>[number];
@@ -57,6 +53,7 @@ const EMPTY_LOCALIZED = { zh: "", en: "", ja: "" };
 
 export const Route = createFileRoute("/admin/_shell/collaborations")({
   loader: async () => {
+    const { listCollaborations } = await import("@/lib/admin/fns/collaborations");
     const collaborations = await listCollaborations();
     return { collaborations };
   },
@@ -102,6 +99,7 @@ function AdminCollaborationsPage() {
   async function handleSubmit(values: CollaborationFormValues) {
     setSubmitting(true);
     try {
+      const { upsertCollaboration } = await import("@/lib/admin/fns/collaborations");
       await upsertCollaboration({ data: editing ? { ...values, id: editing.id } : values });
       toast.success(editing ? "已更新合作夥伴" : "已新增合作夥伴");
       setDialogOpen(false);
@@ -117,6 +115,7 @@ function AdminCollaborationsPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeCollaboration } = await import("@/lib/admin/fns/collaborations");
       await removeCollaboration({ data: { id: deleteTarget.id } });
       toast.success("已刪除合作夥伴");
       setDeleteTarget(null);

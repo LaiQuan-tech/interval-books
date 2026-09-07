@@ -41,17 +41,14 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { contactPhoneSchema, type ContactPhoneFormValues } from "@/lib/admin/schemas";
-import {
-  listContactPhones,
-  removeContactPhone,
-  upsertContactPhone,
-} from "@/lib/admin/fns/contact-phones";
+import type { listContactPhones } from "@/lib/admin/fns/contact-phones";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type ContactPhoneRow = Awaited<ReturnType<typeof listContactPhones>>[number];
 
 export const Route = createFileRoute("/admin/_shell/phones")({
   loader: async () => {
+    const { listContactPhones } = await import("@/lib/admin/fns/contact-phones");
     const phones = await listContactPhones();
     return { phones };
   },
@@ -97,6 +94,7 @@ function AdminPhonesPage() {
   async function handleSubmit(values: ContactPhoneFormValues) {
     setSubmitting(true);
     try {
+      const { upsertContactPhone } = await import("@/lib/admin/fns/contact-phones");
       await upsertContactPhone({ data: editing ? { ...values, id: editing.id } : values });
       toast.success(editing ? "已更新電話" : "已新增電話");
       setDialogOpen(false);
@@ -112,6 +110,7 @@ function AdminPhonesPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeContactPhone } = await import("@/lib/admin/fns/contact-phones");
       await removeContactPhone({ data: { id: deleteTarget.id } });
       toast.success("已刪除電話");
       setDeleteTarget(null);

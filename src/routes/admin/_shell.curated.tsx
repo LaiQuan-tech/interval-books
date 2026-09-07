@@ -49,15 +49,7 @@ import {
   type CuratedThemeFormValues,
   type CuratedItemFormValues,
 } from "@/lib/admin/schemas";
-import {
-  listCuratedThemes,
-  upsertCuratedTheme,
-  removeCuratedTheme,
-  listCuratedItems,
-  upsertCuratedItem,
-  removeCuratedItem,
-  reorderCuratedItems,
-} from "@/lib/admin/fns/curated";
+import type { listCuratedThemes, listCuratedItems } from "@/lib/admin/fns/curated";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type CuratedThemeRow = Awaited<ReturnType<typeof listCuratedThemes>>[number];
@@ -74,6 +66,7 @@ const EMPTY_LOCALIZED = { zh: "", en: "", ja: "" };
  */
 export const Route = createFileRoute("/admin/_shell/curated")({
   loader: async () => {
+    const { listCuratedThemes } = await import("@/lib/admin/fns/curated");
     const themes = await listCuratedThemes();
     return { themes };
   },
@@ -135,6 +128,7 @@ function AdminCuratedPage() {
   async function loadItems(themeId: string) {
     setItemsLoading(true);
     try {
+      const { listCuratedItems } = await import("@/lib/admin/fns/curated");
       const rows = await listCuratedItems({ data: { theme_id: themeId } });
       setItems(rows);
     } catch (err) {
@@ -168,6 +162,7 @@ function AdminCuratedPage() {
   async function handleThemeSubmit(values: CuratedThemeFormValues) {
     setThemeSubmitting(true);
     try {
+      const { upsertCuratedTheme } = await import("@/lib/admin/fns/curated");
       await upsertCuratedTheme({
         data: editingTheme ? { ...values, id: editingTheme.id } : values,
       });
@@ -185,6 +180,7 @@ function AdminCuratedPage() {
     if (!deleteThemeTarget) return;
     setDeletingTheme(true);
     try {
+      const { removeCuratedTheme } = await import("@/lib/admin/fns/curated");
       await removeCuratedTheme({ data: { id: deleteThemeTarget.id } });
       toast.success("已刪除主題（底下品項已一併刪除）");
       if (selectedThemeId === deleteThemeTarget.id) {
@@ -216,6 +212,7 @@ function AdminCuratedPage() {
     if (!selectedThemeId) return;
     setItemSubmitting(true);
     try {
+      const { upsertCuratedItem } = await import("@/lib/admin/fns/curated");
       await upsertCuratedItem({
         data: editingItem
           ? {
@@ -240,6 +237,7 @@ function AdminCuratedPage() {
     if (!deleteItemTarget || !selectedThemeId) return;
     setDeletingItem(true);
     try {
+      const { removeCuratedItem } = await import("@/lib/admin/fns/curated");
       await removeCuratedItem({ data: { id: deleteItemTarget.id } });
       toast.success("已刪除品項");
       setDeleteItemTarget(null);
@@ -270,6 +268,7 @@ function AdminCuratedPage() {
 
     setReorderingId(moved.id);
     try {
+      const { reorderCuratedItems } = await import("@/lib/admin/fns/curated");
       await reorderCuratedItems({
         data: { theme_id: selectedThemeId, ids: reordered.map((row) => row.id) },
       });

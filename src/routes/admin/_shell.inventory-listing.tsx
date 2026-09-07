@@ -69,15 +69,15 @@ import {
 } from "@/components/ui/table";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { inventoryListingSchema, type InventoryListingFormValues } from "@/lib/admin/schemas";
-import {
-  createInventoryListing,
+import type {
   listInventoryCandidates,
   listListedInventoryProducts,
-  removeInventoryListing,
 } from "@/lib/admin/fns/inventory-listing";
 
 export const Route = createFileRoute("/admin/_shell/inventory-listing")({
   loader: async () => {
+    const { listInventoryCandidates, listListedInventoryProducts } =
+      await import("@/lib/admin/fns/inventory-listing");
     const [candidates, listed] = await Promise.all([
       listInventoryCandidates(),
       listListedInventoryProducts(),
@@ -129,6 +129,7 @@ function AdminInventoryListingPage() {
   async function handleSubmit(values: InventoryListingFormValues) {
     setSubmitting(true);
     try {
+      const { createInventoryListing } = await import("@/lib/admin/fns/inventory-listing");
       await createInventoryListing({ data: values });
       toast.success("已上架");
       setDialogOpen(false);
@@ -144,6 +145,7 @@ function AdminInventoryListingPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeInventoryListing } = await import("@/lib/admin/fns/inventory-listing");
       await removeInventoryListing({ data: { product_id: deleteTarget.product_id } });
       toast.success("已下架（進銷存的庫存與紀錄不受影響）");
       setDeleteTarget(null);

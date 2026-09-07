@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { localizedSchema } from "@/lib/admin/schemas";
-import { listUiStrings, updateUiStrings } from "@/lib/admin/fns/ui-strings";
+import type { listUiStrings } from "@/lib/admin/fns/ui-strings";
 
 type UiStringRow = Awaited<ReturnType<typeof listUiStrings>>[number];
 
@@ -43,18 +43,21 @@ function groupLabel(key: string): string {
  * trusting anything the form could produce). Only value/sort_order are real
  * form state.
  */
-const stringsFormSchema = z.object({
-  strings: z.array(
-    z.object({
-      value: localizedSchema,
-      sort_order: z.number().int("排序必須是整數"),
-    }),
-  ),
-});
-type StringsFormValues = z.infer<typeof stringsFormSchema>;
+function buildStringsFormSchema() {
+  return z.object({
+    strings: z.array(
+      z.object({
+        value: localizedSchema,
+        sort_order: z.number().int("排序必須是整數"),
+      }),
+    ),
+  });
+}
+type StringsFormValues = z.infer<ReturnType<typeof buildStringsFormSchema>>;
 
 export const Route = createFileRoute("/admin/_shell/strings")({
   loader: async () => {
+    const { listUiStrings } = await import("@/lib/admin/fns/ui-strings");
     const uiStrings = await listUiStrings();
     return { uiStrings };
   },
@@ -65,6 +68,7 @@ export const Route = createFileRoute("/admin/_shell/strings")({
 });
 
 function AdminStringsPage() {
+  const stringsFormSchema = useMemo(buildStringsFormSchema, []);
   const { uiStrings } = Route.useLoaderData();
   const router = useRouter();
 
@@ -100,6 +104,7 @@ function AdminStringsPage() {
         value: values.strings[index].value,
         sort_order: values.strings[index].sort_order,
       }));
+      const { updateUiStrings } = await import("@/lib/admin/fns/ui-strings");
       await updateUiStrings({ data: payload });
       toast.success("已儲存介面文字");
       await router.invalidate();

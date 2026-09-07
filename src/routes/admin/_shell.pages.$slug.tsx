@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -50,16 +50,7 @@ import {
   type PageMetaFormValues,
   type PageListItemFormValues,
 } from "@/lib/admin/schemas";
-import {
-  getPageBySlug,
-  listPageBlocks,
-  listPageListItems,
-  updatePageMeta,
-  updatePageBlocks,
-  upsertPageListItem,
-  removePageListItem,
-  reorderPageListItems,
-} from "@/lib/admin/fns/pages";
+import type { getPageBySlug, listPageBlocks, listPageListItems } from "@/lib/admin/fns/pages";
 import { storefront } from "@/lib/images";
 import type { Localized } from "@/i18n/types";
 
@@ -110,6 +101,8 @@ const optionalLocalizedFormSchema = z
 
 export const Route = createFileRoute("/admin/_shell/pages/$slug")({
   loader: async ({ params }) => {
+    const { getPageBySlug, listPageBlocks, listPageListItems } =
+      await import("@/lib/admin/fns/pages");
     const [page, blocks, listItems] = await Promise.all([
       getPageBySlug({ data: { slug: params.slug } }),
       listPageBlocks({ data: { page_slug: params.slug } }),
@@ -155,19 +148,21 @@ function AdminPageDetailPage() {
  * section 1 — page meta (pages 表)
  * ------------------------------------------------------------------ */
 
-const pageMetaFormSchema = z.object({
-  slug: z.string(),
-  meta_title: localizedSchema,
-  meta_description: localizedSchema,
-  og_title: optionalLocalizedFormSchema,
-  og_description: optionalLocalizedFormSchema,
-  og_image_key: z.string().nullable(),
-  eyebrow_prefix: z.string(),
-  eyebrow_suffix: optionalLocalizedFormSchema,
-  header_title: optionalLocalizedFormSchema,
-  header_intro: optionalLocalizedFormSchema,
-});
-type PageMetaFormShape = z.infer<typeof pageMetaFormSchema>;
+function buildPageMetaFormSchema() {
+  return z.object({
+    slug: z.string(),
+    meta_title: localizedSchema,
+    meta_description: localizedSchema,
+    og_title: optionalLocalizedFormSchema,
+    og_description: optionalLocalizedFormSchema,
+    og_image_key: z.string().nullable(),
+    eyebrow_prefix: z.string(),
+    eyebrow_suffix: optionalLocalizedFormSchema,
+    header_title: optionalLocalizedFormSchema,
+    header_intro: optionalLocalizedFormSchema,
+  });
+}
+type PageMetaFormShape = z.infer<ReturnType<typeof buildPageMetaFormSchema>>;
 
 function toMetaFormValues(row: PageRow): PageMetaFormShape {
   return {
@@ -185,6 +180,7 @@ function toMetaFormValues(row: PageRow): PageMetaFormShape {
 }
 
 function PageMetaSection({ page, onSaved }: { page: PageRow; onSaved: (row: PageRow) => void }) {
+  const pageMetaFormSchema = useMemo(buildPageMetaFormSchema, []);
   const [submitting, setSubmitting] = useState(false);
   const form = useForm<PageMetaFormShape>({
     resolver: zodResolver(pageMetaFormSchema),
@@ -206,6 +202,7 @@ function PageMetaSection({ page, onSaved }: { page: PageRow; onSaved: (row: Page
         header_title: emptyToNull(values.header_title),
         header_intro: emptyToNull(values.header_intro),
       };
+      const { updatePageMeta } = await import("@/lib/admin/fns/pages");
       const updated = await updatePageMeta({ data: payload });
       onSaved(updated);
       toast.success("已儲存頁面 Meta");
@@ -281,8 +278,10 @@ function PageMetaSection({ page, onSaved }: { page: PageRow; onSaved: (row: Page
  * section 2 — 文案區塊 (page_blocks 表)
  * ------------------------------------------------------------------ */
 
-const blocksFormSchema = z.object({ blocks: z.array(pageBlockSchema) });
-type BlocksFormShape = z.infer<typeof blocksFormSchema>;
+function buildBlocksFormSchema() {
+  return z.object({ blocks: z.array(pageBlockSchema) });
+}
+type BlocksFormShape = z.infer<ReturnType<typeof buildBlocksFormSchema>>;
 
 type BlockGroup = { prefix: string | null; items: { block: PageBlockRow; index: number }[] };
 
@@ -329,6 +328,7 @@ function PageBlocksSection({
   blocks: PageBlockRow[];
   onSaved: (rows: PageBlockRow[]) => void;
 }) {
+  const blocksFormSchema = useMemo(buildBlocksFormSchema, []);
   const [submitting, setSubmitting] = useState(false);
   const form = useForm<BlocksFormShape>({
     resolver: zodResolver(blocksFormSchema),
@@ -342,6 +342,7 @@ function PageBlocksSection({
   async function onSubmit(values: BlocksFormShape) {
     setSubmitting(true);
     try {
+      const { updatePageBlocks } = await import("@/lib/admin/fns/pages");
       const updated = await updatePageBlocks({
         data: { page_slug: pageSlug, blocks: values.blocks },
       });
@@ -404,16 +405,18 @@ function PageBlocksSection({
  * section 3 — 清單 (page_list_items 表)
  * ------------------------------------------------------------------ */
 
-const listItemFormSchema = z.object({
-  id: z.number().int().optional(),
-  page_slug: z.string(),
-  list_key: z.string(),
-  label: localizedSchema,
-  note: optionalLocalizedFormSchema,
-  image_key: z.string().nullable(),
-  sort_order: z.number().int(),
-});
-type ListItemFormShape = z.infer<typeof listItemFormSchema>;
+function buildListItemFormSchema() {
+  return z.object({
+    id: z.number().int().optional(),
+    page_slug: z.string(),
+    list_key: z.string(),
+    label: localizedSchema,
+    note: optionalLocalizedFormSchema,
+    image_key: z.string().nullable(),
+    sort_order: z.number().int(),
+  });
+}
+type ListItemFormShape = z.infer<ReturnType<typeof buildListItemFormSchema>>;
 
 type ListItemGroup = { listKey: string; rows: PageListItemRow[] };
 
@@ -456,6 +459,7 @@ function PageListItemsSection({
   const groups = groupListItems(items);
 
   async function refresh() {
+    const { listPageListItems } = await import("@/lib/admin/fns/pages");
     const fresh = await listPageListItems({ data: { page_slug: pageSlug } });
     setItems(fresh);
   }
@@ -486,6 +490,7 @@ function PageListItemsSection({
         image_key: values.image_key,
         sort_order: values.sort_order,
       };
+      const { upsertPageListItem } = await import("@/lib/admin/fns/pages");
       await upsertPageListItem({ data: payload });
       toast.success(editing ? "已更新項目" : "已新增項目");
       setDialogOpen(false);
@@ -501,6 +506,7 @@ function PageListItemsSection({
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removePageListItem } = await import("@/lib/admin/fns/pages");
       await removePageListItem({ data: { id: deleteTarget.id } });
       toast.success("已刪除項目");
       setDeleteTarget(null);
@@ -536,6 +542,7 @@ function PageListItemsSection({
 
     setReorderingId(moved.id);
     try {
+      const { reorderPageListItems } = await import("@/lib/admin/fns/pages");
       await reorderPageListItems({
         data: { page_slug: pageSlug, list_key: listKey, ids: reordered.map((r) => r.id) },
       });
@@ -720,6 +727,7 @@ type ListItemFormProps = {
 };
 
 function ListItemForm({ defaultValues, onSubmit, submitting, submitLabel }: ListItemFormProps) {
+  const listItemFormSchema = useMemo(buildListItemFormSchema, []);
   const form = useForm<ListItemFormShape>({
     resolver: zodResolver(listItemFormSchema),
     defaultValues,

@@ -22,9 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { listEventProducts, listEvents, removeEvent } from "@/lib/admin/fns/events";
-import { listEventCategories } from "@/lib/admin/fns/event-categories";
-import { listArtistOptions } from "@/lib/admin/fns/artists";
+import type { listEvents } from "@/lib/admin/fns/events";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type EventRow = Awaited<ReturnType<typeof listEvents>>[number];
@@ -49,6 +47,9 @@ type EventRow = Awaited<ReturnType<typeof listEvents>>[number];
  */
 export const Route = createFileRoute("/admin/_shell/events")({
   loader: async () => {
+    const { listEvents, listEventProducts } = await import("@/lib/admin/fns/events");
+    const { listEventCategories } = await import("@/lib/admin/fns/event-categories");
+    const { listArtistOptions } = await import("@/lib/admin/fns/artists");
     const [events, categories, artists, products] = await Promise.all([
       listEvents(),
       listEventCategories(),
@@ -88,6 +89,7 @@ function AdminEventsPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeEvent } = await import("@/lib/admin/fns/events");
       await removeEvent({ data: { id: deleteTarget.id } });
       toast.success("已刪除活動");
       setDeleteTarget(null);

@@ -112,16 +112,10 @@ import {
   optionalLocalizedLinesFormSchema,
   type EventWithProductFormValues,
 } from "@/lib/admin/schemas";
-import {
-  getEventById,
-  listEventProducts,
-  listEvents,
-  listSessionsForEvent,
-  upsertEventWithProduct,
-} from "@/lib/admin/fns/events";
-import { listEventBlocks } from "@/lib/admin/fns/event-blocks";
-import { listEventCategories } from "@/lib/admin/fns/event-categories";
-import { listArtistOptions } from "@/lib/admin/fns/artists";
+import type { getEventById, listEventProducts, listSessionsForEvent } from "@/lib/admin/fns/events";
+import type { listEventBlocks } from "@/lib/admin/fns/event-blocks";
+import type { listEventCategories } from "@/lib/admin/fns/event-categories";
+import type { listArtistOptions } from "@/lib/admin/fns/artists";
 import type { Localized } from "@/i18n/types";
 
 type EventRow = NonNullable<Awaited<ReturnType<typeof getEventById>>>;
@@ -225,17 +219,19 @@ const REGISTRATION_TYPE_LABEL: Record<"external" | "internal", string> = {
  * linesToList() 換過去（見 handleValid）。這一對是明著配對的兩支 schema，理由寫在
  * src/lib/admin/schemas.ts 的「可以整組留空的三語清單」那一段。
  */
-const assemblerFormSchema = eventSchema.extend({
-  product: eventProductSchema.nullable().optional(),
-  highlights: optionalLocalizedLinesFormSchema,
-  suitable_for: optionalLocalizedLinesFormSchema,
-  not_suitable_for: optionalLocalizedLinesFormSchema,
-  takeaways: optionalLocalizedLinesFormSchema,
-  outline: optionalLocalizedLinesFormSchema,
-  includes: optionalLocalizedLinesFormSchema,
-  notes: optionalLocalizedLinesFormSchema,
-});
-type AssemblerFormShape = z.infer<typeof assemblerFormSchema>;
+function buildAssemblerFormSchema() {
+  return eventSchema.extend({
+    product: eventProductSchema.nullable().optional(),
+    highlights: optionalLocalizedLinesFormSchema,
+    suitable_for: optionalLocalizedLinesFormSchema,
+    not_suitable_for: optionalLocalizedLinesFormSchema,
+    takeaways: optionalLocalizedLinesFormSchema,
+    outline: optionalLocalizedLinesFormSchema,
+    includes: optionalLocalizedLinesFormSchema,
+    notes: optionalLocalizedLinesFormSchema,
+  });
+}
+type AssemblerFormShape = z.infer<ReturnType<typeof buildAssemblerFormSchema>>;
 
 /**
  * 送出去的那七欄（三個 string[]，不是三個字串）。
@@ -348,6 +344,11 @@ function toFormValues(
 export const Route = createFileRoute("/admin/_shell/events/$id")({
   loader: async ({ params }) => {
     const isNew = params.id === NEW_EVENT_ID;
+    const { getEventById, listEventProducts, listEvents, listSessionsForEvent } =
+      await import("@/lib/admin/fns/events");
+    const { listEventCategories } = await import("@/lib/admin/fns/event-categories");
+    const { listArtistOptions } = await import("@/lib/admin/fns/artists");
+    const { listEventBlocks } = await import("@/lib/admin/fns/event-blocks");
     const [event, categories, artists, products, sessions, events, blocks] = await Promise.all([
       isNew ? Promise.resolve(null) : getEventById({ data: { id: params.id } }),
       listEventCategories(),
@@ -443,6 +444,7 @@ function useBlockerWithPrompt(shouldBlock: () => boolean) {
  * ------------------------------------------------------------------ */
 
 function AdminEventAssemblerPage() {
+  const assemblerFormSchema = useMemo(buildAssemblerFormSchema, []);
   const {
     event,
     categories,
@@ -571,6 +573,7 @@ function AdminEventAssemblerPage() {
          固定欄位與七個清單一起進 admin_upsert_event_with_session()，所以不會出現
          「前半段寫進去了、後半段沒有」。也不會在這裡自己組 products 的 payload ——
          那五個投影欄位（標題／摘要／說明／代稱／圖片）的規則只住在那支 SQL 裡。 */
+      const { upsertEventWithProduct } = await import("@/lib/admin/fns/events");
       const result = await upsertEventWithProduct({
         data: { ...fixed, ...lists, product: sellEnabled ? (productValues ?? null) : null },
       });

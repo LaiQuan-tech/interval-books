@@ -52,7 +52,7 @@ import {
 } from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { journeySchema, type JourneyFormValues } from "@/lib/admin/schemas";
-import { listJourneys, removeJourney, upsertJourney } from "@/lib/admin/fns/journeys";
+import type { listJourneys } from "@/lib/admin/fns/journeys";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type JourneyRow = Awaited<ReturnType<typeof listJourneys>>[number];
@@ -66,6 +66,7 @@ const REGISTRATION_TYPE_LABEL: Record<JourneyRow["registration_type"], string> =
 
 export const Route = createFileRoute("/admin/_shell/journeys")({
   loader: async () => {
+    const { listJourneys } = await import("@/lib/admin/fns/journeys");
     const journeys = await listJourneys();
     return { journeys };
   },
@@ -117,6 +118,7 @@ function AdminJourneysPage() {
   async function handleSubmit(values: JourneyFormValues) {
     setSubmitting(true);
     try {
+      const { upsertJourney } = await import("@/lib/admin/fns/journeys");
       await upsertJourney({ data: editing ? { ...values, id: editing.id } : values });
       toast.success(editing ? "已更新策旅" : "已新增策旅");
       setDialogOpen(false);
@@ -132,6 +134,7 @@ function AdminJourneysPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeJourney } = await import("@/lib/admin/fns/journeys");
       await removeJourney({ data: { id: deleteTarget.id } });
       toast.success("已刪除策旅");
       setDeleteTarget(null);

@@ -51,18 +51,8 @@ import {
 } from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { eventSessionSchema, type EventSessionFormValues } from "@/lib/admin/schemas";
-import {
-  listBookableProducts,
-  listEventSessions,
-  removeEventSession,
-  upsertEventSession,
-} from "@/lib/admin/fns/event-sessions";
-import {
-  countRegistrationsBySession,
-  deleteAdminRegistration,
-  exportSessionRoster,
-  listSessionRoster,
-} from "@/lib/admin/fns/event-registrations";
+import type { listBookableProducts, listEventSessions } from "@/lib/admin/fns/event-sessions";
+import type { listSessionRoster } from "@/lib/admin/fns/event-registrations";
 import { RegistrationRevealDialog } from "@/components/admin/RegistrationRevealDialog";
 
 type SessionRow = Awaited<ReturnType<typeof listEventSessions>>[number];
@@ -132,6 +122,9 @@ export const Route = createFileRoute("/admin/_shell/registrations")({
    * 的前置判斷，全是書的購物車一次都不會碰到 event_sessions。
    */
   loader: async () => {
+    const { listEventSessions, listBookableProducts } =
+      await import("@/lib/admin/fns/event-sessions");
+    const { countRegistrationsBySession } = await import("@/lib/admin/fns/event-registrations");
     const empty = {
       sessions: [] as Awaited<ReturnType<typeof listEventSessions>>,
       products: [] as Awaited<ReturnType<typeof listBookableProducts>>,
@@ -272,6 +265,7 @@ function AdminRegistrationsPage() {
     setRoster(null);
     setRosterLoading(true);
     try {
+      const { listSessionRoster } = await import("@/lib/admin/fns/event-registrations");
       setRoster(await listSessionRoster({ data: { sessionId: row.id } }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "名單讀取失敗");
@@ -296,6 +290,7 @@ function AdminRegistrationsPage() {
   async function handleExport(row: SessionRow) {
     setExporting(true);
     try {
+      const { exportSessionRoster } = await import("@/lib/admin/fns/event-registrations");
       const { filename, csv, count, log_id } = await exportSessionRoster({
         data: { sessionId: row.id },
       });
@@ -330,6 +325,7 @@ function AdminRegistrationsPage() {
     if (!removeTarget) return;
     setRemoving(true);
     try {
+      const { deleteAdminRegistration } = await import("@/lib/admin/fns/event-registrations");
       const result = await deleteAdminRegistration({
         data: { registrationId: removeTarget.registration_id },
       });
@@ -354,6 +350,7 @@ function AdminRegistrationsPage() {
   async function handleSubmit(values: EventSessionFormValues) {
     setSubmitting(true);
     try {
+      const { upsertEventSession } = await import("@/lib/admin/fns/event-sessions");
       await upsertEventSession({
         data: {
           ...values,
@@ -376,6 +373,7 @@ function AdminRegistrationsPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeEventSession } = await import("@/lib/admin/fns/event-sessions");
       await removeEventSession({ data: { id: deleteTarget.id } });
       toast.success("已刪除場次");
       setDeleteTarget(null);

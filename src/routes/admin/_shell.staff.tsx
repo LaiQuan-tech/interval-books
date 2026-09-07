@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -57,13 +57,7 @@ import {
   createStaffAccountSchema,
   type CreateStaffAccountValues,
 } from "@/lib/admin/schemas";
-import {
-  createStaffAccount,
-  listStaffAccounts,
-  removeStaffAccess,
-  setStaffPermissions,
-  updateStaffRole,
-} from "@/lib/admin/fns/staff-accounts";
+import type { listStaffAccounts } from "@/lib/admin/fns/staff-accounts";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
 type StaffAccountRow = Awaited<ReturnType<typeof listStaffAccounts>>[number];
@@ -81,6 +75,7 @@ type PermissionValue = (typeof STAFF_PERMISSIONS)[number];
  */
 export const Route = createFileRoute("/admin/_shell/staff")({
   loader: async () => {
+    const { listStaffAccounts } = await import("@/lib/admin/fns/staff-accounts");
     const accounts = await listStaffAccounts();
     return { accounts };
   },
@@ -142,6 +137,7 @@ function AdminStaffPage() {
     if (!removeTarget) return;
     setRemoving(true);
     try {
+      const { removeStaffAccess } = await import("@/lib/admin/fns/staff-accounts");
       await removeStaffAccess({ data: { userId: removeTarget.id } });
       toast.success(`已移除 ${removeTarget.email ?? removeTarget.id} 的後台身分`);
       setRemoveTarget(null);
@@ -319,6 +315,7 @@ function CreateAccountDialog({
   async function handleSubmit(values: CreateStaffAccountValues) {
     setSubmitting(true);
     try {
+      const { createStaffAccount } = await import("@/lib/admin/fns/staff-accounts");
       await createStaffAccount({ data: values });
       toast.success(`已建立 ${values.email}，請把密碼交給對方——這一頁不會寄邀請信`);
       form.reset({ email: "", password: "", role: "staff" });
@@ -421,12 +418,14 @@ function CreateAccountDialog({
 // 角色不是 staff 時完全不呼叫 setStaffPermissions：既有的 staff_permissions
 // 列原樣保留，不會被清空——見 src/server/repos/staff-accounts.ts 的說明。
 
-const editAccountFormSchema = z.object({
-  role: z.enum(CREATABLE_BACKOFFICE_ROLES, { errorMap: () => ({ message: "請選擇角色" }) }),
-  permissions: z.array(z.enum(STAFF_PERMISSIONS)),
-});
+function buildEditAccountFormSchema() {
+  return z.object({
+    role: z.enum(CREATABLE_BACKOFFICE_ROLES, { errorMap: () => ({ message: "請選擇角色" }) }),
+    permissions: z.array(z.enum(STAFF_PERMISSIONS)),
+  });
+}
 
-type EditAccountFormValues = z.infer<typeof editAccountFormSchema>;
+type EditAccountFormValues = z.infer<ReturnType<typeof buildEditAccountFormSchema>>;
 
 function EditAccountDialog({
   account,
@@ -437,6 +436,7 @@ function EditAccountDialog({
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
+  const editAccountFormSchema = useMemo(buildEditAccountFormSchema, []);
   const [submitting, setSubmitting] = useState(false);
   const form = useForm<EditAccountFormValues>({
     resolver: zodResolver(editAccountFormSchema),
@@ -452,6 +452,8 @@ function EditAccountDialog({
     if (!account) return;
     setSubmitting(true);
     try {
+      const { updateStaffRole, setStaffPermissions } =
+        await import("@/lib/admin/fns/staff-accounts");
       if (values.role !== account.role) {
         await updateStaffRole({ data: { userId: account.id, role: values.role } });
       }

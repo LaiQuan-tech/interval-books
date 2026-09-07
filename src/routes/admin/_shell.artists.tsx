@@ -46,12 +46,7 @@ import {
 } from "@/components/ui/form";
 import { ImageField } from "@/components/admin/ImageField";
 import { artistSchema, type ArtistFormValues } from "@/lib/admin/schemas";
-import {
-  countEventsBySpeaker,
-  listArtists,
-  removeArtist,
-  upsertArtist,
-} from "@/lib/admin/fns/artists";
+import type { listArtists } from "@/lib/admin/fns/artists";
 import { eventReading } from "@/lib/images";
 import { formatUpdatedAt } from "@/lib/admin/format";
 
@@ -107,6 +102,7 @@ type ArtistRow = Awaited<ReturnType<typeof listArtists>>[number];
  */
 export const Route = createFileRoute("/admin/_shell/artists")({
   loader: async () => {
+    const { listArtists, countEventsBySpeaker } = await import("@/lib/admin/fns/artists");
     const [artists, eventCounts] = await Promise.all([listArtists(), countEventsBySpeaker()]);
     return { artists, eventCounts };
   },
@@ -158,6 +154,7 @@ function AdminArtistsPage() {
   async function handleSubmit(values: ArtistFormValues) {
     setSubmitting(true);
     try {
+      const { upsertArtist } = await import("@/lib/admin/fns/artists");
       await upsertArtist({ data: editing ? { ...values, id: editing.id } : values });
       toast.success(editing ? "已更新講者" : "已新增講者");
       setDialogOpen(false);
@@ -175,6 +172,7 @@ function AdminArtistsPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { removeArtist } = await import("@/lib/admin/fns/artists");
       await removeArtist({ data: { id: deleteTarget.id } });
       toast.success("已刪除講者");
       setDeleteTarget(null);
