@@ -714,6 +714,17 @@ console.log("\n[12] 未設定時 fail-safe");
 // 那一段與 amegoTransport()。
 console.log("\n[13] 中繼設定：AMEGO_RELAY_URL + AMEGO_RELAY_SECRET");
 {
+  // 🔴 這一條釘的是**跨系統契約**，不是這個 repo 內部的一致性。
+  //
+  //    這一節其餘的斷言都是拿 AMEGO_RELAY_SECRET_HEADER 這個常數去比對自己，所以
+  //    常數改成什麼都會通過——真正的另一端是 Railway 上那支中繼，它讀的是
+  //    `req.headers["x-relay-secret"]`（寫死在它的 server.js 裡，沒有做正規化）。
+  //
+  //    名字對不上的症狀：中繼回 401 → 發票開不出來 → 錯誤訊息跟原本的 IP 白名單問題
+  //    長得一模一樣，非常難分辨。所以把字面值釘在這裡：**要改這個字串，得先去改中繼
+  //    並重新部署，兩邊一起動。**
+  check("🔴 中繼密鑰 header 的字面值與 Railway 中繼一致", AMEGO_RELAY_SECRET_HEADER, "x-relay-secret");
+
   const RELAY_URL = "https://amego-relay-production.up.railway.app";
   const RELAY_SECRET = "test-relay-secret-do-not-print";
 

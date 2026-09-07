@@ -174,8 +174,15 @@ export function amegoIsTestEnv(): boolean {
 // 兩邊都要走同一條路徑，否則校時失敗（GET /json/time 一樣會被同一道 IP 白名單
 // 擋下）會讓中繼在時鐘漂移那一刻形同虛設。
 
-/** 帶密鑰用的 header 名稱。中繼那一側要認得同一個名字，才會放行。 */
-export const AMEGO_RELAY_SECRET_HEADER = "X-Amego-Relay-Secret";
+/**
+ * 帶密鑰用的 header 名稱。
+ *
+ * 🔴 這個字串**必須**與 Railway 上那支中繼讀的名字逐字相同——它讀的是
+ *    `req.headers["x-relay-secret"]`（見中繼的 server.js，那一行沒有做大小寫以外的
+ *    正規化）。名字對不上的症狀是中繼回 401，而畫面上看起來就只是「發票又開不出來」，
+ *    跟原本的 IP 問題長得一模一樣，很難分辨。改這個字串之前先去確認中繼那一側。
+ */
+export const AMEGO_RELAY_SECRET_HEADER = "x-relay-secret";
 
 /**
  * 中繼服務網址（結尾沒有斜線）。沒設、格式不對、非 https、或主機從外部連不到
