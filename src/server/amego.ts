@@ -1,12 +1,16 @@
 /**
  * 光貿 Amego 電子發票 —— 簽章、金額計算、開立／作廢／查詢。
  *
- * ── 這個檔案為什麼不 import 任何專案模組 ────────────────────────────────────
- * 與 src/server/payuni.ts 同一個理由：只依賴 node:crypto，scripts/amego-selftest.mjs
- * 才能不經過 bundler、不經過 tsconfig paths，直接 import「產線上真正跑的那一份」
- * 用測試向量驗證。驗一份複製品等於沒驗。保護改由檔案位置提供：vite 設定把
- * `**\/server\/**` 列入 client importProtection（behavior: "error"），任何 client
- * 端模組 import 到這裡都會直接讓 build 失敗。
+ * ── 這個檔案為什麼幾乎不 import 任何專案模組 ──────────────────────────────
+ * 與 src/server/payuni.ts 同一個理由：scripts/amego-selftest.mjs 要能不經過
+ * bundler、不經過 tsconfig paths，直接 import「產線上真正跑的那一份」用測試向量
+ * 驗證。驗一份複製品等於沒驗。真正不可以出現的是 `@/…` 這種要 tsconfig paths
+ * 才解析得出來的別名；相對路徑 + 明確 `.ts` 副檔名的 import，Node 的原生型別
+ * 剝離照樣讀得動 —— 所以與 src/server/blackcat.ts 同一個理由、同一種做法：
+ * 下面從零相依的 `./public-url.ts` 借了 isPubliclyReachableHost()，用來驗
+ * AMEGO_RELAY_URL（見檔尾「中繼」那一段），沒有第二個專案模組被拉進來。
+ * 保護改由檔案位置提供：vite 設定把 `**\/server\/**` 列入 client importProtection
+ * （behavior: "error"），任何 client 端模組 import 到這裡都會直接讓 build 失敗。
  *
  * ── 通訊協定（已用測試憑證實測，非文件推測）─────────────────────────────────
  * base `https://invoice-api.amego.tw`，**測試與正式同一個網址**，靠統編＋App Key 區分。
@@ -47,8 +51,29 @@
  * 收到 code 15 才呼叫 GET /json/time 校時、記住 offset、用校正後的時間重送一次。
  * offset 存在模組變數裡，同一個 instance 之後的呼叫都自動帶上，所以漂移只會讓
  * 「第一張」發票多花一次往返，不會讓任何一張開不出來。詳見 amegoRequest()。
+ *
+ * ── 中繼（可選）：AMEGO_RELAY_URL + AMEGO_RELAY_SECRET ─────────────────────
+ * Amego 的發票 API 有來源 IP 白名單，而 Vercel 的出口 IP 是浮動的 —— 這是
+ * 2026-09 四筆已收款訂單開不出發票（code=14 IP 未被允許，每筆重試 5 次都不同
+ * IP）的成因。修法是一個部署在 Railway、有固定出口 IP 的中繼服務；光貿已把那些
+ * IP 加進白名單，缺的是這一段接線。
+ *
+ * 兩個環境變數**都設好**（AMEGO_RELAY_URL 通過 https ／ 可從外部連到的檢查，
+ * AMEGO_RELAY_SECRET 非空）才會改走中繼；缺一律直連，一個位元組都不變 ——
+ * 見 amegoTransport()，syncAmegoClock() 與 amegoRequest() 都只透過它決定
+ * 目的地，沒有第二個地方在做這個判斷。
+ *
+ * ⚠️ 中繼只換目的地 host、多帶一個 header，body（含 sign）逐位元組相同。
+ *    sign 還是本機用 AMEGO_APP_KEY 算的（amegoSign()）——AppKey **不會**送給
+ *    中繼、也不會出現在任何送給中繼的欄位或 header 裡；中繼只是把同一包
+ *    x-www-form-urlencoded 封包轉送到 invoice-api.amego.tw，不參與、也不需要
+ *    參與簽章。
+ * ⚠️ AMEGO_RELAY_SECRET 只能出現在送給中繼的 header 裡，絕不可以流進任何
+ *    console.* —— 比照 src/server/email.ts 對收件地址的規矩，靜態測試在
+ *    scripts/amego-selftest.mjs。
  */
 import { createHash } from "node:crypto";
+import { isPubliclyReachableHost } from "./public-url.ts";
 
 /** 測試與正式同一個網址；環境靠統編＋App Key 區分。 */
 export const AMEGO_DEFAULT_BASE = "https://invoice-api.amego.tw";
@@ -138,6 +163,86 @@ export function amegoConfigured(): boolean {
 /** 是不是還在用文件公開的測試統編。上線前的檢查點，也讓 log 看得出環境。 */
 export function amegoIsTestEnv(): boolean {
   return amegoBan() === AMEGO_TEST_BAN;
+}
+
+// -----------------------------------------------------------------------------
+// 中繼（可選）
+// -----------------------------------------------------------------------------
+//
+// 詳見檔頭「中繼（可選）」那一段。這裡只放設定的讀取與驗證；實際切換發生在
+// amegoTransport()，它是 syncAmegoClock() 與 amegoRequest() 唯一共用的入口——
+// 兩邊都要走同一條路徑，否則校時失敗（GET /json/time 一樣會被同一道 IP 白名單
+// 擋下）會讓中繼在時鐘漂移那一刻形同虛設。
+
+/** 帶密鑰用的 header 名稱。中繼那一側要認得同一個名字，才會放行。 */
+export const AMEGO_RELAY_SECRET_HEADER = "X-Amego-Relay-Secret";
+
+/**
+ * 中繼服務網址（結尾沒有斜線）。沒設、格式不對、非 https、或主機從外部連不到
+ * （localhost / 127.0.0.1 / *.local…），一律回 null。
+ *
+ * 呼叫端（amegoTransport()）把 null 當「沒設」處理，也就是走原本的直連——與
+ * public-url.ts 的 publicSiteUrl() 同一個 fail-safe 精神：寧可退回一個已知能動
+ * 的行為，也不要帶著一個連不到的網址去打，把「可以重試」的失敗變成「連中繼都
+ * 連不上」的第二個問題。
+ *
+ * 判準借 isPubliclyReachableHost()，但不能直接呼叫 publicSiteUrl() 本人——
+ * 那支讀的是 SITE_URL，這裡要驗的是另一個環境變數 AMEGO_RELAY_URL。
+ */
+export function amegoRelayUrl(): string | null {
+  const raw = (process.env.AMEGO_RELAY_URL ?? "").trim().replace(/\/+$/, "");
+  if (!raw) return null;
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    console.error(`[amego] AMEGO_RELAY_URL 不是合法網址，改走直連。原始值="${raw}"`);
+    return null;
+  }
+  if (url.protocol !== "https:" || !isPubliclyReachableHost(url.hostname)) {
+    console.error(
+      `[amego] AMEGO_RELAY_URL 必須是 https 且主機要能從外部連到，改走直連。原始值="${raw}"`,
+    );
+    return null;
+  }
+  return raw;
+}
+
+/**
+ * 中繼密鑰。
+ *
+ * ⚠️ 這支函式的回傳值只准流進 amegoTransport() 組出來的 header —— 不可以出現
+ *    在任何 console.* 呼叫裡（比照 email.ts 對收件地址的規矩）。
+ */
+export function amegoRelaySecret(): string {
+  return (process.env.AMEGO_RELAY_SECRET ?? "").trim();
+}
+
+/** 兩個環境變數都設好、且網址通過檢查，才算「開啟中繼」；缺一律直連。 */
+export function amegoRelayConfigured(): boolean {
+  return amegoRelayUrl() !== null && amegoRelaySecret().length > 0;
+}
+
+/**
+ * 這一次要打的目的地是直連還是中繼，以及要多帶哪些 header。
+ *
+ * syncAmegoClock() 與 amegoRequest() 都只透過這支函式決定「打去哪裡」——各自
+ * 呼叫一次（沒有跨函式共用一份），代價是設定沒到位時可能重複印一次上面那兩條
+ * console.error，換來的是兩支函式各自獨立，不必為了省一次 env 讀取而互相依賴。
+ *
+ * ⚠️ 不算 sign，也不碰 AppKey——呼叫端已經用 buildAmegoBody() 把 sign 算好帶在
+ *    body 裡了。中繼只是換目的地 host、多帶一個 header，body 逐位元組相同，
+ *    AppKey 永遠不會流到這支函式，中繼也就永遠拿不到它。
+ */
+export function amegoTransport(): { base: string; extraHeaders: Record<string, string> } {
+  const relayUrl = amegoRelayUrl();
+  const relaySecret = amegoRelaySecret();
+  if (relayUrl !== null && relaySecret.length > 0) {
+    console.info(`[amego] 兩個環境變數都設好，透過中繼呼叫: ${relayUrl}`);
+    return { base: relayUrl, extraHeaders: { [AMEGO_RELAY_SECRET_HEADER]: relaySecret } };
+  }
+  return { base: amegoBase(), extraHeaders: {} };
 }
 
 // -----------------------------------------------------------------------------
@@ -324,7 +429,12 @@ export function amegoNow(): number {
  * 回傳新的 offset（秒）；本機時間比伺服器慢時為正。
  */
 export async function syncAmegoClock(timeoutMs = 10_000): Promise<number> {
-  const res = await fetchWithTimeout(`${amegoBase()}/json/time`, { method: "GET" }, timeoutMs);
+  const { base, extraHeaders } = amegoTransport();
+  const res = await fetchWithTimeout(
+    `${base}/json/time`,
+    { method: "GET", headers: extraHeaders },
+    timeoutMs,
+  );
   const body = (await res.json()) as { timestamp?: number };
   if (typeof body.timestamp !== "number") {
     throw new Error(`[amego] /json/time 回應沒有 timestamp: ${JSON.stringify(body)}`);
@@ -371,16 +481,22 @@ export async function amegoRequest(
 
   // 只序列化一次：簽章與 body 必須是**同一個字串**，物件的鍵序沒有保證。
   const dataJson = JSON.stringify(data);
+  // 直連還是中繼，在這裡決定一次；下面 send() 每次重送（時鐘校正後）都用同一個
+  // 目的地，不會第一次直連、重送又變成中繼。
+  const transport = amegoTransport();
 
   const send = async (time: number): Promise<AmegoResult> => {
     let res: Response;
     try {
       res = await fetchWithTimeout(
-        `${amegoBase()}${path}`,
+        `${transport.base}${path}`,
         {
           method: "POST",
           // ⚠️ 絕不可用 application/json：伺服器解析不到欄位，會回 code 11。
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            ...transport.extraHeaders,
+          },
           body: buildAmegoBody({ ban, dataJson, time, appKey }),
         },
         timeoutMs,

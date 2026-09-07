@@ -17,6 +17,7 @@
 // 需求：Node >= 22.6（型別剝離）。
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -35,6 +36,9 @@ const MODULE_PATH = join(ROOT, "src/server/amego.ts");
 process.env.AMEGO_INVOICE_BAN = "12345678";
 process.env.AMEGO_APP_KEY = "sHeq7t8G1wiQvhAuIM27";
 delete process.env.AMEGO_API_BASE;
+// 中繼是這一期加的兩個新環境變數：預設不存在，起點跟「沒裝過中繼」的環境一樣。
+delete process.env.AMEGO_RELAY_URL;
+delete process.env.AMEGO_RELAY_SECRET;
 
 let mod;
 try {
@@ -52,6 +56,7 @@ const {
   AMEGO_CODE_NOT_FOUND,
   AMEGO_CODE_SIGN,
   AMEGO_CODE_TIME,
+  AMEGO_RELAY_SECRET_HEADER,
   ANONYMOUS_BUYER_ID,
   ANONYMOUS_BUYER_NAME,
   amegoBan,
@@ -59,8 +64,12 @@ const {
   amegoConfigured,
   amegoIsTestEnv,
   amegoNow,
+  amegoRelayConfigured,
+  amegoRelaySecret,
+  amegoRelayUrl,
   amegoRequest,
   amegoSign,
+  amegoTransport,
   buildAmegoBody,
   buildIssuePayload,
   computeInvoiceAmounts,
@@ -124,6 +133,70 @@ function installFetch() {
 }
 
 const TEST_KEY = "sHeq7t8G1wiQvhAuIM27";
+
+/**
+ * 暫時把幾個環境變數換成別的值、跑一段 fn()、再原樣換回來（就算 fn() 丟例外）。
+ * 用來測中繼那幾個新環境變數的各種組合，而不必在每個 case 手動存/還原一次。
+ * `undefined` 代表「這個變數要被刪掉」。
+ */
+function withEnv(vars, fn) {
+  const saved = {};
+  for (const k of Object.keys(vars)) saved[k] = process.env[k];
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  const restore = () => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  };
+
+  // ⚠️ fn() 可能是 async 函式：一個裸的 try { return fn(); } finally { restore() }
+  // 在 fn 是 async 時會在 fn 執行到第一個 await 就把 finally 跑掉（fn() 這時已經
+  // 回傳一個 pending 的 promise，try 區塊就算「結束」了）——env 會在 fn 真正做完
+  // 之前就被還原。這裡踩過一次：[14] 的中繼設定在 amegoRequest() 內部那個
+  // await fetchWithTimeout() 還沒 resolve 時就被還原掉，導致 code 15 重試路徑上
+  // 呼叫的 syncAmegoClock() 讀到的已經是還原後（沒有中繼）的環境變數。所以這裡
+  // 要看 fn() 的回傳值是不是 thenable，是的話等它真正 settle 了才 restore()。
+  let result;
+  try {
+    result = fn();
+  } catch (err) {
+    restore();
+    throw err;
+  }
+  if (result && typeof result.then === "function") {
+    return result.then(
+      (value) => {
+        restore();
+        return value;
+      },
+      (err) => {
+        restore();
+        throw err;
+      },
+    );
+  }
+  restore();
+  return result;
+}
+
+/** 攔下 fn() 執行期間某個 console.<method> 印了什麼，跑完照原樣還回去。 */
+function captureConsole(method, fn) {
+  const original = console[method];
+  const messages = [];
+  console[method] = (...args) => {
+    messages.push(args.map((a) => String(a)).join(" "));
+  };
+  try {
+    fn();
+  } finally {
+    console[method] = original;
+  }
+  return messages;
+}
 
 // ── 1. 設定 ───────────────────────────────────────────────────────────────
 console.log("\n[1] 設定");
@@ -632,6 +705,265 @@ console.log("\n[12] 未設定時 fail-safe");
   check("缺金鑰 → 不發出任何請求", calls.length, 0);
   check("理由說得清楚", r.msg, "amego_not_configured");
   process.env.AMEGO_APP_KEY = saved;
+}
+
+// ── 13. 中繼設定：AMEGO_RELAY_URL + AMEGO_RELAY_SECRET ────────────────────
+// Amego 的發票 API 有來源 IP 白名單、Vercel 出口 IP 浮動，是 2026-09 四筆訂單
+// 開不出發票（code=14）的成因。修法是一個固定出口 IP 的中繼（Railway）。這裡驗
+// 的是「兩個環境變數都設好才算開啟，缺一律當沒設」——不要半套，見檔頭「中繼」
+// 那一段與 amegoTransport()。
+console.log("\n[13] 中繼設定：AMEGO_RELAY_URL + AMEGO_RELAY_SECRET");
+{
+  const RELAY_URL = "https://amego-relay-production.up.railway.app";
+  const RELAY_SECRET = "test-relay-secret-do-not-print";
+
+  // (a) 兩個都沒設 → 與這一期之前完全相同：null / 空字串 / false / 直連 base
+  withEnv({ AMEGO_RELAY_URL: undefined, AMEGO_RELAY_SECRET: undefined }, () => {
+    check("🔴 兩個都沒設 → amegoRelayUrl() 為 null", amegoRelayUrl(), null);
+    check("兩個都沒設 → amegoRelaySecret() 為空字串", amegoRelaySecret(), "");
+    checkFalse("🔴 兩個都沒設 → amegoRelayConfigured() 為 false", amegoRelayConfigured());
+    check(
+      "🔴 兩個都沒設 → amegoTransport() 用原本的直連 base",
+      amegoTransport().base,
+      AMEGO_DEFAULT_BASE,
+    );
+    check(
+      "🔴 兩個都沒設 → amegoTransport() 沒有多帶任何 header",
+      Object.keys(amegoTransport().extraHeaders).length,
+      0,
+    );
+  });
+
+  // (b) 只設 URL → 不要半套，仍是「沒開啟」
+  withEnv({ AMEGO_RELAY_URL: RELAY_URL, AMEGO_RELAY_SECRET: undefined }, () => {
+    check("只設 URL → amegoRelayUrl() 讀得到", amegoRelayUrl(), RELAY_URL);
+    checkFalse(
+      "🔴 只設 URL → amegoRelayConfigured() 仍是 false（不要半套）",
+      amegoRelayConfigured(),
+    );
+    check("只設 URL → amegoTransport() 仍走直連 base", amegoTransport().base, AMEGO_DEFAULT_BASE);
+  });
+
+  // (c) 只設密鑰 → 同樣不要半套
+  withEnv({ AMEGO_RELAY_URL: undefined, AMEGO_RELAY_SECRET: RELAY_SECRET }, () => {
+    check("只設密鑰 → amegoRelaySecret() 讀得到", amegoRelaySecret(), RELAY_SECRET);
+    checkFalse(
+      "🔴 只設密鑰 → amegoRelayConfigured() 仍是 false（不要半套）",
+      amegoRelayConfigured(),
+    );
+    check("只設密鑰 → amegoTransport() 仍走直連 base", amegoTransport().base, AMEGO_DEFAULT_BASE);
+  });
+
+  // (d) 兩個都設 → 開啟中繼
+  withEnv({ AMEGO_RELAY_URL: RELAY_URL, AMEGO_RELAY_SECRET: RELAY_SECRET }, () => {
+    checkTrue("🔴 兩個都設 → amegoRelayConfigured() 為 true", amegoRelayConfigured());
+    const t = amegoTransport();
+    check("兩個都設 → amegoTransport().base 是中繼網址", t.base, RELAY_URL);
+    check(
+      "🔴 兩個都設 → extraHeaders 帶著密鑰",
+      t.extraHeaders[AMEGO_RELAY_SECRET_HEADER],
+      RELAY_SECRET,
+    );
+  });
+
+  // (e) AMEGO_RELAY_URL 是 http（非 https）→ 當作沒設、走直連，並留錯誤紀錄
+  withEnv(
+    {
+      AMEGO_RELAY_URL: "http://amego-relay-production.up.railway.app",
+      AMEGO_RELAY_SECRET: RELAY_SECRET,
+    },
+    () => {
+      let result;
+      const messages = captureConsole("error", () => {
+        result = amegoRelayUrl();
+      });
+      check("🔴 http（非 https）→ amegoRelayUrl() 為 null（當作沒設）", result, null);
+      checkFalse("http → amegoRelayConfigured() 為 false", amegoRelayConfigured());
+      checkTrue(
+        "🔴 http → 有留下錯誤紀錄，訊息點名 AMEGO_RELAY_URL",
+        messages.some((m) => m.includes("AMEGO_RELAY_URL")),
+      );
+      checkFalse(
+        "錯誤紀錄裡沒有密鑰（就算密鑰也設了）",
+        messages.some((m) => m.includes(RELAY_SECRET)),
+      );
+    },
+  );
+
+  // (f) AMEGO_RELAY_URL 指向連不到的主機 → 當作沒設、走直連，並留錯誤紀錄
+  for (const bad of [
+    "https://localhost:8443",
+    "https://127.0.0.1",
+    "https://foo.local",
+    "https://[::1]",
+  ]) {
+    withEnv({ AMEGO_RELAY_URL: bad, AMEGO_RELAY_SECRET: RELAY_SECRET }, () => {
+      let result;
+      const messages = captureConsole("error", () => {
+        result = amegoRelayUrl();
+      });
+      check(`🔴 連不到的主機（${bad}）→ amegoRelayUrl() 為 null`, result, null);
+      checkTrue(`連不到的主機（${bad}）→ 有留下錯誤紀錄`, messages.length > 0);
+    });
+  }
+
+  // (g) 網址整個不是合法 URL
+  withEnv({ AMEGO_RELAY_URL: "not a url", AMEGO_RELAY_SECRET: RELAY_SECRET }, () => {
+    let result;
+    const messages = captureConsole("error", () => {
+      result = amegoRelayUrl();
+    });
+    check("不合法網址 → amegoRelayUrl() 為 null", result, null);
+    checkTrue("不合法網址 → 有留下錯誤紀錄", messages.length > 0);
+  });
+
+  // (h) 尾端斜線會被去掉，與 amegoBase() 同一套規則
+  withEnv({ AMEGO_RELAY_URL: `${RELAY_URL}///`, AMEGO_RELAY_SECRET: RELAY_SECRET }, () => {
+    check("尾端斜線被去掉", amegoRelayUrl(), RELAY_URL);
+  });
+}
+
+// ── 14. 中繼：實際送出的請求 ───────────────────────────────────────────────
+// 只驗設定值還不夠——這一段驗的是「真的送出去的那個 fetch 呼叫」：目的地、
+// header、以及最重要的一條：sign 不受影響。
+console.log("\n[14] 中繼：實際送出的請求");
+{
+  const RELAY_URL = "https://amego-relay-production.up.railway.app";
+  const RELAY_SECRET = "test-relay-secret-do-not-print";
+
+  // (a) 兩個都設 → 打去中繼，帶密鑰 header，body 與 sign 不受影響
+  await withEnv({ AMEGO_RELAY_URL: RELAY_URL, AMEGO_RELAY_SECRET: RELAY_SECRET }, async () => {
+    installFetch();
+    script = [{ code: 0, msg: "" }];
+    await amegoRequest("/json/f0401", { OrderId: "IB-RELAY-1" });
+    const c = calls[0];
+    check("🔴 打去中繼網址（不是 Amego 本人）", c.url, `${RELAY_URL}/json/f0401`);
+    checkFalse("URL 不包含 invoice-api.amego.tw", c.url.includes("invoice-api.amego.tw"));
+    check("🔴 中繼密鑰 header 對得起來", c.headers[AMEGO_RELAY_SECRET_HEADER], RELAY_SECRET);
+    check(
+      "Content-Type 仍是 form-urlencoded（中繼只是換目的地）",
+      c.headers["Content-Type"],
+      "application/x-www-form-urlencoded",
+    );
+    check("body 的 data 沒有變", c.fields.data, '{"OrderId":"IB-RELAY-1"}');
+    checkTrue(
+      "🔴 sign 仍是用真正的 AppKey 算的，中繼沒有影響簽名",
+      c.fields.sign === amegoSign(c.fields.data, c.fields.time, TEST_KEY),
+    );
+  });
+
+  // (b) 兩個都沒設 → 打去 Amego 本人，直連請求與這一期之前逐位元組相同
+  installFetch();
+  script = [{ code: 0, msg: "" }];
+  await amegoRequest("/json/f0401", { OrderId: "IB-RELAY-2" });
+  {
+    const c = calls[0];
+    check("🔴 直連：打去 Amego 本人", c.url, "https://invoice-api.amego.tw/json/f0401");
+    checkFalse("🔴 直連：沒有中繼密鑰 header", AMEGO_RELAY_SECRET_HEADER in c.headers);
+    check(
+      "直連：Content-Type 仍是 form-urlencoded",
+      c.headers["Content-Type"],
+      "application/x-www-form-urlencoded",
+    );
+    checkTrue(
+      "直連：sign 仍然對得起來",
+      c.fields.sign === amegoSign(c.fields.data, c.fields.time, TEST_KEY),
+    );
+  }
+
+  // (c) 只設一個 → 仍是直連，不要半套
+  await withEnv({ AMEGO_RELAY_URL: RELAY_URL, AMEGO_RELAY_SECRET: undefined }, async () => {
+    installFetch();
+    script = [{ code: 0, msg: "" }];
+    await amegoRequest("/json/f0401", { OrderId: "IB-RELAY-3" });
+    check(
+      "🔴 只設 URL：仍打去 Amego 本人（不要半套）",
+      calls[0].url,
+      "https://invoice-api.amego.tw/json/f0401",
+    );
+    checkFalse("只設 URL：沒有中繼密鑰 header", AMEGO_RELAY_SECRET_HEADER in calls[0].headers);
+  });
+
+  // (d) GET /json/time 的校時也要走同一條路徑，否則中繼在時鐘漂移那一刻形同虛設
+  await withEnv({ AMEGO_RELAY_URL: RELAY_URL, AMEGO_RELAY_SECRET: RELAY_SECRET }, async () => {
+    installFetch();
+    resetAmegoClockOffset();
+    const serverNow = Math.floor(Date.now() / 1000) + 3600;
+    script = [
+      { code: 15, msg: "time(時間戳記)錯誤" },
+      () =>
+        new Response(JSON.stringify({ timestamp: serverNow }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      { code: 0, msg: "", invoice_number: "ZA-RELAY" },
+    ];
+    const r = await amegoRequest("/json/f0401", { OrderId: "IB-RELAY-4" });
+    checkTrue("校時流程在中繼開啟時仍然成功", r.ok);
+    check("🔴 校時也打去中繼", calls[1].url, `${RELAY_URL}/json/time`);
+    check("🔴 校時的請求也帶著中繼密鑰", calls[1].headers[AMEGO_RELAY_SECRET_HEADER], RELAY_SECRET);
+    check("重送發票的那一次也打去中繼", calls[2].url, `${RELAY_URL}/json/f0401`);
+    resetAmegoClockOffset();
+  });
+
+  // (e) 中繼網址格式錯誤（http）時，就算密鑰也設了，仍是直連
+  await withEnv(
+    {
+      AMEGO_RELAY_URL: "http://amego-relay-production.up.railway.app",
+      AMEGO_RELAY_SECRET: RELAY_SECRET,
+    },
+    async () => {
+      installFetch();
+      script = [{ code: 0, msg: "" }];
+      await amegoRequest("/json/f0401", { OrderId: "IB-RELAY-5" });
+      check(
+        "🔴 AMEGO_RELAY_URL 是 http → 當作沒設，仍打去 Amego 本人",
+        calls[0].url,
+        "https://invoice-api.amego.tw/json/f0401",
+      );
+    },
+  );
+}
+
+// ── 15. 密鑰不可以出現在任何 console.* 呼叫裡 ─────────────────────────────
+// 比照 src/server/email.ts 對收件地址的規矩（scripts/notify-selftest.mjs [17]）：
+// 靜態掃原始碼，抓 console.* 呼叫，確認碰不到中繼密鑰。密鑰比 email 更敏感——
+// email 允許印遮罩過的版本，密鑰連遮罩過的版本都不該印，所以規則更單純：
+// 「這個變數的名字，一次都不准出現在任何 console.* 呼叫裡」。
+console.log("\n[15] 密鑰不可以出現在任何 console.* 呼叫裡（比照 email.ts 的規矩）");
+{
+  const amegoSrc = readFileSync(MODULE_PATH, "utf8");
+  // 拿掉註解，避免文件裡提到 relaySecret／AMEGO_RELAY_SECRET 這幾個字讓斷言
+  // 失真（同 notify-selftest.mjs 的 stripTs()）。
+  const stripComments = (src) =>
+    src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1"))
+      .join("\n");
+  const code = stripComments(amegoSrc);
+
+  const logCalls = [...code.matchAll(/console\.\w+\([\s\S]{0,400}?\);/g)].map((m) => m[0]);
+  checkTrue("反空殼：amego.ts 裡確實有 console 呼叫", logCalls.length >= 3);
+
+  const leaksSecret = (call) => call.includes("relaySecret") || call.includes("AMEGO_RELAY_SECRET");
+  const offenders = logCalls.filter(leaksSecret);
+  check("🔴 沒有任何 console.* 呼叫碰得到中繼密鑰", offenders.length, 0);
+  if (offenders.length > 0) console.log(`      ${offenders[0].slice(0, 160)}`);
+
+  // 反面對照：偵測器餵一段確定違規的程式碼，必須抓得到（同 notify-selftest.mjs
+  // [18] 的作法）——證明上面那條「0 個」是真的掃過、不是偵測器本身壞掉。
+  for (const [label, sample, expectViolation] of [
+    ["直接印 relaySecret", "console.log(`secret=${relaySecret}`);", true],
+    ["印 process.env.AMEGO_RELAY_SECRET", "console.error(process.env.AMEGO_RELAY_SECRET);", true],
+    ["安全寫法：只印中繼網址", "console.info(`[amego] 透過中繼呼叫: ${relayUrl}`);", false],
+  ]) {
+    const sampleCalls = [...stripComments(sample).matchAll(/console\.\w+\([\s\S]{0,400}?\);/g)].map(
+      (m) => m[0],
+    );
+    const hit = sampleCalls.some(leaksSecret);
+    check(`偵測器對「${label}」的判斷`, hit, expectViolation);
+  }
 }
 
 // ── 結果 ──────────────────────────────────────────────────────────────────
