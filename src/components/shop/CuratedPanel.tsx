@@ -16,6 +16,11 @@ import { PanelIntro } from "./PublicationsPanel";
 /** 後備文案 —— 只有在 Supabase 讀不到 pages/'curated' 那一列時才會用到。 */
 const COPY = {
   title: { zh: "主理人的選品", en: "The Owner's Curated Window", ja: "店主の選品" },
+  themeEmpty: {
+    zh: "這個櫥窗正在整理中，很快會放上選件。",
+    en: "This window is being arranged — pieces will appear here shortly.",
+    ja: "こちらのウィンドウは準備中です。まもなく選品が並びます。",
+  },
   intro: {
     zh: "我們以「主題櫥窗」呈現選物，而非商品清單。每一件物，都是一段被留下來的時間。",
     en: "We arrange the selection as themed windows, not as a catalogue. Each piece holds a quiet stretch of time.",
@@ -55,19 +60,28 @@ export function CuratedPanel({
               </p>
             </div>
 
-            <div className="grid gap-px bg-border border border-border sm:grid-cols-2 lg:grid-cols-3">
-              {theme.items.map((item, idx) => (
-                <article key={idx} className="bg-background p-7 md:p-8 flex flex-col">
-                  <p className="text-[0.65rem] tracking-widest text-muted-foreground">
-                    {String(idx + 1).padStart(2, "0")}
-                  </p>
-                  <h4 className="font-serif text-xl mt-3 leading-snug">{t(item.name)}</h4>
-                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-                    {t(item.note)}
-                  </p>
-                </article>
-              ))}
-            </div>
+            {/* 一個還沒放品項的主題，在 `gap-px bg-border` 的細線格線下會變成一片
+                border 色的色塊（沒有卡片去蓋底色）。後台是先建主題、再加品項，
+                所以這個中間狀態是真的會被看到的。 */}
+            {theme.items.length === 0 ? (
+              <p className="border border-border p-7 text-sm leading-relaxed text-muted-foreground md:p-8">
+                {t(p.block("themeEmpty", COPY.themeEmpty))}
+              </p>
+            ) : (
+              <div className="grid gap-px bg-border border border-border sm:grid-cols-2 lg:grid-cols-3">
+                {theme.items.map((item, idx) => (
+                  <article key={idx} className="bg-background p-7 md:p-8 flex flex-col">
+                    <p className="text-[0.65rem] tracking-widest text-muted-foreground">
+                      {String(idx + 1).padStart(2, "0")}
+                    </p>
+                    <h4 className="font-serif text-xl mt-3 leading-snug">{t(item.name)}</h4>
+                    <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+                      {t(item.note)}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </section>

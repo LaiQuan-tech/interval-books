@@ -36,6 +36,18 @@ const PAGE = {
   },
 };
 
+/**
+ * 零筆結果的文案。collaborations 是資料庫來的，可以是空的。
+ *
+ * 沒有這個守衛的話，下面那個 `gap-px bg-border` 的細線格線會因為沒有卡片去蓋，
+ * 整片變成 border 色的色塊 —— 看起來是壞掉，不是「還沒有合作案例」。
+ */
+const EMPTY = {
+  zh: "目前還沒有公開的合作案例。歡迎來信聊聊你的想法。",
+  en: "No collaborations are listed yet. We would love to hear what you have in mind.",
+  ja: "公開中のコラボレーション事例はまだありません。お気軽にご相談ください。",
+};
+
 export const Route = createFileRoute("/curation")({
   loader: async () => {
     const [page, collaborations] = await Promise.all([
@@ -78,17 +90,25 @@ function Curation() {
         intro={t(p.intro(PAGE.intro))}
       />
 
-      <section className="container-editorial pb-24 grid gap-px bg-border border border-border md:grid-cols-2">
-        {collaborations.map((c, i) => (
-          <article key={c.id} className="bg-background p-8 md:p-10">
-            <p className="text-[0.65rem] tracking-widest text-muted-foreground">
-              {String(i + 1).padStart(2, "0")}
-            </p>
-            <h3 className="display mt-3 text-2xl">{t(c.title)}</h3>
-            <p className="mt-4 text-sm leading-relaxed text-foreground/75">{t(c.description)}</p>
-          </article>
-        ))}
-      </section>
+      {collaborations.length === 0 ? (
+        <section className="container-editorial pb-24">
+          <p className="border border-border p-8 text-sm leading-relaxed text-muted-foreground md:p-10">
+            {t(p.block("empty", EMPTY))}
+          </p>
+        </section>
+      ) : (
+        <section className="container-editorial pb-24 grid gap-px bg-border border border-border md:grid-cols-2">
+          {collaborations.map((c, i) => (
+            <article key={c.id} className="bg-background p-8 md:p-10">
+              <p className="text-[0.65rem] tracking-widest text-muted-foreground">
+                {String(i + 1).padStart(2, "0")}
+              </p>
+              <h3 className="display mt-3 text-2xl">{t(c.title)}</h3>
+              <p className="mt-4 text-sm leading-relaxed text-foreground/75">{t(c.description)}</p>
+            </article>
+          ))}
+        </section>
+      )}
 
       <section className="container-editorial pb-32">
         <div className="border-t border-border pt-16 max-w-2xl">

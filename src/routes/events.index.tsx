@@ -56,6 +56,36 @@ const PAST_BADGE = { zh: "已結束", en: "Ended", ja: "終了" };
  */
 const DETAIL = { zh: "活動詳情", en: "Event details", ja: "イベント詳細" };
 
+/**
+ * 零筆結果的文案。
+ *
+ * 🔴 為什麼非有不可：下面的卡片格線用 `gap-px bg-border` 做 1px 細線 —— 容器鋪
+ *    border 色，每張卡片再用 bg-background 蓋回來。list 是空陣列時沒有任何卡片
+ *    去蓋，於是整個容器連同 pb-32 的高度變成一大片灰色色塊。那看起來是壞掉，
+ *    不是「目前沒有活動」。
+ *
+ * 兩種空狀態分開寫，因為這一頁的兩個 filter 空掉時「下一步」不一樣：「報名中」
+ * 空了的時候使用者還有地方可以去（過去辦過的活動），「已結束」空了則沒有。
+ *
+ * 同一頁其他文案的慣例照舊 —— 三語常數當退路，實際顯示走 p.block() 讓
+ * /admin/pages/events 可以改字。
+ */
+const EMPTY_UPCOMING = {
+  zh: "目前沒有開放報名的活動。新的場次公布前，歡迎先看看我們辦過什麼。",
+  en: "No events are open for registration right now. In the meantime, take a look at what we have held.",
+  ja: "現在受付中のイベントはありません。これまでに開催したイベントをご覧ください。",
+};
+const EMPTY_PAST = {
+  zh: "還沒有已結束的活動。",
+  en: "No past events yet.",
+  ja: "終了したイベントはまだありません。",
+};
+const SEE_PAST = {
+  zh: "看看過去的活動",
+  en: "Browse past events",
+  ja: "過去のイベントを見る",
+};
+
 export const Route = createFileRoute("/events/")({
   loader: async () => {
     const [page, events, categories] = await Promise.all([
@@ -162,42 +192,69 @@ function Events() {
         })}
       </section>
 
-      <section className="container-editorial pb-32 grid gap-px bg-border border border-border md:grid-cols-2">
-        {list.map((e) => (
-          <article key={e.id} className="bg-background p-8 md:p-10 flex flex-col">
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="eyebrow text-2xl">
-                {t(labelById.get(e.category) ?? { zh: e.category, en: e.category, ja: e.category })}
-              </p>
-              {/* 已結束要在卡片上看得出來 —— 只靠「它在另一個分頁底下」不夠：
+      {list.length === 0 ? (
+        <section className="container-editorial pb-32">
+          <div className="border border-border p-8 md:p-10">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {filter === PAST_FILTER
+                ? t(p.block("emptyPast", EMPTY_PAST))
+                : t(p.block("emptyUpcoming", EMPTY_UPCOMING))}
+            </p>
+            {/* 只在「報名中是空的、而且真的有辦過活動」時才給這顆按鈕。
+                沒有這個條件的話，按下去只是換到另一頁空白 —— 那比沒有按鈕更糟。 */}
+            {filter !== PAST_FILTER && past.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setFilter(PAST_FILTER)}
+                className="mt-8 inline-block border border-foreground px-5 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
+              >
+                {t(p.block("seePast", SEE_PAST))}
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : (
+        <section className="container-editorial pb-32 grid gap-px bg-border border border-border md:grid-cols-2">
+          {list.map((e) => (
+            <article key={e.id} className="bg-background p-8 md:p-10 flex flex-col">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="eyebrow text-2xl">
+                  {t(
+                    labelById.get(e.category) ?? { zh: e.category, en: e.category, ja: e.category },
+                  )}
+                </p>
+                {/* 已結束要在卡片上看得出來 —— 只靠「它在另一個分頁底下」不夠：
                   分享出去的連結、從搜尋進來的人都不會看到那個分頁。 */}
-              {isPastEvent(e.isoDate) ? (
-                <span className="border border-border px-2 py-0.5 text-xs tracking-widest text-muted-foreground">
-                  {t(p.block("filters.pastBadge", PAST_BADGE))}
-                </span>
-              ) : null}
-            </div>
-            <h3 className="display mt-4 text-2xl md:text-3xl leading-snug">{t(e.title)}</h3>
-            <p className="mt-4 text-sm text-muted-foreground">{e.date}</p>
-            <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(e.summary)}</p>
-            {/* 只留站內的詳情頁。原本旁邊還有一顆「前往活動網站」連到
+                {isPastEvent(e.isoDate) ? (
+                  <span className="border border-border px-2 py-0.5 text-xs tracking-widest text-muted-foreground">
+                    {t(p.block("filters.pastBadge", PAST_BADGE))}
+                  </span>
+                ) : null}
+              </div>
+              <h3 className="display mt-4 text-2xl md:text-3xl leading-snug">{t(e.title)}</h3>
+              <p className="mt-4 text-sm text-muted-foreground">{e.date}</p>
+              <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">
+                {t(e.summary)}
+              </p>
+              {/* 只留站內的詳情頁。原本旁邊還有一顆「前往活動網站」連到
                 events.external_url —— 但正式庫七場活動裡有五場的那一欄還是
                 https://example.com/event-N（0001 的種子資料，從未替換），所以
                 那顆按鈕多半是把人送去一個不存在的地方。活動詳情頁存在之後，
                 站內那一頁本來就是我們說得最清楚的地方；真的有外部售票連結時，
                 由詳情頁自己決定要不要顯示。 */}
-            <div className="mt-8">
-              <Link
-                to="/events/$slug"
-                params={{ slug: e.slug }}
-                className="inline-block border border-foreground px-5 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
-              >
-                {t(p.block("detail", DETAIL))}
-              </Link>
-            </div>
-          </article>
-        ))}
-      </section>
+              <div className="mt-8">
+                <Link
+                  to="/events/$slug"
+                  params={{ slug: e.slug }}
+                  className="inline-block border border-foreground px-5 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
+                >
+                  {t(p.block("detail", DETAIL))}
+                </Link>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
     </PageShell>
   );
 }
