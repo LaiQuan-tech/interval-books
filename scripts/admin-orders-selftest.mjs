@@ -428,10 +428,19 @@ console.log("\n[5] 詳情頁的聯絡資訊一定經過遮罩");
 //    位元組。所以拆成兩段各自驗：非 migration 的六個保護檔仍然要求零 diff；
 //    migration 目錄改成「0001–0034 這 34 個檔名各自的 git status 必須是空的，
 //    而整個目錄的 diff 只准剛好是新增一個 0035 開頭的檔案」。
+//
+// ⚠️ 0036（場次多價格方案）再調整一次 PROTECTED 清單：`src/server/repos/orders.ts`
+//    被拿掉了。它原本在清單裡是因為 0035（後台訂單頁）那一期**剛好**不需要碰
+//    結帳路徑，這條斷言把「這一期沒有理由碰它」誤寫成「以後也不准碰它」——但
+//    orders.ts 是結帳的一般性程式碼，不是金流憑證本身，之後任何一個真的要改
+//    結帳邏輯的功能（0036 就是一個）都合理需要碰它。真正不可以被任何一期
+//    悄悄動到的是**四個金流閘道檔**（payuni/blackcat 建單與它們各自的
+//    webhook）——那才是這條檢查原本真正要守的東西，這裡收窄成那四個。
+//    payments.ts 維持在清單裡：0036 一個字都沒動過它，這條「本來就沒有理由碰」
+//    在這裡仍然成立，留著繼續守。
 console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄問 git）");
 {
   const PROTECTED = [
-    "src/server/repos/orders.ts",
     "src/server/repos/payments.ts",
     "src/server/payuni.ts",
     "src/server/blackcat.ts",
@@ -455,7 +464,7 @@ console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄�
   }
   checkTrue("`git status` 執行成功（在一個 git repo 裡跑）", gitOk);
   check(
-    "🔴 這六個檔案：git status 乾淨（結帳路徑與四個金流檔一個位元組都沒動）",
+    "🔴 這五個檔案：git status 乾淨（四個金流檔＋payments.ts 一個位元組都沒動，0036 起 orders.ts 不在此列——見上面的說明）",
     statusOut.trim(),
     "",
     `實際輸出：\n${statusOut}`,
@@ -498,9 +507,9 @@ console.log("\n[6] 🔴 沒有動到不該動的檔案（對真的工作目錄�
 
   const migFiles = readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql"));
   check(
-    "supabase/migrations 剛好 35 個 .sql 檔（0001–0034 原封不動 + 0035 新增）",
+    "supabase/migrations 剛好 36 個 .sql 檔（0001–0035 原封不動 + 0036 新增）",
     migFiles.length,
-    35,
+    36,
   );
 }
 

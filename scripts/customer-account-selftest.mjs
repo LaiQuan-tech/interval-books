@@ -215,7 +215,7 @@ assertMigrationDependencies(check, MIG_DIR, {
   //     的那種）走的是 admin_archive_order()，那支連 event_registrations 都不碰
   //     （只設／清 archived_at），會員自己的報名紀錄不受影響。
   // 原樣成立。
-  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 
 // =============================================================================

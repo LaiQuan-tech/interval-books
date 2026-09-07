@@ -430,9 +430,12 @@ checkTrue(
   ),
 );
 check(
-  "活動頁三個場次區塊全都傳了 showSeatsRemaining（少一個就有一塊不吃這個開關）",
+  // 0036：分母加上 <PlanPicker>——它跟 SessionPicker/SessionList 一樣吃同一個
+  // showSeatsRemaining 旗標（沿用場次層級的決定，方案沒有自己的開關），少傳
+  // 一樣是「有一塊不吃這個開關」。
+  "活動頁的場次／方案區塊全都傳了 showSeatsRemaining（少一個就有一塊不吃這個開關）",
   (detailCode.match(/showSeatsRemaining=\{/g) || []).length,
-  (detailCode.match(/<Session(Picker|List)\b/g) || []).length,
+  (detailCode.match(/<(SessionPicker|SessionList|PlanPicker)\b/g) || []).length,
 );
 checkTrue(
   "有商品時傳的是商品那一份，不是寫死 true",
@@ -546,7 +549,20 @@ console.log("\n[8] 第二個入口沒有帶來第二份邏輯");
 //
 // 🔴 上限只有一份
 checkTrue("上限問共用的 directSeatLimit()", /directSeatLimit\(/.test(detailCode));
-for (const forbidden of ["remainingForSession", "remainingFor(", "seatsTaken", "capacity"]) {
+// 0036：同一條規矩延伸到方案——remainingForPlan／isPlanAvailable／planInSaleWindow
+// 只能住在 PlanPicker.tsx 裡（跟 remainingForSession 只能住在 SessionPicker.tsx
+// 是同一個理由），這裡也不准出現 units_taken／seats_per_unit 這類方案專屬的欄位名。
+for (const forbidden of [
+  "remainingForSession",
+  "remainingFor(",
+  "seatsTaken",
+  "capacity",
+  "remainingForPlan",
+  "isPlanAvailable",
+  "planInSaleWindow",
+  "unitsTaken",
+  "seatsPerUnit",
+]) {
   checkFalse(
     `路由沒有自己算名額（${forbidden}）`,
     new RegExp(forbidden.replace(/[()]/g, "\\$&")).test(detailCode),
@@ -554,8 +570,11 @@ for (const forbidden of ["remainingForSession", "remainingFor(", "seatsTaken", "
 }
 // 🔴 沒選場次時，數量上限不可以退回商品層級的跨場次最大值 —— 那正是那個 bug。
 checkTrue(
+  // 0036：多了第三個參數 selectedPlan，見 direct-checkout.ts 的 directSeatLimit()。
   "沒選場次時上限鎖成 1，不是跨場次最大值",
-  /selectedSession \? directSeatLimit\(product, selectedSession\) : 1/.test(detailCode),
+  /selectedSession \? directSeatLimit\(product, selectedSession, selectedPlan\) : 1/.test(
+    detailCode,
+  ),
 );
 // 🔴 下單管線只有一條
 for (const forbidden of ["placeOrder", "createOrder", "idempotency", "reserve_session_seat"]) {

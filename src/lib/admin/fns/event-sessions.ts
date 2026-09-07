@@ -37,7 +37,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { adminFnMiddleware, staffFnMiddleware } from "@/lib/admin/middleware";
-import { eventSessionSchema } from "@/lib/admin/schemas";
+import { eventSessionPlanSchema, eventSessionSchema } from "@/lib/admin/schemas";
 
 /** 與 fns/event-registrations.ts 同一支，刻意各寫一份 —— 兩個檔案的訊息各自演進。 */
 async function requireRosterRead(permissions: readonly string[]): Promise<void> {
@@ -90,4 +90,49 @@ export const removeEventSession = createServerFn({ method: "POST" })
     const { removeEventSession } = await import("@/server/repos/event-sessions");
     await removeEventSession(data.id);
     return { ok: true };
+  });
+
+// -----------------------------------------------------------------------------
+// event_session_plans（0036）—— 場次底下的多個票種
+// -----------------------------------------------------------------------------
+// 授權形狀與上面的場次照抄：讀走 staffFnMiddleware() + event.roster.read
+// （名單頁要顯示方案，看得到名單的人本來就要看得到方案），寫走 adminFnMiddleware。
+//
+// 這個檔案頂層對 eventSessionPlanSchema 的 import 是**靜態**的，跟
+// eventSessionSchema 那一行一樣，而且理由也一樣：這整支 fns 檔案本身只被呼叫端
+// 用 `await import("@/lib/admin/fns/event-sessions")` 動態載入（見
+// _shell.registrations.tsx），schemas.ts 的真值 import 因此已經站在一個動態
+// 邊界之後，不會流進訪客 bundle。schemas.ts 上那句「必須動態匯入」講的是
+// **表單元件**（route 檔案裡的 sibling component）要怎麼拿到這個 schema 去餵
+// zodResolver——那才是還沒有動態邊界保護的地方。
+export const listEventSessionPlans = createServerFn({ method: "GET" })
+  .middleware([staffFnMiddleware()])
+  .handler(async ({ context }) => {
+    await requireRosterRead(context.staff.permissions);
+    const { listEventSessionPlans } = await import("@/server/repos/event-sessions");
+    return await listEventSessionPlans();
+  });
+
+export const upsertEventSessionPlan = createServerFn({ method: "POST" })
+  .middleware([adminFnMiddleware])
+  .inputValidator(eventSessionPlanSchema)
+  .handler(async ({ data }) => {
+    const { upsertEventSessionPlan } = await import("@/server/repos/event-sessions");
+    return await upsertEventSessionPlan(data);
+  });
+
+/**
+ * Deletes a plan.
+ *
+ * Unlike removeEventSession() above, this does NOT let a raw foreign-key
+ * error surface — the repo pre-checks and returns a `reason` the page can show
+ * as a sentence (see removeEventSessionPlan() in the repo for why: a plan's FK
+ * violation, unlike a session's, does not read as a usable error string).
+ */
+export const removeEventSessionPlan = createServerFn({ method: "POST" })
+  .middleware([adminFnMiddleware])
+  .inputValidator(z.object({ id: z.string().trim().min(1) }))
+  .handler(async ({ data }) => {
+    const { removeEventSessionPlan } = await import("@/server/repos/event-sessions");
+    return await removeEventSessionPlan(data.id);
   });

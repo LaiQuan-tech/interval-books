@@ -243,7 +243,7 @@ assertMigrationDependencies(check, MIG_DIR, {
   //     expire_unpaid_orders() 或任何自動排程會觸發的路徑，跟這支自檢守的「不會被
   //     自動回收」是兩件不相交的事。
   // 原樣成立。
-  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 
 // =============================================================================

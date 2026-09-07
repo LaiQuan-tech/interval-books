@@ -51,8 +51,14 @@ import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Localized } from "@/i18n/types";
-import type { ShopProduct, ShopProductCard, ShopProductType, ShopSession } from "@/lib/shop";
-import { remainingFor, remainingForSession } from "@/lib/shop";
+import type {
+  ShopPlan,
+  ShopProduct,
+  ShopProductCard,
+  ShopProductType,
+  ShopSession,
+} from "@/lib/shop";
+import { isPlanAvailable, remainingFor, remainingForPlan, remainingForSession } from "@/lib/shop";
 
 /**
  * Why a line can no longer be bought. Kept as a reason rather than a boolean so
@@ -93,18 +99,44 @@ export type CartLine = {
   sessionTitle: Localized | null;
   /** ISO 8601. Snapshot, same treatment as sessionTitle. */
   sessionStartsAt: string | null;
+  /**
+   * 選了哪個價格方案（票種，0036）。`null` 代表這個場次沒有方案，或這一行沒選
+   * ——那時 `price` 直接來自 products.price、`qty` 就是座位數，與 0020 之後的
+   * 行為逐字相同。
+   *
+   * ⚠️ 這是繼 sessionId 之後第二次讓行的身分（cartLineKey）納入一個新欄位：
+   * 同一場次的「單人票」與「雙人房」是兩個不同的東西要買，合併成一行就會讓其中
+   * 一種方案的數量被另一種吃掉。理由與 sessionId 那段完全對稱。
+   */
+  planId: string | null;
+  /** 方案名稱快照，同 sessionTitle 的理由。null 代表沒有方案。 */
+  planTitle: Localized | null;
+  /**
+   * 一個購買單位佔用場次的幾個座位。沒有方案（或方案為 null）時恆為 1。
+   * `qty × planSeatsPerUnit` 才是這一行真正要佔用的座位數，也是結帳頁參加者
+   * 表單要收的份數——見 src/routes/checkout.index.tsx 的 participantSlots。
+   */
+  planSeatsPerUnit: number;
   slug: string;
   title: Localized;
   productType: ShopProductType;
-  /** TWD, whole dollars. */
+  /** TWD, whole dollars. 有方案時是方案的單價；沒有方案時是 products.price。 */
   price: number;
   compareAtPrice: number | null;
+  /**
+   * 買了幾個「單位」，不是幾個座位——見 planSeatsPerUnit。沒有方案（或商品不是
+   * 預約類）的行，單位就是座位／件數本身，0020 之後的行為逐字相同。
+   */
   qty: number;
   /**
    * Maximum purchasable quantity as of the last catalogue read; null means
    * genuinely unlimited (a product with stock = NULL, i.e. not stock-managed).
    * Unifies `stock` for goods/book and remaining seats for event/journey —
    * see remainingFor() in src/lib/shop.ts.
+   *
+   * 0036：選了方案時，這個數字是**單位**的上限——
+   * `min(方案剩餘單位, floor(場次剩餘位子 / planSeatsPerUnit))`，見
+   * cartInputFor() 與 syncFromCatalogue()。
    */
   limit: number | null;
   imageKey: string | null;
@@ -145,16 +177,29 @@ type CartStore = {
  * already holds the morning one just increments the morning one's quantity and
  * the shopper is booked into the wrong session with no way to tell.
  *
- * goods/book always pass `null`, so their key is `"<id>:"` — stable, and it can
- * never collide with a uuid-suffixed booking key.
+ * 0036 adds `planId` to the same key for the same reason: 早鳥票與雙人房是同一個
+ * 場次底下兩個不同的東西要買，合併成一行就會讓其中一種方案的數量被另一種吃掉，
+ * 而且兩者的 seatsPerUnit 可能不同——攤平成一行之後 qty 該乘哪個 seatsPerUnit
+ * 會變成一個算不出來的問題。
+ *
+ * goods/book always pass `null`/`null`, so their key is `"<id>::"` — stable, and
+ * it can never collide with a uuid-suffixed booking key.
  */
-export function cartLineKey(productId: string, sessionId: string | null): string {
-  return `${productId}:${sessionId ?? ""}`;
+export function cartLineKey(
+  productId: string,
+  sessionId: string | null,
+  planId: string | null = null,
+): string {
+  return `${productId}:${sessionId ?? ""}:${planId ?? ""}`;
 }
 
 /** The key of an existing line. */
-export function keyOfLine(line: { productId: string; sessionId: string | null }): string {
-  return cartLineKey(line.productId, line.sessionId);
+export function keyOfLine(line: {
+  productId: string;
+  sessionId: string | null;
+  planId: string | null;
+}): string {
+  return cartLineKey(line.productId, line.sessionId, line.planId);
 }
 
 /** Namespaced like the language key in src/i18n/LanguageContext.tsx. */
@@ -170,8 +215,16 @@ const STORAGE_KEY = "interval-books-cart";
  * order_items refuses again. **Throwing one cart away is far better than
  * submitting an order that cannot say which sitting it is for**, so the
  * migrate() below keeps discarding rather than trying to patch.
+ *
+ * 2 → 3（0036）：行加了 planId／planTitle／planSeatsPerUnit，key 從
+ * `productId:sessionId` 換成 `productId:sessionId:planId`。同一個理由：version-2
+ * 的舊資料完全沒有這三欄，`qty` 在舊資料裡的意思是「座位數」，在新程式碼裡
+ * 「沒有方案時 qty 仍然是座位數」剛好逐字相容——**除非**那個場次剛好在客人
+ * 離開又回來的這段時間被後台加上了方案，那時候一筆沒有 planSeatsPerUnit 的舊
+ * 資料會被當成 seatsPerUnit=1 處理，可能低估真正要收的參加者人數。丟掉舊購物車
+ * 比帶著一個算錯份數的購物車進結帳安全，跟 1→2 那次是同一個判斷。
  */
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 
 function clampToLimit(qty: number, limit: number | null): number {
   if (limit === null) return Math.max(0, qty);
@@ -278,18 +331,47 @@ export const useCart = create<CartStore>()(
             return { ...line, unavailable: "delisted" as const };
           }
 
-          const limit = session ? remainingForSession(session) : remainingFor(p);
+          // 0036：這一行選了方案——在目前的場次資料裡重新找它。跟 session 一樣，
+          // 「這個方案在目錄裡完全不見了」（被後台刪掉、或整個場次都不見了）算
+          // delisted；「還在，但名額用完或不在販售期間」算 sold_out（不像
+          // delisted 那樣永久沒救——早鳥結束前買不到，不代表它一直買不到）。
+          const plan =
+            line.planId === null
+              ? null
+              : (session?.plans.find((pl) => pl.id === line.planId) ?? null);
+          if (line.planId !== null && plan === null) {
+            if (line.unavailable === "delisted") return line;
+            changed = true;
+            return { ...line, unavailable: "delisted" as const };
+          }
+
+          // 數量上限＝min(方案剩餘單位, floor(場次剩餘位子 / seatsPerUnit))。
+          // 沒有方案的行（plan 為 null）行為與 0020 之後逐字相同。
+          const limit = plan
+            ? isPlanAvailable(plan)
+              ? Math.min(
+                  remainingForPlan(plan),
+                  Math.floor(remainingForSession(session!) / plan.seatsPerUnit),
+                )
+              : 0
+            : session
+              ? remainingForSession(session)
+              : remainingFor(p);
           const qty = clampToLimit(line.qty, limit);
           const next: CartLine = {
             ...line,
             slug: p.slug,
             title: p.title,
             productType: p.productType,
-            price: p.price,
+            // 有方案時單價是方案的，沒有方案時是商品的——與 orders.ts 的
+            // priceLines() 同一條規則。
+            price: plan ? plan.price : p.price,
             compareAtPrice: p.compareAtPrice,
             imageKey: p.imageKey,
             sessionTitle: session ? session.title : null,
             sessionStartsAt: session ? session.startsAt : null,
+            planTitle: plan ? plan.title : null,
+            planSeatsPerUnit: plan ? plan.seatsPerUnit : 1,
             limit,
             qty,
             unavailable: qty <= 0 ? "sold_out" : undefined,
@@ -304,6 +386,8 @@ export const useCart = create<CartStore>()(
             line.imageKey === next.imageKey &&
             line.sessionTitle === next.sessionTitle &&
             line.sessionStartsAt === next.sessionStartsAt &&
+            line.planTitle === next.planTitle &&
+            line.planSeatsPerUnit === next.planSeatsPerUnit &&
             line.limit === next.limit &&
             line.qty === next.qty &&
             line.unavailable === next.unavailable;
@@ -382,24 +466,44 @@ export function useCartSubtotal(): number {
  * of re-deriving an "add to cart" input by hand. ShopProduct still satisfies
  * this type (it has every ShopProductCard field plus one), so every existing
  * caller (shop.$slug.tsx's detail page) is unaffected.
+ *
+ * `plan`（0036，選填）：這一場選了哪個價格方案。傳了就必須也傳 `session`——一個
+ * 方案永遠屬於某個場次，這裡不驗證兩者是否真的對得上（那是伺服器端
+ * priceLines() 的工作），呼叫端本來就是從 `session.plans` 裡挑出來的，不會對
+ * 不上。沒傳（或傳 null）時行為與 0020 之後逐字相同：單價是 products.price、
+ * 上限是場次剩餘座位數。
  */
 export function cartInputFor(
   p: ShopProductCard,
   qty: number,
   session: ShopSession | null = null,
+  plan: ShopPlan | null = null,
 ): CartInput {
+  const limit = plan
+    ? isPlanAvailable(plan)
+      ? Math.min(
+          remainingForPlan(plan),
+          Math.floor((session ? remainingForSession(session) : 0) / plan.seatsPerUnit),
+        )
+      : 0
+    : session
+      ? remainingForSession(session)
+      : remainingFor(p);
   return {
     productId: p.id,
     sessionId: session ? session.id : null,
     sessionTitle: session ? session.title : null,
     sessionStartsAt: session ? session.startsAt : null,
+    planId: plan ? plan.id : null,
+    planTitle: plan ? plan.title : null,
+    planSeatsPerUnit: plan ? plan.seatsPerUnit : 1,
     slug: p.slug,
     title: p.title,
     productType: p.productType,
-    price: p.price,
+    price: plan ? plan.price : p.price,
     compareAtPrice: p.compareAtPrice,
     imageKey: p.imageKey,
-    limit: session ? remainingForSession(session) : remainingFor(p),
+    limit,
     qty,
   };
 }

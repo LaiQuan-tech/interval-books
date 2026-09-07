@@ -71,6 +71,38 @@ export type ShopSession = {
   capacity: number;
   seatsTaken: number;
   sortOrder: number;
+  /**
+   * 這個場次底下的價格方案（票種，0036）。空陣列＝這個場次沒有開任何方案——那時
+   * 價格與座位數照 0020 之前的行為，取 products.price、quantity 就是座位數。
+   * 只包含 status='open' 的方案（0036 的 event_session_plans_select_public
+   * policy 本來就只讓 anon 讀得到這些）。
+   */
+  plans: ShopPlan[];
+};
+
+/**
+ * 一個場次底下的一個價格方案（票種，0036）。
+ *
+ * 名額以「單位」計，不是座位——一個單位可能佔用場次的多個座位
+ * （見 seatsPerUnit）。沒有方案的場次不會有這個型別的任何實例。
+ */
+export type ShopPlan = {
+  id: string;
+  sessionId: string;
+  title: Localized;
+  /** TWD，每「單位」的價格。 */
+  price: number;
+  /** 一個購買單位佔用場次的幾個座位。1＝一單位一位；雙人房這類是 2。 */
+  seatsPerUnit: number;
+  /** 這個方案自己的單位上限。 */
+  capacity: number;
+  /** 已經賣出幾個單位——不是座位數。 */
+  unitsTaken: number;
+  /** ISO 8601，或 null＝現在就能買（早鳥的起點）。 */
+  saleStartsAt: string | null;
+  /** ISO 8601，或 null＝不設販售期限（早鳥的迄點）。 */
+  saleEndsAt: string | null;
+  sortOrder: number;
 };
 
 export type ShopProduct = {
@@ -378,6 +410,9 @@ function toSession(r: Row): ShopSession | null {
     capacity,
     seatsTaken: int(r.seats_taken, 0),
     sortOrder: int(r.sort_order, 0),
+    // 由 attachPlans() 事後填入——這裡先給空陣列，理由與 ShopProduct.sessions
+    // 一開始是 [] 相同：讀取分成好幾支查詢，型別在中間狀態也要站得住。
+    plans: [],
   };
 }
 
@@ -435,6 +470,80 @@ async function attachSessions(products: ShopProductCard[]): Promise<void> {
   }
 }
 
+/**
+ * 每個場次底下的價格方案（票種，0036）——只有 event/journey 商品的場次會有。
+ *
+ * ⚠️ 必須在 attachSessions() **之後**呼叫，不是平行呼叫：方案要按 session_id
+ * 查，而 session_id 是 attachSessions() 填進去的。呼叫端（下面四個 fetch*
+ * 函式）都遵守這個順序。
+ *
+ * 失敗時的方向跟 attachSessions() 一致（fail-closed，不是 best effort）：讀不到
+ * 就讓每個場次的 plans 維持空陣列——那正是「這個場次沒有方案」的畫面，客人看到
+ * 的是照 0020 行為的直接報名，不是一個看起來壞掉的空白方案清單。漏掉方案不會讓
+ * 客人多付錢或少付錢（沒有方案時價格照舊取 products.price），只是讓房型定價
+ * 暫時不見了——比讓結帳頁的邏輯対不上（有方案卻挑不到）安全。
+ */
+const PLAN_COLUMNS =
+  "id, session_id, title, price, seats_per_unit, capacity, units_taken, sale_starts_at, sale_ends_at, sort_order";
+
+function toPlan(r: Row): ShopPlan | null {
+  const id = typeof r.id === "string" ? r.id : null;
+  const sessionId = typeof r.session_id === "string" ? r.session_id : null;
+  const title = loc(r.title);
+  const price = nullableInt(r.price);
+  const seatsPerUnit = nullableInt(r.seats_per_unit);
+  const capacity = nullableInt(r.capacity);
+  if (!id || !sessionId || !title || price === null || seatsPerUnit === null || capacity === null) {
+    return null;
+  }
+  return {
+    id,
+    sessionId,
+    title,
+    price,
+    seatsPerUnit,
+    capacity,
+    unitsTaken: int(r.units_taken, 0),
+    saleStartsAt: nullableStr(r.sale_starts_at),
+    saleEndsAt: nullableStr(r.sale_ends_at),
+    sortOrder: int(r.sort_order, 0),
+  };
+}
+
+async function attachPlans(products: ShopProductCard[]): Promise<void> {
+  const db = supabase;
+  const sessionIds = products
+    .filter((p) => p.productType === "event" || p.productType === "journey")
+    .flatMap((p) => p.sessions.map((s) => s.id));
+  if (!db || sessionIds.length === 0) return;
+  try {
+    const { data, error } = await db
+      .from("event_session_plans")
+      .select(PLAN_COLUMNS)
+      .in("session_id", sessionIds)
+      .order("sort_order", { ascending: true })
+      .order("id", { ascending: true });
+
+    if (error || !Array.isArray(data)) {
+      logFailure("plans", error?.message ?? "unexpected response shape");
+      return;
+    }
+    const bySession = new Map<string, ShopPlan[]>();
+    for (const row of data as unknown as Row[]) {
+      const plan = toPlan(row);
+      if (!plan) continue;
+      const list = bySession.get(plan.sessionId);
+      if (list) list.push(plan);
+      else bySession.set(plan.sessionId, [plan]);
+    }
+    for (const p of products) {
+      for (const s of p.sessions) s.plans = bySession.get(s.id) ?? [];
+    }
+  } catch (err) {
+    logFailure("plans", err instanceof Error ? err.message : String(err));
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Availability
 // -----------------------------------------------------------------------------
@@ -452,6 +561,41 @@ async function attachSessions(products: ShopProductCard[]): Promise<void> {
  */
 export function remainingForSession(s: ShopSession): number {
   return Math.max(0, s.capacity - s.seatsTaken);
+}
+
+/**
+ * How many units are left in one plan（0036）. 單位，不是座位——見 ShopPlan 的
+ * 檔頭。跟 remainingForSession() 同一個立場：這是顯示值，真正握著列鎖的是
+ * reserve_plan_units()，這裡讀到的可能已經過時。
+ */
+export function remainingForPlan(plan: ShopPlan): number {
+  return Math.max(0, plan.capacity - plan.unitsTaken);
+}
+
+/**
+ * 這個方案現在買不買得到——名額之外的第二個限制：販售期間。
+ *
+ * `now` 可以外部傳入是為了讓這支純函式測得起來（不用等真的時間到）；呼叫端不傳
+ * 就是「現在」。兩端都可以是 null（不限起點／不限迄點），對應 0036 的
+ * sale_starts_at／sale_ends_at 兩欄皆可為 null。
+ */
+export function planInSaleWindow(plan: ShopPlan, now: number = Date.now()): boolean {
+  if (plan.saleStartsAt) {
+    const opensAt = Date.parse(plan.saleStartsAt);
+    if (!Number.isNaN(opensAt) && now < opensAt) return false;
+  }
+  if (plan.saleEndsAt) {
+    const closesAt = Date.parse(plan.saleEndsAt);
+    if (!Number.isNaN(closesAt) && now > closesAt) return false;
+  }
+  return true;
+}
+
+/**
+ * 這個方案現在真的買得到嗎——把名額與販售期間兩個限制合成一句。
+ */
+export function isPlanAvailable(plan: ShopPlan, now: number = Date.now()): boolean {
+  return remainingForPlan(plan) > 0 && planInSaleWindow(plan, now);
 }
 
 /**
@@ -535,7 +679,11 @@ export async function fetchActiveProducts(): Promise<ShopListResult> {
       const p = toProduct(row);
       if (p) products.push(p);
     }
+    // attachPlans() 必須排在 attachSessions() 之後——它要用 attachSessions()
+    // 填進去的 session id 去查方案，兩者不能平行（見 attachPlans() 的檔頭）。
+    // attachAvailability() 跟這兩者互不相依，維持平行。
     await Promise.all([attachAvailability(products), attachSessions(products)]);
+    await attachPlans(products);
     return { products, unavailable: false };
   } catch (err) {
     logFailure("products", err instanceof Error ? err.message : String(err));
@@ -590,7 +738,11 @@ export async function fetchActiveProductsForList(): Promise<ShopListCardResult> 
       const p = toProductCard(row);
       if (p) products.push(p);
     }
+    // attachPlans() 必須排在 attachSessions() 之後——它要用 attachSessions()
+    // 填進去的 session id 去查方案，兩者不能平行（見 attachPlans() 的檔頭）。
+    // attachAvailability() 跟這兩者互不相依，維持平行。
     await Promise.all([attachAvailability(products), attachSessions(products)]);
+    await attachPlans(products);
     return { products, unavailable: false };
   } catch (err) {
     logFailure("products", err instanceof Error ? err.message : String(err));
@@ -638,7 +790,11 @@ export async function fetchActiveProductsByIds(ids: string[]): Promise<ShopListR
       const p = toProduct(row);
       if (p) products.push(p);
     }
+    // attachPlans() 必須排在 attachSessions() 之後——它要用 attachSessions()
+    // 填進去的 session id 去查方案，兩者不能平行（見 attachPlans() 的檔頭）。
+    // attachAvailability() 跟這兩者互不相依，維持平行。
     await Promise.all([attachAvailability(products), attachSessions(products)]);
+    await attachPlans(products);
     return { products, unavailable: false };
   } catch (err) {
     logFailure("products", err instanceof Error ? err.message : String(err));
@@ -671,7 +827,10 @@ export async function fetchActiveProductBySlug(slug: string): Promise<ShopProduc
     }
     if (!data) return { product: null, unavailable: false };
     const product = toProduct(data as unknown as Row);
-    if (product) await Promise.all([attachAvailability([product]), attachSessions([product])]);
+    if (product) {
+      await Promise.all([attachAvailability([product]), attachSessions([product])]);
+      await attachPlans([product]);
+    }
     return { product, unavailable: false };
   } catch (err) {
     logFailure(`products/${slug}`, err instanceof Error ? err.message : String(err));

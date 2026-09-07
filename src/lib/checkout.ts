@@ -704,9 +704,26 @@ export type CheckoutFormValues = {
  */
 export const checkoutItemSchema = z.object({
   productId: z.string().trim().min(1).max(200),
+  /**
+   * 買了幾個「單位」。沒有選方案（或這場沒有方案）時，一個單位就是一個座位——
+   * 與 0020 之後的行為逐字相同。選了方案時，一個單位可能佔用場次的多個座位
+   * （見 `event_session_plans.seats_per_unit`，0036），實際佔用的座位數由伺服器
+   * 用 planId 查出來的 seats_per_unit 換算，不是這個數字本身。
+   */
   quantity: z.number().int().min(1).max(99),
   /** uuid of public.event_sessions. Required for event/journey, null otherwise. */
   sessionId: z.string().uuid().nullable().optional(),
+  /**
+   * uuid of public.event_session_plans（0036）。選填——沒有方案的場次不帶這個
+   * 欄位，行為與 0020 之後逐字相同。
+   *
+   * ⚠️ 這裡跟這個檔案的其他每一個欄位一樣：**只有 id，沒有價格**。方案的單價、
+   * 名稱、每單位佔幾位，全部由伺服器用這個 id 向 public.event_session_plans
+   * 重新查出來（src/server/repos/orders.ts 的 priceLines()）。一個被改過的
+   * planId 頂多讓伺服器查到「不屬於這個場次的方案」而整筆拒絕（與
+   * SESSION_PRODUCT_MISMATCH 同一類防禦），絕不可能讓客人自己決定要付多少錢。
+   */
+  planId: z.string().uuid().nullable().optional(),
   participants: z
     .array(
       z.object({

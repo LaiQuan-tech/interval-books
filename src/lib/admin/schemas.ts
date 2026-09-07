@@ -709,6 +709,50 @@ export const eventSessionSchema = z
 export type EventSessionFormValues = z.infer<typeof eventSessionSchema>;
 
 /**
+ * 一個場次底下的價格方案／票種（public.event_session_plans，0036）。
+ *
+ * ⚠️ 沒有 `units_taken`，理由與 eventSessionSchema 沒有 `seats_taken`逐字相同：
+ *    它只由持有列鎖的 SQL 函式維護（見 src/server/repos/event-sessions.ts
+ *    對應段落的檔頭）。
+ *
+ * ⚠️ 這個 schema 值**必須動態匯入**，不可以像 `eventSessionSchema` 那樣被表單
+ *    元件在檔案頂層靜態匯入——`scripts/bundle-admin-leak-selftest.mjs` 守著
+ *    後台專用字串不能流進訪客必載的 bundle，而這個檔案（schemas.ts）已經被
+ *    100 處靜態匯入命中，其中包含路由檔本身；新增的表單元件如果也走靜態匯入，
+ *    就是再多開一個「只被 component 呼叫的 sibling 函式」洩漏點。呼叫端見
+ *    src/routes/admin/_shell.registrations.tsx 的方案表單。
+ */
+export const eventSessionPlanSchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    session_id: z.string().trim().min(1, "缺少所屬場次"),
+    title: localizedSchema,
+    price: z.number().int("價格必須是整數，不接受小數").min(0, "價格不可為負數"),
+    seats_per_unit: z.number().int("每單位佔用的名額必須是整數").min(1, "每單位至少佔用 1 個名額"),
+    capacity: z.number().int("名額必須是整數，不接受小數").min(0, "名額不可為負數"),
+    // datetime-local 的值，空字串＝不限（null）。由路由轉成 ISO 再送出。
+    sale_starts_at: z.string().trim().nullable().optional(),
+    sale_ends_at: z.string().trim().nullable().optional(),
+    status: z.enum(["open", "closed"]),
+    sort_order: z.number().int("排序必須是整數"),
+  })
+  .superRefine((data, ctx) => {
+    // 與 0036 的 event_session_plans_sale_window CHECK 逐字對應：兩個時間都填
+    // 才比較，放在這裡是為了讓錯誤印在「販售結束時間」那個輸入框旁邊。
+    const starts = (data.sale_starts_at ?? "").trim();
+    const ends = (data.sale_ends_at ?? "").trim();
+    if (starts !== "" && ends !== "" && ends < starts) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "販售結束時間不可以早於開始時間",
+        path: ["sale_ends_at"],
+      });
+    }
+  });
+
+export type EventSessionPlanFormValues = z.infer<typeof eventSessionPlanSchema>;
+
+/**
  * 上架表單：把一個進銷存品項變成型錄商品。
  *
  * 刻意**沒有** stock 欄位。上架後這件商品的庫存由 inv.products 管，

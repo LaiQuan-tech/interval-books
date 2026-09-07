@@ -193,6 +193,11 @@ function Cart() {
                     {line.sessionTitle ? (
                       <p className="mt-1 text-xs text-muted-foreground">{t(line.sessionTitle)}</p>
                     ) : null}
+                    {/* 方案名稱（0036）：同一場次可能有兩種方案各佔一行，沒有這一行
+                        分不出哪一列是「單人票」哪一列是「雙人房」。 */}
+                    {line.planTitle ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">{t(line.planTitle)}</p>
+                    ) : null}
 
                     {gone ? (
                       <div className="mt-3">

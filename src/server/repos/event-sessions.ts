@@ -167,3 +167,152 @@ export async function listBookableProducts(): Promise<
     status: string;
   }[];
 }
+
+// -----------------------------------------------------------------------------
+// event_session_plans（0036）—— 一個場次底下的多個價格方案（票種）
+// -----------------------------------------------------------------------------
+// 住在同一個檔案裡，不是獨立的 repo：方案永遠是場次的子項，兩者在後台是同一頁
+// （/admin/registrations）、同一個表單群組編輯，拆開反而要在兩個檔案之間對照
+// session_id。跟 listBookableProducts()（管的是 products，不是 event_sessions）
+// 已經住在這個檔案是同一種務實考量。
+//
+// WHAT THIS FILE MAY NOT WRITE
+// -----------------------------
+// `units_taken`。它不在 PlanUpsertInput 裡，而且不可以加。理由與檔頭那段對
+// `seats_taken` 的說明逐字相同：這個計數器只有三個寫者——
+// reserve_plan_units() / release_plan_units() / release_session_seat() /
+// expire_unpaid_orders()（0036），全部持著列鎖工作。從這裡 PATCH 會是一個
+// read-modify-write，跟兩個購物中的客人同時搶最後一個名額——那正是 0036 整套
+// 設計要防的事。
+
+const PLAN_COLUMNS =
+  "id, session_id, title, price, seats_per_unit, capacity, units_taken, sale_starts_at, sale_ends_at, status, sort_order, created_at, updated_at";
+
+export type EventSessionPlanStatus = "open" | "closed";
+
+export type EventSessionPlanRow = {
+  id: string;
+  session_id: string;
+  title: Localized;
+  price: number;
+  seats_per_unit: number;
+  capacity: number;
+  /** Read-only here. See the file header. */
+  units_taken: number;
+  sale_starts_at: string | null;
+  sale_ends_at: string | null;
+  status: EventSessionPlanStatus;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** `id` omitted (or empty) means "create". */
+export type PlanUpsertInput = {
+  id?: string;
+  session_id: string;
+  title: Localized;
+  price: number;
+  seats_per_unit: number;
+  capacity: number;
+  sale_starts_at?: string | null;
+  sale_ends_at?: string | null;
+  status: EventSessionPlanStatus;
+  sort_order: number;
+};
+
+/**
+ * Every plan, across every session, for the back-office list.
+ *
+ * Not filtered by session — same reasoning as listEventSessions(): the page
+ * this feeds groups plans by `session_id` client-side once it already has the
+ * session list loaded, so one round trip here is enough regardless of how many
+ * sessions are on screen.
+ */
+export async function listEventSessionPlans(): Promise<EventSessionPlanRow[]> {
+  const { data, error } = await supabaseAdmin()
+    .from("event_session_plans")
+    .select(PLAN_COLUMNS)
+    .order("session_id", { ascending: true })
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+
+  if (error) throw new Error(`[repo/event-sessions] listPlans 失敗：${error.message}`);
+  return (data ?? []) as EventSessionPlanRow[];
+}
+
+/**
+ * Creates or updates one plan.
+ *
+ * `id` absent → insert. `id` present → update, and the update deliberately does
+ * NOT send `units_taken` — same discipline as upsertEventSession() not sending
+ * `seats_taken`, so a stale form can never write back a count read minutes ago.
+ */
+export async function upsertEventSessionPlan(input: PlanUpsertInput): Promise<EventSessionPlanRow> {
+  const payload = {
+    session_id: input.session_id,
+    title: input.title,
+    price: input.price,
+    seats_per_unit: input.seats_per_unit,
+    capacity: input.capacity,
+    sale_starts_at:
+      input.sale_starts_at && input.sale_starts_at.trim() ? input.sale_starts_at : null,
+    sale_ends_at: input.sale_ends_at && input.sale_ends_at.trim() ? input.sale_ends_at : null,
+    status: input.status,
+    sort_order: input.sort_order,
+  };
+
+  const id = input.id && input.id.trim() ? input.id.trim() : null;
+  const query = id
+    ? supabaseAdmin().from("event_session_plans").update(payload).eq("id", id)
+    : supabaseAdmin().from("event_session_plans").insert(payload);
+
+  const { data, error } = await query.select(PLAN_COLUMNS).single();
+  if (error) throw new Error(`[repo/event-sessions] upsertPlan 失敗：${error.message}`);
+  return data as EventSessionPlanRow;
+}
+
+export type RemovePlanResult =
+  | { deleted: true }
+  | { deleted: false; reason: "plan_not_found" | "plan_has_orders" };
+
+/**
+ * Deletes a plan — but only after checking whether anyone has ever bought it.
+ *
+ * ⚠️ Unlike removeEventSession() above (which lets a raw foreign-key violation
+ * surface, because "this sitting has people in it" already reads fine as an
+ * error string), a plan's `on delete restrict` FK error does NOT read fine —
+ * it is a bare `update or delete on table "event_session_plans" violates
+ * foreign key constraint …` with no mention of orders. This is the exact
+ * lesson 0035 wrote down for admin_delete_order()/admin_delete_registration():
+ * check first, return a human reason, don't let the bare FK error reach the
+ * admin screen.
+ *
+ * The check-then-delete here is not perfectly atomic against a checkout that
+ * completes in the gap between the two statements — but this is an admin-only,
+ * human-paced action, not the checkout hot path, and the FK constraint is
+ * still the backstop of last resort if that race is ever actually hit (the
+ * delete would then fail with the raw error rather than the friendly one,
+ * which is a worse message but never a wrong result — the plan still does not
+ * get deleted out from under a real order).
+ */
+export async function removeEventSessionPlan(id: string): Promise<RemovePlanResult> {
+  const { count, error: countError } = await supabaseAdmin()
+    .from("order_items")
+    .select("id", { count: "exact", head: true })
+    .eq("plan_id", id);
+  if (countError) {
+    throw new Error(`[repo/event-sessions] removePlan 檢查失敗：${countError.message}`);
+  }
+  if ((count ?? 0) > 0) {
+    return { deleted: false, reason: "plan_has_orders" };
+  }
+
+  const { error, count: deletedCount } = await supabaseAdmin()
+    .from("event_session_plans")
+    .delete({ count: "exact" })
+    .eq("id", id);
+  if (error) throw new Error(`[repo/event-sessions] removePlan 失敗：${error.message}`);
+  if ((deletedCount ?? 0) === 0) return { deleted: false, reason: "plan_not_found" };
+  return { deleted: true };
+}

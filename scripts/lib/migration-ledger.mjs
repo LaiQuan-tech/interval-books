@@ -225,6 +225,17 @@ export const AREAS = Object.freeze({
     label: "門市 POS 櫃檯",
     identifiers: ["pos_checkout", "inv_pos_products", "inv_pos_sales", "inv_pos_payment_methods"],
   },
+  session_plans: {
+    witness: "0036_event_session_plans.sql",
+    label: "場次內的多價格方案（票種）與它們自己的名額池",
+    // ⚠️ 這一區故意跟 session_seats 分開，即使兩者這一期高度相關：session_seats
+    //    數的是「位子」（event_sessions.seats_taken），這一區數的是「單位」
+    //    （event_session_plans.units_taken）——0036 檔頭 §1 整段就是在講這兩個
+    //    量為什麼不能混。分開兩個區域，才能讓「以後誰動了方案的名額」與「以後誰
+    //    動了場次的座位」各自被正確的自檢叫回去，而不是永遠綁在一起被同一組
+    //    斷言籠統覆蓋。
+    identifiers: ["event_session_plans", "reserve_plan_units", "release_plan_units", "units_taken"],
+  },
 });
 
 /**
@@ -571,6 +582,53 @@ export const MIGRATION_LEDGER = Object.freeze([
       "session_seats",
       "event_registrations",
       "inventory",
+    ],
+  },
+  {
+    file: "0036_event_session_plans.sql",
+    note: "一個場次可以開多個價格方案（票種）：新表 event_session_plans（單位計的名額池，seats_per_unit 讓一個單位佔多個座位）、order_items 加 plan_id／plan_title、新函式 reserve_plan_units()／release_plan_units()，並 create or replace release_session_seat() 與 expire_unpaid_orders()（RETURNS TABLE 形狀逐字不變）一併回沖 units_taken",
+    // ⚠️ 這一列的 touches 是**用 AREAS 的識別字實際掃過這支剝過註解的 SQL 算出來
+    //    的**（node -e 對 stripSqlComments() 之後的檔案內容逐區跑
+    //    identifierRe()，做法與 0035 那一列相同），不是憑印象寫的。八個裡有五個
+    //    值得說明它們為什麼在：
+    //
+    //    · session_plans（識別字 event_session_plans／reserve_plan_units／
+    //      release_plan_units／units_taken）——這一支自己開的新區域，見 AREAS
+    //      裡那一段「為什麼跟 session_seats 分開」。
+    //    · session_seats（識別字 event_sessions／release_session_seat／
+    //      seats_taken）——release_session_seat() 被 create or replace 整支
+    //      重寫，本體裡本來就有這三個識別字；這一支**沒有**動 reserve_session_seat
+    //      一個字（簽章與內部契約都不用改，見檔頭 §1），所以那個識別字不會被
+    //      掃到，也確實沒在 touches 裡。
+    //    · order_expiry（識別字 expire_unpaid_orders／order_items）——
+    //      expire_unpaid_orders() 整支被 create or replace 重寫（新增第 4d
+    //      步），release_session_seat() 也讀 order_items.plan_id／quantity。
+    //    · orders_payments（識別字 orders／payments）、products_availability
+    //      （識別字 products）、inventory（識別字 inv.）——都是
+    //      expire_unpaid_orders() 函式本體帶進來的，跟 0026／0029／0031／0034
+    //      對 admin_upsert_event_with_session() 或它自己是同一種情況：0034 那一份
+    //      逐字照抄，這一支只多接了第 4d 步，前面幾步（給回型錄庫存、放掉進銷存
+    //      保留、關掉付款嘗試）一個字沒改，但識別字確實在檔案裡，少標就是少報。
+    //    · event_registrations（識別字 event_registrations）——同上，第 4c 步
+    //      （0020 就有的）沒有被動過，但識別字仍在被重寫的函式本體裡。
+    //    · localized_list（識別字 is_localized）——event_session_plans.title 的
+    //      CHECK 用了 is_localized()，跟 event_sessions.title 同一條規則。
+    //
+    //    不在 touches 裡、但看起來像會中的兩個：events_shape（識別字
+    //    public.events／event_blocks／admin_upsert_event_with_session／
+    //    speaker_id）——這一支完全沒有碰 public.events 或那支 RPC，商品與活動的
+    //    連結（0026）一個字沒動。cron_jobs（識別字 cron.schedule 等）——
+    //    expire_unpaid_orders() 的排程是 0020 建的，這一支只改函式本體、沒有
+    //    重新下 cron.schedule。
+    touches: [
+      "session_plans",
+      "orders_payments",
+      "order_expiry",
+      "products_availability",
+      "session_seats",
+      "event_registrations",
+      "inventory",
+      "localized_list",
     ],
   },
 ]);

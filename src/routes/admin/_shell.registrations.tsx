@@ -51,13 +51,19 @@ import {
 } from "@/components/ui/form";
 import { LocalizedField } from "@/components/admin/LocalizedField";
 import { eventSessionSchema, type EventSessionFormValues } from "@/lib/admin/schemas";
-import type { listBookableProducts, listEventSessions } from "@/lib/admin/fns/event-sessions";
+import type {
+  listBookableProducts,
+  listEventSessionPlans,
+  listEventSessions,
+} from "@/lib/admin/fns/event-sessions";
 import type { listSessionRoster } from "@/lib/admin/fns/event-registrations";
 import { RegistrationRevealDialog } from "@/components/admin/RegistrationRevealDialog";
+import { SessionPlansEditor } from "@/components/admin/SessionPlansEditor";
 
 type SessionRow = Awaited<ReturnType<typeof listEventSessions>>[number];
 type ProductRow = Awaited<ReturnType<typeof listBookableProducts>>[number];
 type RosterRow = Awaited<ReturnType<typeof listSessionRoster>>[number];
+type PlanRow = Awaited<ReturnType<typeof listEventSessionPlans>>[number];
 
 const EMPTY_LOCALIZED = { zh: "", en: "", ja: "" };
 
@@ -122,12 +128,13 @@ export const Route = createFileRoute("/admin/_shell/registrations")({
    * 的前置判斷，全是書的購物車一次都不會碰到 event_sessions。
    */
   loader: async () => {
-    const { listEventSessions, listBookableProducts } =
+    const { listEventSessions, listBookableProducts, listEventSessionPlans } =
       await import("@/lib/admin/fns/event-sessions");
     const { countRegistrationsBySession } = await import("@/lib/admin/fns/event-registrations");
     const empty = {
       sessions: [] as Awaited<ReturnType<typeof listEventSessions>>,
       products: [] as Awaited<ReturnType<typeof listBookableProducts>>,
+      plans: [] as Awaited<ReturnType<typeof listEventSessionPlans>>,
       counts: {} as Awaited<ReturnType<typeof countRegistrationsBySession>>,
     };
 
@@ -140,12 +147,22 @@ export const Route = createFileRoute("/admin/_shell/registrations")({
       return { ...empty, schemaMissing: true, rosterReady: false };
     }
 
+    // 0036：方案表是這一期才加的，用同一套「還沒套 migration 就退化」處理——
+    // 場次照常顯示，只有「方案」那一塊會是空的。與 rosterReady 平行但各自獨立：
+    // 「0020 套了、0036 還沒套」是真的會發生的中間狀態（程式碼先上線）。
+    let plans = empty.plans;
     try {
-      const counts = await countRegistrationsBySession();
-      return { sessions, products, counts, schemaMissing: false, rosterReady: true };
+      plans = await listEventSessionPlans();
     } catch (err) {
       if (!isSchemaMissing(err)) throw err;
-      return { ...empty, sessions, products, schemaMissing: false, rosterReady: false };
+    }
+
+    try {
+      const counts = await countRegistrationsBySession();
+      return { sessions, products, plans, counts, schemaMissing: false, rosterReady: true };
+    } catch (err) {
+      if (!isSchemaMissing(err)) throw err;
+      return { ...empty, sessions, products, plans, schemaMissing: false, rosterReady: false };
     }
   },
   head: () => ({
@@ -216,7 +233,7 @@ function toFormValues(row: SessionRow): EventSessionFormValues {
 }
 
 function AdminRegistrationsPage() {
-  const { sessions, products, counts, schemaMissing, rosterReady } = Route.useLoaderData();
+  const { sessions, products, plans, counts, schemaMissing, rosterReady } = Route.useLoaderData();
   const { user } = Route.useRouteContext();
   const router = useRouter();
 
@@ -549,6 +566,9 @@ function AdminRegistrationsPage() {
             onSubmit={handleSubmit}
             submitting={submitting}
             submitLabel={editing ? "儲存變更" : "新增"}
+            editingSessionId={editing ? editing.id : null}
+            plans={editing ? plans.filter((p) => p.session_id === editing.id) : []}
+            onPlansChanged={() => router.invalidate()}
           />
         </DialogContent>
       </Dialog>
@@ -757,6 +777,16 @@ type SessionFormProps = {
   onSubmit: (values: EventSessionFormValues) => Promise<void>;
   submitting: boolean;
   submitLabel: string;
+  /**
+   * 0036：編輯中的場次 id，null＝正在新增一個還沒存過的場次。方案掛在
+   * event_sessions.id 上，新建場次那一刻還沒有 id 可以掛，所以方案編輯器只在
+   * 這裡非 null 時才畫——見 SessionPlansEditor 的檔頭。
+   */
+  editingSessionId: string | null;
+  /** 已經按 editingSessionId 篩過的方案清單，新增場次時永遠是空陣列。 */
+  plans: PlanRow[];
+  /** 方案的任何一次新增／編輯／刪除之後呼叫（router.invalidate()）。 */
+  onPlansChanged: () => void;
 };
 
 function SessionForm({
@@ -766,6 +796,9 @@ function SessionForm({
   onSubmit,
   submitting,
   submitLabel,
+  editingSessionId,
+  plans,
+  onPlansChanged,
 }: SessionFormProps) {
   const form = useForm<EventSessionFormValues>({
     resolver: zodResolver(eventSessionSchema),
@@ -883,6 +916,17 @@ function SessionForm({
             )}
           />
         </div>
+
+        {/* 0036：價格方案（票種）。只在編輯既有場次時出現——見 SessionPlansEditor
+            檔頭與上面 editingSessionId 的說明。新增場次時這裡完全不畫，不是畫一個
+            停用的空狀態：存一次場次、重新打開編輯，才會看到「新增方案」。 */}
+        {editingSessionId ? (
+          <SessionPlansEditor
+            sessionId={editingSessionId}
+            plans={plans}
+            onChanged={onPlansChanged}
+          />
+        ) : null}
 
         <FormField
           control={form.control}

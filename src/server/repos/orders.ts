@@ -173,6 +173,26 @@ type SessionRow = {
   status: string;
 };
 
+/**
+ * 一個場次底下的價格方案（票種，0036）。單價、名額、販售期間的唯一真相都在這裡
+ * ——`products.price` 只給「這個場次一個 open 方案都沒有」的情況當退回值。
+ */
+const PLAN_COLUMNS =
+  "id, session_id, title, price, seats_per_unit, capacity, units_taken, status, sale_starts_at, sale_ends_at";
+
+type PlanRow = {
+  id: string;
+  session_id: string;
+  title: Localized;
+  price: number;
+  seats_per_unit: number;
+  capacity: number;
+  units_taken: number;
+  status: string;
+  sale_starts_at: string | null;
+  sale_ends_at: string | null;
+};
+
 /** 一位參加者，如同瀏覽器被允許描述的樣子。沒有任何金額欄位。 */
 type ParticipantInput = {
   name: string;
@@ -196,8 +216,22 @@ type PricedLine = {
    */
   sessionId: string | null;
   /**
-   * Who is coming, in the order the shopper typed them. Exactly `quantity`
-   * entries for a booking, empty for everything else.
+   * uuid of public.event_session_plans，或 null（0036）。null 代表這場沒有方案，
+   * 或這一行沒有選——那時 unitPrice 來自 products.price、quantity 就是座位數
+   * （seatsPerUnit 恆為 1），與 0020 之後的行為逐字相同。
+   */
+  planId: string | null;
+  /** plan_title 的快照，plan_id 非 null 時必定非 null（同 order_items 的 CHECK）。 */
+  planTitle: Localized | null;
+  /**
+   * 一個購買單位佔用場次的幾個座位。沒有方案時恆為 1。`quantity × seatsPerUnit`
+   * 才是真正要傳給 reserve_session_seat() 的座位數，也是 participants 陣列
+   * 應該有的長度——見 orders.ts 檔頭與 0036 的檔頭 §1。
+   */
+  seatsPerUnit: number;
+  /**
+   * Who is coming, in the order the shopper typed them. Exactly
+   * `quantity × seatsPerUnit` entries for a booking, empty for everything else.
    *
    * ⚠️ PII. It exists inside this function call and inside the SQL statement
    *    that writes it, and nowhere else — it is never logged, never returned to
@@ -206,7 +240,9 @@ type PricedLine = {
   participants: ParticipantInput[];
   productType: ProductTypeForOrder;
   name: Localized;
+  /** 有方案時是方案的單價；沒有方案時是 products.price。 */
   unitPrice: number;
+  /** 買了幾個「單位」，不是幾個座位——見 seatsPerUnit。 */
   quantity: number;
   subtotal: number;
   requiresShipping: boolean;
@@ -261,23 +297,33 @@ const isBooking = (t: ProductTypeForOrder) => t === "event" || t === "journey";
  * independent lines against the same row.
  */
 async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]> {
-  // ⚠️ Merged on (product, sitting), not on product alone. Before 0020 the key
-  // was the product id, because two lines for the same product really were
+  // ⚠️ Merged on (product, sitting, plan), not on product alone. Before 0020 the
+  // key was the product id, because two lines for the same product really were
   // indistinguishable. They are not any more: one activity with a morning and
   // an evening sitting is two different things to buy, and merging them would
   // charge for both while seating everyone in whichever one came first.
+  //
+  // 0036 adds `planId` to the same key for the same reason: two lines for the
+  // SAME sitting but DIFFERENT plans (two "early bird" units and one "standard"
+  // unit of the same session) are two different things to buy — a single
+  // 早鳥/一般 checkbox pair, not one blended line. `planId ?? ""` keeps a
+  // no-plan booking's key identical in shape to before 0036 (still ends in the
+  // sitting id followed by a colon-joined empty string), so merging behaviour
+  // for the common case is untouched.
   const wanted = new Map<
     string,
     {
       productId: string;
       sessionId: string | null;
+      planId: string | null;
       quantity: number;
       participants: ParticipantInput[];
     }
   >();
   for (const item of items) {
     const sessionId = item.sessionId ?? null;
-    const key = `${item.productId}:${sessionId ?? ""}`;
+    const planId = item.planId ?? null;
+    const key = `${item.productId}:${sessionId ?? ""}:${planId ?? ""}`;
     const existing = wanted.get(key);
     if (existing) {
       existing.quantity += item.quantity;
@@ -286,6 +332,7 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
       wanted.set(key, {
         productId: item.productId,
         sessionId,
+        planId,
         quantity: item.quantity,
         participants: [...(item.participants ?? [])],
       });
@@ -325,6 +372,24 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
     }
   }
 
+  // 0036：這個購物車宣稱要買的方案，同樣讀回資料庫的現況。只有購物車裡真的帶了
+  // planId 才查，所以一個沒有方案的購物車（今天每一個既有場次）在往返次數上
+  // 一次都不會多。
+  const planIds = [
+    ...new Set([...wanted.values()].map((w) => w.planId).filter((id): id is string => id !== null)),
+  ];
+  const planById = new Map<string, PlanRow>();
+  if (planIds.length > 0) {
+    const { data: planRows, error: planError } = await supabaseAdmin()
+      .from("event_session_plans")
+      .select(PLAN_COLUMNS)
+      .in("id", planIds);
+    if (planError) throw new CheckoutError("order_failed");
+    for (const row of (planRows ?? []) as unknown as PlanRow[]) {
+      planById.set(row.id, row);
+    }
+  }
+
   // Every requested id must still be on sale. Reporting the whole cart as
   // unavailable rather than silently dropping the line is deliberate: dropping
   // it would charge the shopper for an order they did not agree to.
@@ -332,6 +397,10 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
   for (const w of wanted.values()) {
     const p = byId.get(w.productId);
     if (!p) throw new CheckoutError("product_unavailable");
+
+    let unitPrice = p.price;
+    let planTitle: Localized | null = null;
+    let seatsPerUnit = 1;
 
     // ---- the shape rules order_items' CHECK will enforce anyway -----------
     // Checked here first so the shopper gets a sentence instead of a 23514.
@@ -345,27 +414,63 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
       if (!session || session.status !== "open" || session.product_id !== p.id) {
         throw new CheckoutError("product_unavailable");
       }
-      if (w.participants.length !== w.quantity) throw new CheckoutError("order_failed");
+
+      // 0036：這一行有沒有選方案。四種失敗（不存在／不屬於這個場次／已下架／
+      // 超出販售期間）全部落到同一個 "product_unavailable" —— 與上面 session
+      // 那段完全同一個理由：更精確地分辨，就是把結帳變成一個告訴攻擊者「哪些
+      // 方案 id 存在」的 oracle。這裡是第一道（讓客人在結帳頁面前就被擋下來、
+      // 拿到一句看得懂的話），真正握著列鎖的第二道是 reserve_plan_units()
+      // （0036），兩者分工與 session 的驗證完全對稱。
+      if (w.planId !== null) {
+        const plan = planById.get(w.planId);
+        const now = Date.now();
+        const opensAt = plan?.sale_starts_at ? Date.parse(plan.sale_starts_at) : null;
+        const closesAt = plan?.sale_ends_at ? Date.parse(plan.sale_ends_at) : null;
+        if (
+          !plan ||
+          plan.session_id !== session.id ||
+          plan.status !== "open" ||
+          (opensAt !== null && !Number.isNaN(opensAt) && now < opensAt) ||
+          (closesAt !== null && !Number.isNaN(closesAt) && now > closesAt)
+        ) {
+          throw new CheckoutError("product_unavailable");
+        }
+        unitPrice = plan.price;
+        planTitle = plan.title;
+        seatsPerUnit = plan.seats_per_unit;
+      }
+
+      // ⚠️ 座位數是 quantity × seatsPerUnit，不是 quantity 本身——0036 之前
+      // 兩者相等（seatsPerUnit 恆為 1），這一期起只有「沒選方案」的行還相等。
+      // 這條規則與 supabase/migrations/0036 檔頭 §1 逐字對應；漏改的話雙人房
+      // 這類方案會在這裡被誤判成「參加者填的人數不對」，而拋出的錯誤是
+      // order_failed，完全指不到真正的原因。
+      const seatsNeeded = w.quantity * seatsPerUnit;
+      if (w.participants.length !== seatsNeeded) throw new CheckoutError("order_failed");
       for (const person of w.participants) {
         const hasName = person.name.trim().length > 0;
         const hasContact =
           (person.email ?? "").trim().length > 0 || (person.phone ?? "").trim().length > 0;
         if (!hasName || !hasContact) throw new CheckoutError("order_failed");
       }
-    } else if (w.sessionId !== null || w.participants.length > 0) {
-      // A book with a sitting attached is a payload that has been edited.
+    } else if (w.sessionId !== null || w.planId !== null || w.participants.length > 0) {
+      // A book with a sitting (or a plan) attached is a payload that has been
+      // edited.
       throw new CheckoutError("product_unavailable");
     }
 
     lines.push({
       productId: p.id,
       sessionId: w.sessionId,
+      planId: w.planId,
+      planTitle,
+      seatsPerUnit,
       participants: w.participants,
       productType: p.product_type,
       name: p.title,
-      unitPrice: p.price,
+      unitPrice,
       quantity: w.quantity,
-      subtotal: p.price * w.quantity,
+      subtotal: unitPrice * w.quantity,
       requiresShipping: p.requires_shipping,
       stockManaged: p.stock !== null,
     });
@@ -404,9 +509,23 @@ async function priceLines(items: CheckoutPayload["items"]): Promise<PricedLine[]
       // those two are pinned to null/0 by a CHECK, so the old condition
       // (`p.capacity !== null && …`) is false for every row — it would wave
       // every booking through, which is the fail-OPEN direction.
+      //
+      // 0036：座位需求是 quantity × seatsPerUnit，不是 quantity——沒有方案的行
+      // seatsPerUnit 恆為 1，這一句對既有行為逐字相同。
       const session = sessionById.get(line.sessionId!)!;
-      if (session.seats_taken + line.quantity > session.capacity) {
+      const seatsNeeded = line.quantity * line.seatsPerUnit;
+      if (session.seats_taken + seatsNeeded > session.capacity) {
         throw new CheckoutError("no_seats_left");
+      }
+      // 0036：方案自己的名額也要在這裡先擋一次（真正握著列鎖的是
+      // reserve_plan_units()，這裡跟 session 的檢查一樣只是「便宜、不寫入」的
+      // 提早拒絕，讓常見的「已經被搶完」不用燒掉一個訂單編號）。兩個限制
+      // 都要成立：場次的位子夠，且方案的單位夠。
+      if (line.planId !== null) {
+        const plan = planById.get(line.planId)!;
+        if (plan.units_taken + line.quantity > plan.capacity) {
+          throw new CheckoutError("no_seats_left");
+        }
       }
     } else if (line.stockManaged) {
       if (p.stock !== null && p.stock < line.quantity) {
@@ -465,6 +584,34 @@ async function releaseSeats(orderItemIds: number[]): Promise<void> {
     } catch {
       /* best effort — see the doc comment */
     }
+  }
+}
+
+/**
+ * 0036：只在一個地方被呼叫——createOrder() 對同一行的 `reserve_plan_units()`
+ * 剛成功、緊接著的 `reserve_session_seat()` 卻失敗時，立刻補救掉那個方案保留。
+ *
+ * ⚠️ 這不是 releaseSeats() 的方案版，不能互相取代。releaseSeats() 依賴
+ *    `release_session_seat()` 從 `order_items.plan_id`/`quantity` **反推**要還
+ *    多少方案名額，而那個反推只有在「方案保留與座位保留同時成立」時才安全——
+ *    這支函式存在的理由，正是處理那個反推不成立的唯一窗口（座位那一步失敗、
+ *    方案那一步卻已經成功）。細節見 supabase/migrations/0036 檔頭 §3。
+ *
+ * best effort，跟 releaseSeats() 同一個契約：跑在剛發生的另一個錯誤的處理路徑
+ * 上，不可以再拋一個新錯誤把它蓋掉。SQL 函式自己也有
+ * `exception when others then return 0`，這裡是雙保險。
+ */
+async function releasePlanUnits(planId: string, units: number): Promise<void> {
+  try {
+    const { error } = await supabaseAdmin().rpc("release_plan_units", {
+      p_plan_id: planId,
+      p_units: units,
+    });
+    if (error) {
+      console.error(`[plans] release 失敗 plan=${planId}: ${error.code} ${error.message}`);
+    }
+  } catch {
+    /* best effort — see the doc comment */
   }
 }
 
@@ -929,6 +1076,11 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
     // the attendee rows on order_item_id, which does not exist until this
     // insert has run.
     const anySession = lines.some((l) => l.sessionId !== null);
+    // 0036：與 anySession 同一個理由——order_items.plan_id/plan_title 要等
+    // migration 0036 套用之後才存在，同一批 insert 裡的物件又必須 key 集合
+    // 完全相同（PostgREST 的「All object keys must match」），所以整張訂單
+    // 用同一個布林決定要不要帶這兩欄，而不是逐行各自判斷。
+    const anyPlan = lines.some((l) => l.planId !== null);
     const { data: insertedItems, error: itemsError } = await db
       .from("order_items")
       .insert(
@@ -943,14 +1095,23 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
             product_type: l.productType,
           };
           if (anySession) row.session_id = l.sessionId;
+          if (anyPlan) {
+            row.plan_id = l.planId;
+            row.plan_title = l.planTitle;
+          }
           return row;
         }),
       )
-      .select(anySession ? "id, product_id, session_id" : "id, product_id");
+      .select(
+        ["id, product_id", anySession ? "session_id" : null, anyPlan ? "plan_id" : null]
+          .filter(Boolean)
+          .join(", "),
+      );
     if (itemsError || !insertedItems) throw new CheckoutError("order_failed");
 
-    // Matched by (product, sitting) rather than by array position: priceLines()
-    // already merged duplicates on exactly that key, so it is unique per order,
+    // Matched by (product, sitting, plan) rather than by array position:
+    // priceLines() already merged duplicates on exactly that key (0036 added
+    // plan to it — see priceLines()'s `wanted` map), so it is unique per order,
     // and relying on PostgREST returning rows in insertion order would be an
     // assumption nothing in its contract makes.
     const itemIdByKey = new Map<string, number>();
@@ -958,8 +1119,12 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
       id: number;
       product_id: string | null;
       session_id?: string | null;
+      plan_id?: string | null;
     }[]) {
-      itemIdByKey.set(`${row.product_id ?? ""}:${row.session_id ?? ""}`, row.id);
+      itemIdByKey.set(
+        `${row.product_id ?? ""}:${row.session_id ?? ""}:${row.plan_id ?? ""}`,
+        row.id,
+      );
     }
 
     // ---- step 4: order_addresses -------------------------------------------
@@ -1004,23 +1169,66 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
     });
     if (invoiceError) throw new CheckoutError("order_failed");
 
-    // ---- step 5: seats + attendees (ONE call, see the file header) ---------
+    // ---- step 5: plan units (if any) + seats + attendees --------------------
     // Sorted by session id so two concurrent orders that book the same pair of
     // sittings take the row locks in the same order and cannot deadlock against
     // each other — the same reasoning atomic_deduct_stock() applies internally.
     // Sorting by product id (what this loop used to do) is not enough any more:
     // two sittings of the SAME product are two different rows to lock.
+    //
+    // 0036：每一行如果選了方案，**先**打 reserve_plan_units()，**再**打
+    // reserve_session_seat()。這個順序（而不是計畫文字唸起來更直覺的「先佔位子
+    // 再佔方案」）是刻意的，理由整段寫在 supabase/migrations/0036 檔頭 §3：
+    // 這兩支是兩個獨立的交易（PostgREST 一個請求一個交易），中間有一個窗口
+    // 只有一步成功；「方案先」讓這個窗口唯一可能發生的情況變成「方案保留了、
+    // 座位沒保留」，此時 event_registrations 完全不存在，release_session_seat()
+    // 對它是天生的 no-op，所以要靠這裡明確呼叫 releasePlanUnits() 補救——不能
+    // 依賴 release_session_seat() 反推，那個反推只在「兩者同時成立」時才安全。
     for (const line of lines
       .filter((l) => isBooking(l.productType))
       .sort((a, b) => ((a.sessionId ?? "") < (b.sessionId ?? "") ? -1 : 1))) {
-      const orderItemId = itemIdByKey.get(`${line.productId}:${line.sessionId ?? ""}`);
+      const orderItemId = itemIdByKey.get(
+        `${line.productId}:${line.sessionId ?? ""}:${line.planId ?? ""}`,
+      );
       if (orderItemId === undefined) throw new CheckoutError("order_failed");
 
+      if (line.planId !== null) {
+        const { error: planError } = await db.rpc("reserve_plan_units", {
+          p_order_id: order.id,
+          p_plan_id: line.planId,
+          p_units: line.quantity,
+        });
+        if (planError) {
+          // ⚠️ code + message only — same PII-log discipline as the seats
+          // reservation below (this statement carries no PII itself, but the
+          // convention is kept uniform rather than decided per call site).
+          console.error(
+            `[plans] reserve 失敗 order=${order.id} item=${orderItemId}: ${planError.code} ${planError.message}`,
+          );
+          // Only NO_PLAN_UNITS_LEFT is something the shopper can act on. Every
+          // other reason (plan closed, outside its sale window, tampered
+          // planId) means the payload was edited or priceLines() has a bug —
+          // neither is worth a specific sentence. Nothing was reserved for
+          // this line yet (this call failed first), so there is nothing to
+          // release here; the outer catch handles every EARLIER line via
+          // reservedItemIds as usual.
+          throw new CheckoutError(
+            (planError.message ?? "").includes("NO_PLAN_UNITS_LEFT")
+              ? "no_seats_left"
+              : "order_failed",
+          );
+        }
+      }
+
+      // 座位數是 quantity × seatsPerUnit，不是 quantity——見 0036 檔頭 §1／
+      // priceLines() 的同一段註解。沒有方案的行 seatsPerUnit 恆為 1，這裡對
+      // 既有行為逐字相同。
+      const seatsNeeded = line.quantity * line.seatsPerUnit;
       const { error } = await db.rpc("reserve_session_seat", {
         p_order_id: order.id,
         p_order_item_id: orderItemId,
         p_session_id: line.sessionId,
-        p_quantity: line.quantity,
+        p_quantity: seatsNeeded,
         p_participants: line.participants.map((person) => ({
           name: person.name.trim(),
           email: (person.email ?? "").trim() || null,
@@ -1040,6 +1248,11 @@ export async function createOrder(payload: CheckoutPayload): Promise<PlacedOrder
         console.error(
           `[seats] reserve 失敗 order=${order.id} item=${orderItemId}: ${error.code} ${error.message}`,
         );
+        // 0036：這一行剛剛才成功保留的方案單位要立刻補救回去——見這個 for 迴圈
+        // 上面那段長註解，以及 releasePlanUnits() 自己的文件註解。
+        if (line.planId !== null) {
+          await releasePlanUnits(line.planId, line.quantity);
+        }
         // Only NO_SEATS_LEFT is something the shopper can act on ("pick fewer
         // places"). Everything else the function raises — a mismatched session,
         // a closed sitting, a participant count that does not match the

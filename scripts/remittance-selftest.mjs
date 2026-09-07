@@ -286,7 +286,7 @@ assertMigrationDependencies(check, MIG_DIR, {
   // 才可能用到的東西（封存一張已付款的匯款訂單，或刪除一張始終沒回報末五碼、
   // 已經取消的匯款訂單）——不影響匯款訂單「怎麼從 pending 走到 paid」的任何一步。
   // 原樣成立。
-  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 
 const sql0034 = readFile(MIG_0034);
@@ -334,7 +334,12 @@ console.log("\n[3] 匯款期限 3 天 —— 兩邊同步");
 {
   const liveExpire = latestDefinition(MIG_DIR, "expire_unpaid_orders", stripSqlComments);
   checkTrue("反空殼：切得到現在生效的 expire 定義", liveExpire.body.length > 1000);
-  check("現在生效的那一份來自 0034", liveExpire.file, "0034_transfer_payment.sql");
+  // 0036：新增了第 4d 步（一併回沖方案的 units_taken），create or replace 了
+  // 這支函式，所以「現在生效的那一份」從 0034 換成 0036——這是 latestDefinition()
+  // 存在的理由本身（見它的檔頭）：機械地掃到最後一支定義它的檔案，不必每次改動
+  // 這支函式都手動去改這裡指到哪一支。這裡仍然寫死檔名，而不是隨便什麼都算過，
+  // 是為了在「以為改到了、其實漏了」的情況下當場報錯，而不是安靜地通過。
+  check("現在生效的那一份來自 0036", liveExpire.file, "0036_event_session_plans.sql");
   checkTrue(
     "🔴 匯款訂單的門檻是 greatest(p_older_than, interval '3 days')",
     /payment_method = 'transfer'[\s\S]{0,160}greatest\(p_older_than, interval '3 days'\)/.test(

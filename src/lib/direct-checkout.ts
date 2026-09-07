@@ -30,7 +30,7 @@
  * 出現在網址、瀏覽紀錄與分享出去的連結裡。姓名與電話不行，所以它們不在這裡。
  */
 import { cartInputFor, type CartLine } from "@/lib/cart";
-import type { ShopProduct, ShopSession } from "@/lib/shop";
+import type { ShopPlan, ShopProduct, ShopSession } from "@/lib/shop";
 
 /**
  * 數量上限的天花板，與伺服器端 checkoutPayloadSchema 的
@@ -43,15 +43,17 @@ import type { ShopProduct, ShopSession } from "@/lib/shop";
 export const DIRECT_MAX_QTY = 99;
 
 /**
- * /checkout 認得的三個網址參數。三個都是選填 —— 一個都沒帶就是原本的「購物車 → 結帳」。
+ * /checkout 認得的四個網址參數。四個都是選填 —— 一個都沒帶就是原本的「購物車 → 結帳」。
  *
  * `product` 是 products.slug（不是 id）：slug 是後台看得懂、也是站上其他連結在用的
  * 那一個字串，而且 0004 就有唯一索引。`session` 是 event_sessions.id，因為場次沒有
- * slug。`qty` 允許任何整數進來，夾在 buildDirectLine() 裡做。
+ * slug。`plan` 是 event_session_plans.id（0036），只有場次真的開了方案才會有。`qty`
+ * 允許任何整數進來，夾在 buildDirectLine() 裡做。
  */
 export type DirectCheckoutSearch = {
   product?: string;
   session?: string;
+  plan?: string;
   qty?: number;
 };
 
@@ -74,6 +76,7 @@ export function parseDirectCheckoutSearch(search: Record<string, unknown>): Dire
   return {
     product: str(search.product),
     session: str(search.session),
+    plan: str(search.plan),
     qty: Number.isFinite(qtyNumber) ? Math.trunc(qtyNumber) : undefined,
   };
 }
@@ -84,7 +87,7 @@ export function isDirectCheckout(search: DirectCheckoutSearch): boolean {
 }
 
 /**
- * 直接結帳失敗的四種原因。四種都要有畫面（見 /checkout 的 directProblemText），
+ * 直接結帳失敗的五種原因。五種都要有畫面（見 /checkout 的 directProblemText），
  * 沒有一種是白畫面或 500 —— 這些網址是客人手上會存起來、會轉貼、會過期的東西。
  *
  *   product_gone     找不到這件商品（下架了，或網址被改過）
@@ -92,9 +95,17 @@ export function isDirectCheckout(search: DirectCheckoutSearch): boolean {
  *                    priceLines() 直接丟 product_unavailable（orders.ts:334-336），
  *                    所以在這裡就攔下來，而不是讓客人填完整張表才失敗
  *   session_gone     帶了場次但這件商品沒有那一場（結束了、被取消了，或不是它的場次）
- *   sold_out         這一場已經沒有位子
+ *   plan_required    0036：這一場開了方案，但網址沒帶（或帶的那個 id 不屬於這一場）——
+ *                    跟 session_required 同一個理由，priceLines() 會用同一句
+ *                    product_unavailable 拒絕，這裡先攔下來給一句看得懂的話
+ *   sold_out         這一場（或選中的那個方案）已經沒有名額
  */
-export type DirectFailureReason = "product_gone" | "session_required" | "session_gone" | "sold_out";
+export type DirectFailureReason =
+  | "product_gone"
+  | "session_required"
+  | "session_gone"
+  | "plan_required"
+  | "sold_out";
 
 export type DirectResolution =
   | {
@@ -120,8 +131,12 @@ function isBooking(product: ShopProduct): boolean {
  *    的跨場次最大值，那個數字**不可以拿來當數量上限**（兩場各 5 位會變成單行可選 10），
  *    所以呼叫端只在真的選定一場之後才拿它去夾數量。
  */
-export function directSeatLimit(product: ShopProduct, session: ShopSession | null): number | null {
-  return cartInputFor(product, 1, session).limit;
+export function directSeatLimit(
+  product: ShopProduct,
+  session: ShopSession | null,
+  plan: ShopPlan | null = null,
+): number | null {
+  return cartInputFor(product, 1, session, plan).limit;
 }
 
 /**
@@ -175,13 +190,22 @@ export function buildDirectLine(
   product: ShopProduct,
   session: ShopSession | null,
   qty: number | undefined,
+  plan: ShopPlan | null = null,
 ): DirectResolution {
   // 非活動商品身上的場次參數一律丟掉：order_items 的 CHECK 不接受帶場次的書，
   // 而 cartInputFor() 對 null 場次的處理就是這件事的唯一定義。
   const picked = isBooking(product) ? session : null;
   if (isBooking(product) && picked === null) return { ok: false, reason: "session_required" };
 
-  const input = cartInputFor(product, 1, picked);
+  // 0036：這一場如果開了方案，plan 必須是其中之一——呼叫端（resolveDirectCheckout）
+  // 已經做過這個查找，這裡再驗一次是防呆，不是第二份邏輯（判斷式本身沒有算任何
+  // 名額，只是比對 id 在不在陣列裡）。
+  const pickedPlan = picked && plan && picked.plans.some((p) => p.id === plan.id) ? plan : null;
+  if (picked !== null && picked.plans.length > 0 && pickedPlan === null) {
+    return { ok: false, reason: "plan_required" };
+  }
+
+  const input = cartInputFor(product, 1, picked, pickedPlan);
   const limit = input.limit;
   if (limit !== null && limit <= 0) return { ok: false, reason: "sold_out" };
 
@@ -219,16 +243,32 @@ export function resolveDirectCheckout(
   const session = product.sessions.find((s) => s.id === search.session) ?? null;
   if (!session) return { ok: false, reason: "session_gone" };
 
-  return buildDirectLine(product, session, search.qty);
+  // 0036：這一場有沒有方案要先問場次自己（session.plans），不是問網址參數存不存在
+  // ——沒有方案的場次即使網址帶了 plan 也不需要它，buildDirectLine() 會忽略掉。
+  const plan = search.plan ? (session.plans.find((p) => p.id === search.plan) ?? null) : null;
+
+  return buildDirectLine(product, session, search.qty, plan);
 }
 
-/** 「我要報名」按鈕要帶的網址參數。組法只有這一份，連結與解析才不會分岔。 */
+/**
+ * 「我要報名」按鈕要帶的網址參數。組法只有這一份，連結與解析才不會分岔。
+ *
+ * `plan` 選填——沒有方案的場次傳 null，網址就不帶那個 key（與 0020 之後的連結
+ * 逐字相同）。有方案時必須傳，否則 resolveDirectCheckout() 會在對面用
+ * `plan_required` 拒絕這個連結。
+ */
 export function directCheckoutSearch(
   product: ShopProduct,
   session: ShopSession,
   qty: number,
-): Required<DirectCheckoutSearch> {
-  return { product: product.slug, session: session.id, qty };
+  plan: ShopPlan | null = null,
+): DirectCheckoutSearch {
+  return {
+    product: product.slug,
+    session: session.id,
+    qty,
+    ...(plan ? { plan: plan.id } : {}),
+  };
 }
 
 // -----------------------------------------------------------------------------

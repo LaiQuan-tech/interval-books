@@ -321,7 +321,7 @@ assertMigrationDependencies(check, MIG_DIR, {
   // **後面**，不影響任何一欄的位置。is_localized_list() 的形狀守衛與 v_prev
   // 的讀取也原樣照抄。event_blocks 那張表與 admin_reorder_event_blocks()
   // 0031 一個字都沒提到（它連 event_blocks 這個字都沒出現過）。原樣成立。
-  reviewedThrough: "0031_event_gallery.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 
 check(

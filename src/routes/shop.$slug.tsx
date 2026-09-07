@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
 import { PRODUCT_TYPE_LABELS, SEATS_LEFT_LABEL } from "@/components/shop/labels";
+import { PlanPicker } from "@/components/shop/PlanPicker";
 import { SessionPicker } from "@/components/shop/SessionPicker";
 import { PriceTag, QuantityStepper, StockBadge } from "@/components/shop/ShopBits";
 import { useT } from "@/i18n/LanguageContext";
@@ -14,7 +15,6 @@ import { imageFor } from "@/lib/images";
 import {
   fetchActiveProductBySlug,
   isSoldOut,
-  remainingFor,
   remainingForSession,
   type ShopSession,
 } from "@/lib/shop";
@@ -49,6 +49,12 @@ const PAGE = {
     zh: "請先選擇場次",
     en: "Please choose a sitting first",
     ja: "先に回をお選びください",
+  },
+  // 0036：這一場開了方案時，選完場次還要再選一個方案。
+  pickPlanFirst: {
+    zh: "請先選擇方案",
+    en: "Please choose a plan first",
+    ja: "先にプランをお選びください",
   },
   unlimited: { zh: "常備品項", en: "Always in stock", ja: "常時ご用意" },
   soldOutNote: {
@@ -125,6 +131,8 @@ function ProductDetail() {
   const [sessionId, setSessionId] = useState<string | null>(
     () => product?.sessions.find((s) => remainingForSession(s) > 0)?.id ?? null,
   );
+  // 0036：這個場次選了哪個方案。跟 sessionId 一樣只活在這個元件裡。
+  const [planId, setPlanId] = useState<string | null>(null);
 
   useDocumentMeta({
     title: metaOr(product?.title, PAGE.metaTitle),
@@ -150,11 +158,18 @@ function ProductDetail() {
   const selectedSession: ShopSession | null = isBooking
     ? (product.sessions.find((s) => s.id === sessionId) ?? null)
     : null;
+  // 0036：這個場次有沒有開方案——有的話得先選一個才能加入購物車。
+  const needsPlan = selectedSession !== null && selectedSession.plans.length > 0;
+  const selectedPlan = selectedSession?.plans.find((p) => p.id === planId) ?? null;
+  const readyToBook =
+    !isBooking || (selectedSession !== null && (!needsPlan || selectedPlan !== null));
 
-  // 活動的「還剩幾個」是**選中那一場**的剩餘，不是商品層級的最大值。用後者當
-  // 上限的話，兩個各 5 個位子的梯次會讓單一梯次的數量選到 5 —— 而那一場可能只
-  // 剩 1 個。沒選場次時退回商品層級的數字，那只是給徽章看的。
-  const remaining = selectedSession ? remainingForSession(selectedSession) : remainingFor(product);
+  // 活動的「還剩幾個」是**選中那一場（與方案）**的剩餘，不是商品層級的最大值。
+  // 用後者當上限的話，兩個各 5 個位子的梯次會讓單一梯次的數量選到 5 —— 而那一場
+  // 可能只剩 1 個。這裡改走 cartInputFor()（跟購物車行、direct-checkout 同一個
+  // 算式），不自己重算——理由與那兩個檔案完全一樣：算法只能有一份。沒選場次
+  // （或沒有方案）時它自己會落回商品層級／場次層級的數字，那只是給徽章看的。
+  const remaining = cartInputFor(product, 1, selectedSession, selectedPlan).limit;
   const soldOut = isBooking ? (remaining ?? 0) <= 0 : isSoldOut(product);
   /**
    * 徽章那一行整個不畫的條件。**只對報名商品成立** —— goods/book 的徽章講的是
@@ -169,7 +184,11 @@ function ProductDetail() {
       toast.error(t(PAGE.pickSessionFirst));
       return;
     }
-    const result = addItem(cartInputFor(product, qty, selectedSession));
+    if (isBooking && needsPlan && !selectedPlan) {
+      toast.error(t(PAGE.pickPlanFirst));
+      return;
+    }
+    const result = addItem(cartInputFor(product, qty, selectedSession, selectedPlan));
     if (result === "added") {
       toast.success(t(PAGE.addedToast));
       setQty(1);
@@ -247,8 +266,24 @@ function ProductDetail() {
               selectedId={sessionId}
               onSelect={(id) => {
                 setSessionId(id);
-                // 換場次就把數量收回 1：舊的數量可能超過新場次的剩餘，
-                // 而 clampToLimit 只在加入購物車那一刻才作用。
+                // 換場次就把方案與數量都收回：舊的方案可能不屬於新場次，舊的
+                // 數量可能超過新場次（或新方案）的剩餘，而 clampToLimit 只在
+                // 加入購物車那一刻才作用。
+                setPlanId(null);
+                setQty(1);
+              }}
+            />
+          ) : null}
+
+          {/* 0036：選了場次、而且那個場次有開方案，才畫方案選擇器——沒有方案的
+              場次這裡完全不畫，畫面與 0020 之後逐字相同。 */}
+          {selectedSession && needsPlan ? (
+            <PlanPicker
+              plans={selectedSession.plans}
+              showSeatsRemaining={product.showSeatsRemaining}
+              selectedId={planId}
+              onSelect={(id) => {
+                setPlanId(id);
                 setQty(1);
               }}
             />
@@ -263,11 +298,13 @@ function ProductDetail() {
                 max={remaining}
                 onChange={(next) => setQty(Math.max(1, next))}
                 label={t(PAGE.quantity)}
+                disabled={!readyToBook}
               />
               <button
                 type="button"
                 onClick={handleAdd}
-                className="border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
+                disabled={!readyToBook}
+                className="border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground disabled:cursor-not-allowed disabled:opacity-30"
               >
                 {t(ui.buttons.addToCart)}
               </button>
@@ -279,6 +316,11 @@ function ProductDetail() {
               </Link>
             </div>
           )}
+          {!readyToBook && !soldOut ? (
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              {selectedSession === null ? t(PAGE.pickSessionFirst) : t(PAGE.pickPlanFirst)}
+            </p>
+          ) : null}
 
           {/* `unavailable` can only be true here when the product came back
               null, which the early return above already handled — but keeping

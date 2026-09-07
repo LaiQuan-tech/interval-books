@@ -378,7 +378,7 @@ assertMigrationDependencies(check, MIG_DIR, {
   //    的地方全部在會被 stripTs() 剝掉的註解裡，程式碼本體一次都沒有寫這個表名
   //    字面值（只呼叫 RPC），所以**不會**落進這條掃描的範圍——[7] 段的
   //    rosterTouchers 清單因此沒有變長。原樣成立（實跑驗證見交付回報）。
-  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 // 這一期不准動到既有的 0001–0020，所以它們也必須都還在。
 for (let n = 1; n <= 20; n += 1) {
@@ -1208,9 +1208,13 @@ checkTrue(
   /0020_event_sessions_registrations\.sql/.test(routeTs) && /0021_roster_pii\.sql/.test(routeTs),
 );
 check(
+  // 0036：從 2 次變 3 次——loader 多了一段「方案表還沒套 migration 就退化」的
+  // try/catch（listEventSessionPlans()），跟既有兩段（sessions/products 那組、
+  // countRegistrationsBySession 那段）用的是同一個 isSchemaMissing() 判斷式，
+  // 不是新發明一種吞法。
   "loader 只吞「不存在」這一種錯誤，其餘往上丟",
   (routeTs.match(/if \(!isSchemaMissing\(err\)\) throw err;/g) ?? []).length,
-  2,
+  3,
 );
 // 三個數字的差額要顯示出來（0020 §4.4 回填的舊場次只補一位參加者）。
 checkTrue("列表顯示「另有 N 位未登錄姓名」", /另有 \{unnamed\} 位未登錄姓名/.test(routeTs));

@@ -262,7 +262,7 @@ check("supabase 只被 stub 過一次（沒有被拿來換掉別的模組）", s
 // 假資料。**兩個場次、名額不同** —— 這是這一支最重要的一組資料，見檔頭。
 // -----------------------------------------------------------------------------
 const L = (s) => ({ zh: s, en: s, ja: s });
-function session(id, capacity, seatsTaken, sortOrder = 0) {
+function session(id, capacity, seatsTaken, sortOrder = 0, plans = []) {
   return {
     id,
     productId: "prod-event",
@@ -273,6 +273,10 @@ function session(id, capacity, seatsTaken, sortOrder = 0) {
     capacity,
     seatsTaken,
     sortOrder,
+    // 0036：真正的 ShopSession 一定帶著 plans（toSession() 在 shop.ts 裡永遠會
+    // 填這一欄），這裡補上預設空陣列讓假資料跟型別對得上。大部分測資不需要
+    // 方案，用得到的地方另外傳。
+    plans,
   };
 }
 function product(over = {}) {
@@ -328,8 +332,11 @@ for (const forbidden of ["remainingForSession", "remainingFor", "seatsTaken", "c
 // 少了這一組，上面四條會在 shop.ts 改名之後靜默轉綠。
 const cartCode = stripTs(readFile("src/lib/cart.ts"));
 checkTrue(
-  "對照組：cartInputFor 的 limit 就是 remainingForSession / remainingFor",
-  /limit:\s*session\s*\?\s*remainingForSession\(session\)\s*:\s*remainingFor\(p\)/.test(cartCode),
+  // 0036：cartInputFor() 多了方案分支（見 cart.ts 的 limit 算式），但沒有方案時
+  // 落回的仍然是 remainingForSession(session) : remainingFor(p) 這兩個函式，
+  // 一個字沒變——這裡改成分開驗證兩個子字串，不要求它們在同一行同一個位置。
+  "對照組：cartInputFor 沒有方案時的 limit 仍然是 remainingForSession / remainingFor",
+  /:\s*session\s*\?\s*remainingForSession\(session\)\s*:\s*remainingFor\(p\)/.test(cartCode),
 );
 checkTrue(
   "對照組：remainingForSession 真的定義在 shop.ts",
@@ -512,7 +519,9 @@ checkTrue(
 check("productType 帶到底", line.productType, "event");
 // (c) lineKey —— 參加者攤平陣列靠它對回所屬品項。
 check("keyOfLine() 對這筆品項有效", keyOfLine(line), cartLineKey("prod-event", "s-evening"));
-check("而且它長成 <productId>:<sessionId>", keyOfLine(line), "prod-event:s-evening");
+// 0036：key 多了第三段 planId，這一筆沒有方案所以是空字串——
+// <productId>:<sessionId>:<planId ?? "">。
+check("而且它長成 <productId>:<sessionId>:<planId>", keyOfLine(line), "prod-event:s-evening:");
 checkTrue("lineKey 不是空字串（schema 要求 min(1)）", keyOfLine(line).length > 0);
 checkTrue(
   "對照組：schema 真的要求 lineKey 至少一個字",
@@ -710,6 +719,8 @@ const REASON_COPY = {
   product_gone: "directProductGone",
   session_required: "directSessionRequired",
   session_gone: "directSessionGone",
+  // 0036：第五種原因——這一場開了方案但網址沒帶（或帶的不屬於這一場）。
+  plan_required: "directPlanRequired",
   sold_out: "directSoldOut",
 };
 for (const [reason, key] of Object.entries(REASON_COPY)) {
@@ -725,8 +736,8 @@ for (const [reason, key] of Object.entries(REASON_COPY)) {
     ),
   );
 }
-// 四種原因不可以共用同一句話。
-check("四句文案互不相同", new Set(Object.values(REASON_COPY)).size, 4);
+// 五種原因不可以共用同一句話（0036 加了 plan_required，從四種變五種）。
+check("五句文案互不相同", new Set(Object.values(REASON_COPY)).size, 5);
 // 這幾種失敗要有自己的畫面，不可以掉回「購物車是空的」那個空狀態。
 checkTrue(
   "🔴 直接結帳失敗時渲染自己的畫面",
@@ -741,10 +752,27 @@ checkTrue(
   /catalogue\.unavailable \? t\(PAGE\.catalogueDown\)/.test(checkoutCode),
 );
 checkTrue(
-  "對照組：四種原因就是 DirectFailureReason 的全部",
-  /export type DirectFailureReason =\s*"product_gone"\s*\|\s*"session_required"\s*\|\s*"session_gone"\s*\|\s*"sold_out";/.test(
-    stripComments(readFile("src/lib/direct-checkout.ts")),
-  ),
+  // 0036：多了 plan_required 這第五種——這一場開了方案但網址沒帶（或帶的不
+  // 屬於這一場）。型別現在寫成多行 union（見 direct-checkout.ts），這裡改成
+  // 逐個比對五個字面值都在，而不是釘死單行的排版。
+  "對照組：五種原因就是 DirectFailureReason 的全部",
+  (() => {
+    const src = stripComments(readFile("src/lib/direct-checkout.ts"));
+    const start = src.indexOf("export type DirectFailureReason =");
+    const end = src.indexOf(";", start);
+    const block = src.slice(start, end);
+    const reasons = [
+      "product_gone",
+      "session_required",
+      "session_gone",
+      "plan_required",
+      "sold_out",
+    ];
+    return (
+      reasons.every((r) => block.includes(`"${r}"`)) &&
+      (block.match(/"/g) ?? []).length === reasons.length * 2
+    );
+  })(),
 );
 // 下單管線仍然只有一條。
 check(
@@ -754,10 +782,15 @@ check(
 );
 checkTrue("送出時仍然帶 sessionId", /sessionId: l\.sessionId,/.test(checkoutCode));
 checkTrue("參加者仍然靠 keyOfLine 分組", /const key = keyOfLine\(l\);/.test(checkoutCode));
-// 參加者欄位數 = 這一行的數量。直接結帳只有一行，所以「欄位數 = 網址帶的人數」。
+// 參加者欄位數 = 這一行的座位數（quantity × planSeatsPerUnit，0036）。直接結帳
+// 只有一行，沒有方案時 planSeatsPerUnit 恆為 1，所以「欄位數 = 網址帶的人數」這句
+// 話對現有的直接結帳連結（陶作閱讀課那類）逐字成立；帶了方案的連結欄位數會是
+// qty 的倍數，那正是雙人房這類方案存在的理由。
 checkTrue(
-  "🔴 參加者欄位數就是品項的數量",
-  /\.map\(\(l\) => \(\{ line: l, lineKey: keyOfLine\(l\), count: l\.qty \}\)\)/.test(checkoutCode),
+  "🔴 參加者欄位數是座位數（quantity × planSeatsPerUnit），不是單位數本身",
+  /\.map\(\(l\) => \(\{ line: l, lineKey: keyOfLine\(l\), count: l\.qty \* l\.planSeatsPerUnit \}\)\)/.test(
+    checkoutCode,
+  ),
 );
 checkTrue(
   "仍然照 productType 決定要不要收參加者",
@@ -839,12 +872,15 @@ checkTrue(
   /to="\/checkout"/.test(readFile("src/routes/events.$slug.tsx")),
 );
 checkTrue(
+  // 0036：多了第四個參數 selectedPlan（沒有方案的場次它是 null，directCheckoutSearch()
+  // 自己會決定網址要不要帶 plan 這個 key——呼叫端仍然只是把選中的方案原樣傳過去，
+  // 不是自己組網址參數）。
   "參數走共用的 directCheckoutSearch()",
-  /search=\{directCheckoutSearch\(product, selectedSession, qty\)\}/.test(eventCode),
+  /search=\{directCheckoutSearch\(product, selectedSession, qty, selectedPlan\)\}/.test(eventCode),
 );
 checkTrue(
   "上限問 directSeatLimit()",
-  /directSeatLimit\(product, selectedSession\)/.test(eventCode),
+  /directSeatLimit\(product, selectedSession, selectedPlan\)/.test(eventCode),
 );
 checkFalse("活動頁沒有自己算名額", /\bremainingForSession\b|\bremainingFor\(/.test(eventCode));
 checkFalse("活動頁沒有碰購物車 store", /\buseCart\b|\baddItem\b/.test(eventCode));
@@ -859,7 +895,9 @@ checkTrue("只有選了場次才畫 <Link to=/checkout>", /selectedSession \? \(
 // 沒選場次時數量也不可以被跨場次最大值撐開。
 checkTrue(
   "沒選場次時上限鎖成 1",
-  /selectedSession \? directSeatLimit\(product, selectedSession\) : 1/.test(eventCode),
+  /selectedSession \? directSeatLimit\(product, selectedSession, selectedPlan\) : 1/.test(
+    eventCode,
+  ),
 );
 
 // -----------------------------------------------------------------------------

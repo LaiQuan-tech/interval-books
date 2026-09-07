@@ -129,6 +129,8 @@ const PAGE = {
   freeShippingGap: { zh: "再買", en: "Spend", ja: "あと" },
   freeShippingGapTail: { zh: "即可免運", en: "more for free shipping", ja: "で送料無料" },
   summary: { zh: "訂單明細", en: "Order summary", ja: "ご注文内容" },
+  // 0036：訂單明細裡，一個購買單位佔多個座位的方案（雙人房這類）額外標出座位數。
+  seatsUnit: { zh: "位", en: "seats", ja: "名" },
   subtotal: { zh: "小計", en: "Subtotal", ja: "小計" },
   shipping: { zh: "運費", en: "Shipping", ja: "送料" },
   total: { zh: "應付總額", en: "Total", ja: "合計" },
@@ -244,6 +246,14 @@ const PAGE = {
     en: "We cannot find that sitting. It may have finished or been cancelled.",
     ja: "この回が見つかりません。終了または中止となった可能性があります。",
   },
+  // 0036：這一場開了方案時，連結必須指定方案（早鳥／一般…），跟
+  // directSessionRequired 同一個理由——沒有指定會被 priceLines() 用同一句
+  // product_unavailable 拒絕，這裡先攔下來給一句看得懂的話。
+  directPlanRequired: {
+    zh: "這個連結沒有指定方案。請回到活動頁選一個方案再報名。",
+    en: "This link does not say which plan to book. Please go back to the event and choose one.",
+    ja: "このリンクにはプランの指定がありません。イベントページでプランをお選びください。",
+  },
   directSoldOut: {
     zh: "這一場的名額已經滿了。歡迎回到活動頁看看其他場次。",
     en: "That sitting is full. Have a look at the other sittings on the event page.",
@@ -279,6 +289,8 @@ function directProblemText(reason: DirectFailureReason) {
       return PAGE.directSessionRequired;
     case "session_gone":
       return PAGE.directSessionGone;
+    case "plan_required":
+      return PAGE.directPlanRequired;
     case "sold_out":
       return PAGE.directSoldOut;
   }
@@ -480,7 +492,10 @@ function Checkout() {
     () =>
       buyable
         .filter((l) => l.productType === "event" || l.productType === "journey")
-        .map((l) => ({ line: l, lineKey: keyOfLine(l), count: l.qty })),
+        // 0036：一份要收的是座位數（qty × planSeatsPerUnit），不是 qty 本身——
+        // 沒有方案的行 planSeatsPerUnit 恆為 1，這裡對既有行為逐字相同。雙人房
+        // 這類方案買 1 個單位，這裡要展開成 2 份參加者表單。
+        .map((l) => ({ line: l, lineKey: keyOfLine(l), count: l.qty * l.planSeatsPerUnit })),
     [buyable],
   );
   const totalParticipants = useMemo(
@@ -612,8 +627,12 @@ function Checkout() {
             const people = (values.participants ?? []).filter((p) => p.lineKey === key);
             return {
               productId: l.productId,
+              // 0036：買了幾個「單位」，不是幾個座位——伺服器用 planId 查出
+              // seats_per_unit 再自己換算座位數。沒有方案的行 quantity 仍然
+              // 直接等於座位數，與 0020 之後的行為逐字相同。
               quantity: l.qty,
               sessionId: l.sessionId,
+              planId: l.planId,
               participants:
                 l.productType === "event" || l.productType === "journey"
                   ? people.map((p) => ({
@@ -1285,7 +1304,21 @@ function Checkout() {
                         {t(line.sessionTitle)}
                       </span>
                     ) : null}
-                    <span className="text-xs text-muted-foreground">× {line.qty}</span>
+                    {/* 0036：方案名稱另起一行——跟 sessionTitle 同一個理由，
+                        沒有方案的行 planTitle 是 null，這裡完全不畫。 */}
+                    {line.planTitle ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {t(line.planTitle)}
+                      </span>
+                    ) : null}
+                    <span className="text-xs text-muted-foreground">
+                      × {line.qty}
+                      {/* 一個單位佔多個座位時把座位數也印出來——不然「× 1」對
+                          雙人房這種方案看起來像只訂了一位。 */}
+                      {line.planSeatsPerUnit > 1
+                        ? `（${line.qty * line.planSeatsPerUnit} ${t(PAGE.seatsUnit)}）`
+                        : ""}
+                    </span>
                   </span>
                   <span className="shrink-0 tabular-nums">
                     {formatPrice(line.price * line.qty)}

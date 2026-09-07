@@ -368,7 +368,7 @@ assertMigrationDependencies(check, MIG_DIR, {
   //     情況（函式重建/新函式本體帶進來，不是重寫既有函式）。
   //   · cron_jobs 不在 0035 的 touches 裡——它沒有動任何排程。
   // 原樣成立。
-  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 for (const f of [
   "0004_commerce_products.sql",
@@ -806,10 +806,16 @@ checkTrue("反空殼：兩支新 fn 都存在", regFnTs.length > 500 && sessionF
 // --- 購物車的 line key -------------------------------------------------------
 checkTrue("cart.ts 匯出 cartLineKey", /export function cartLineKey\(/.test(cartTs));
 checkTrue(
-  "line key 是 productId:sessionId",
-  /return `\$\{productId\}:\$\{sessionId \?\? ""\}`/.test(cartTs),
+  // 0036：key 多了第三段 planId（同一場次的不同方案要分成不同行，理由跟
+  // sessionId 當初被拉進 key 一樣）。沒有方案時第三段是空字串，對既有 key
+  // 「看起來像」productId:sessionId 這件事沒有影響——只是尾巴多一個冒號。
+  "line key 是 productId:sessionId:planId",
+  /return `\$\{productId\}:\$\{sessionId \?\? ""\}:\$\{planId \?\? ""\}`/.test(cartTs),
 );
-checkTrue("STORAGE_VERSION 升到 2", /const STORAGE_VERSION = 2;/.test(cartTs));
+checkTrue(
+  "STORAGE_VERSION 升到 3（0036 加了 planId/planTitle/planSeatsPerUnit，key 也變了）",
+  /const STORAGE_VERSION = 3;/.test(cartTs),
+);
 checkTrue(
   "舊版 localStorage 直接丟棄（不 merge）",
   /version === STORAGE_VERSION \? \(persisted as \{ items: CartLine\[\] \}\) : \{ items: \[\] \}/.test(
@@ -877,8 +883,11 @@ checkTrue(
   /if \(anySession\) row\.session_id = l\.sessionId;/.test(ordersTs),
 );
 checkTrue(
+  // 0036：這句從一個三元運算子改成陣列 filter(Boolean).join(", ")——多了一個
+  // 同一類的條件（plan_id／anyPlan），寫法必須跟著換，但它要守的事沒變：
+  // 沒有 booking 時 select 字串裡連 session_id 這個詞都不該出現。
   "沒有 booking 時連 select 都不要那一欄",
-  /\.select\(anySession \? "id, product_id, session_id" : "id, product_id"\)/.test(ordersTs),
+  /\.select\(\s*\[\s*"id, product_id",\s*anySession \? "session_id" : null,/.test(ordersTs),
 );
 // catch 的順序：release 一定在 delete 之前。
 const catchIdx = ordersTs.indexOf("await releaseInventoryReservations(reservedInventory");
@@ -887,9 +896,15 @@ const deleteIdx = ordersTs.indexOf("await deleteOrder(order.id)", catchIdx);
 checkTrue("反空殼：三個呼叫都找得到", catchIdx > 0 && releaseIdx > 0 && deleteIdx > 0);
 checkTrue("releaseSeats 在 deleteOrder 之前", releaseIdx < deleteIdx);
 // 名額的前置檢查必須讀場次，不是 products.capacity。
+// 0036：座位需求從 `line.quantity` 換成 `line.quantity * line.seatsPerUnit`
+// （沒有方案的行 seatsPerUnit 恆為 1，這句話對既有行為逐字相同——見
+// priceLines() 那段的同一條規則）。這裡改抓 `seatsNeeded` 這個中間變數，
+// 而不是要求它跟 line.quantity 長在同一行，理由是同一個。
 checkTrue(
   "下單前的名額預檢讀場次",
-  /session\.seats_taken \+ line\.quantity > session\.capacity/.test(ordersTs),
+  /const seatsNeeded = line\.quantity \* line\.seatsPerUnit;\s*\n\s*if \(session\.seats_taken \+ seatsNeeded > session\.capacity\)/.test(
+    ordersTs,
+  ),
 );
 check("預檢不再讀 p.seats_taken", /p\.seats_taken \+ line\.quantity/.test(ordersTs), false);
 
@@ -1001,8 +1016,13 @@ checkTrue(
   /sessions\.length === 0/.test(pickerCode) && /COPY\.noSessions/.test(pickerCode),
 );
 checkTrue(
+  // 0036：換場次現在也把 planId 收回 null（舊方案可能不屬於新場次），中間多了
+  // 一行 setPlanId(null)——這裡放寬成「setSessionId 之後，同一個 onSelect 裡
+  // 最終仍然有 setQty(1)」，不釘死中間恰好幾行。
   "換場次仍然把數量收回 1",
-  /onSelect=\{\(id\) => \{\s*setSessionId\(id\);\s*setQty\(1\);\s*\}\}/.test(slugRouteCode),
+  /onSelect=\{\(id\) => \{\s*setSessionId\(id\);[\s\S]{0,200}setQty\(1\);\s*\}\}/.test(
+    slugRouteCode,
+  ),
 );
 
 // 「必須先選場次才能加入購物車」的守衛 —— 這條沒了就會送出 sessionId 為 null 的
@@ -1254,8 +1274,12 @@ checkTrue(
   /if \(!db \|\| bookings\.length === 0\) return;/.test(shopTs),
 );
 checkTrue(
+  // 0036：視窗從 400 字元放寬到 2500——中間現在夾著「有方案就先呼叫
+  // reserve_plan_units()」那一整段（含長註解），但要守的事沒變：這個迴圈本身
+  // 仍然只跑在 `.filter((l) => isBooking(l.productType))` 篩過的那個陣列上，
+  // reserve_session_seat 的呼叫仍然在同一個迴圈裡。
   "只有 booking 行才呼叫 reserve_session_seat",
-  /\.filter\(\(l\) => isBooking\(l\.productType\)\)[\s\S]{0,400}rpc\("reserve_session_seat"/.test(
+  /\.filter\(\(l\) => isBooking\(l\.productType\)\)[\s\S]{0,2500}rpc\("reserve_session_seat"/.test(
     ordersTs,
   ),
 );

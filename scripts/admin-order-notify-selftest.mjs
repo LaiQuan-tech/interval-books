@@ -217,7 +217,7 @@ assertMigrationDependencies(check, MIG_DIR, {
   //     也無單可查）。
   //
   // 原樣成立。
-  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 
 // =============================================================================

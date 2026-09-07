@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
+import { PlanPicker } from "@/components/shop/PlanPicker";
 import { SessionList, SessionPicker } from "@/components/shop/SessionPicker";
 import { QuantityStepper } from "@/components/shop/ShopBits";
 import { useT } from "@/i18n/LanguageContext";
@@ -96,6 +97,12 @@ const PAGE = {
     zh: "請先選擇場次",
     en: "Please choose a sitting first",
     ja: "先に回をお選びください",
+  },
+  // 0036：這一場開了方案時，選完場次還要再選一個方案才能報名。
+  pickPlanFirst: {
+    zh: "請先選擇方案",
+    en: "Please choose a plan first",
+    ja: "先にプランをお選びください",
   },
   noSeats: {
     zh: "目前每一場都已額滿。歡迎來信詢問下一次的時間。",
@@ -434,13 +441,22 @@ function RegistrationPanel({ product }: { product: ShopProduct }) {
   const [sessionId, setSessionId] = useState<string | null>(
     () => directSoleSession(product)?.id ?? null,
   );
+  // 0036：這個場次選了哪個方案。跟 sessionId 一樣只活在這個元件裡，不進購物車。
+  const [planId, setPlanId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
 
   const selectedSession = product.sessions.find((s) => s.id === sessionId) ?? null;
+  // 這個場次有沒有開方案——有的話報名前必須先選一個，沒有就照 0020 之後的行為，
+  // 選完場次直接看得到數量與按鈕。
+  const needsPlan = selectedSession !== null && selectedSession.plans.length > 0;
+  const selectedPlan = selectedSession?.plans.find((p) => p.id === planId) ?? null;
+  const readyToBook = selectedSession !== null && (!needsPlan || selectedPlan !== null);
   // 🔴 上限問 directSeatLimit()（→ cartInputFor().limit），這一頁自己不算。
   //    沒選場次時**不是**退回商品層級的數字 —— 那是跨場次最大值，拿它當數量上限正是
-  //    這一期在防的 bug。沒選場次就把數量鎖在 1、連 stepper 都不能動。
-  const seatLimit = selectedSession ? directSeatLimit(product, selectedSession) : 1;
+  //    這一期在防的 bug。沒選場次就把數量鎖在 1、連 stepper 都不能動。0036 起，
+  //    選了方案時上限問的是那個方案（min(方案剩餘單位, floor(場次剩餘位子 /
+  //    seatsPerUnit))，同樣是 cartInputFor() 算的，這一頁仍然不自己算）。
+  const seatLimit = selectedSession ? directSeatLimit(product, selectedSession, selectedPlan) : 1;
   const anySeats = directAnySeatsLeft(product);
 
   return (
@@ -452,14 +468,31 @@ function RegistrationPanel({ product }: { product: ShopProduct }) {
           selectedId={sessionId}
           onSelect={(id) => {
             setSessionId(id);
-            // 換場次就把數量收回 1：舊的數量可能超過新場次的剩餘。與
-            // src/routes/shop.$slug.tsx 同一個決定。
+            // 換場次就把方案與數量都收回——舊的方案可能不屬於新場次，舊的數量
+            // 可能超過新場次（或新方案）的剩餘。與 src/routes/shop.$slug.tsx
+            // 同一個決定。
+            setPlanId(null);
             setQty(1);
           }}
         />
       ) : (
         <SessionList sessions={product.sessions} showSeatsRemaining={product.showSeatsRemaining} />
       )}
+
+      {/* 0036：選了場次、而且那個場次有開方案，才畫方案選擇器——沒有方案的場次
+          （陶作閱讀課那類）這裡完全不畫任何東西，畫面與 0020 之後逐字相同。 */}
+      {selectedSession && needsPlan ? (
+        <PlanPicker
+          plans={selectedSession.plans}
+          showSeatsRemaining={product.showSeatsRemaining}
+          selectedId={planId}
+          onSelect={(id) => {
+            setPlanId(id);
+            // 換方案就把數量收回 1：不同方案的名額上限不一樣。
+            setQty(1);
+          }}
+        />
+      ) : null}
 
       <div>
         <p className="eyebrow text-2xl">{t(PAGE.registration)}</p>
@@ -471,12 +504,12 @@ function RegistrationPanel({ product }: { product: ShopProduct }) {
                 max={seatLimit}
                 onChange={(next) => setQty(Math.max(1, next))}
                 label={t(PAGE.quantity)}
-                disabled={selectedSession === null}
+                disabled={!readyToBook}
               />
-              {selectedSession ? (
+              {readyToBook && selectedSession ? (
                 <Link
                   to="/checkout"
-                  search={directCheckoutSearch(product, selectedSession, qty)}
+                  search={directCheckoutSearch(product, selectedSession, qty, selectedPlan)}
                   className="inline-block border border-foreground px-6 py-3 text-xs tracking-widest transition-colors hover:bg-foreground hover:text-primary-foreground"
                 >
                   {t(PAGE.registerCta)}
@@ -496,7 +529,11 @@ function RegistrationPanel({ product }: { product: ShopProduct }) {
                 要出現：客人得先知道「可以幫朋友一起報名」，才會想去選場次。 */}
             <p className="text-sm leading-relaxed text-muted-foreground">{t(PAGE.quantityHint)}</p>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              {selectedSession ? t(PAGE.registerNote) : t(PAGE.pickSessionFirst)}
+              {readyToBook
+                ? t(PAGE.registerNote)
+                : selectedSession === null
+                  ? t(PAGE.pickSessionFirst)
+                  : t(PAGE.pickPlanFirst)}
             </p>
           </div>
         ) : (

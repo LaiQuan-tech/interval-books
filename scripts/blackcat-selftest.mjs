@@ -1402,7 +1402,7 @@ for (const [label, src] of [
     //   · fetchPaymentOptions() 與結帳頁的三個付款選項（card／transfer／offline）
     //     0035 一個字都沒動，只在後台訂單頁加了刪除／封存兩顆按鈕，不影響結帳頁。
     // 原樣成立。
-    reviewedThrough: "0035_admin_order_registration_cleanup.sql",
+    reviewedThrough: "0036_event_session_plans.sql",
   });
 }
 

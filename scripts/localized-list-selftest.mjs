@@ -738,7 +738,7 @@ assertMigrationDependencies(check, join(ROOT, "supabase/migrations"), {
   // ——都不是三語 jsonb 欄位，不受這支自檢守的任何一條規則管轄。它也沒有新增
   // 任何 jsonb 欄位或 CHECK 約束。三語清單的欄位清單與 CHECK 不受影響。
   // 原樣成立。
-  reviewedThrough: "0031_event_gallery.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 
 // -----------------------------------------------------------------------------

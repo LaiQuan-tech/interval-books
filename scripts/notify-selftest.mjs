@@ -351,7 +351,7 @@ assertMigrationDependencies(check, MIG_DIR, {
   //     email_outbox，也不改變 on_roster 的定義（那個定義完全在 0021 §3 的 view
   //     裡，0035 沒有 create or replace 那個 view）。
   // 原樣成立。
-  reviewedThrough: "0035_admin_order_registration_cleanup.sql",
+  reviewedThrough: "0036_event_session_plans.sql",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
