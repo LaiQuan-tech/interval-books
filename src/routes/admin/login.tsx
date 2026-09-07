@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { signIn } from "@/lib/admin/fns/auth";
+import { backOfficeTypeScaleStyles } from "@/lib/admin/type-scale";
 
 const loginSchema = z.object({
   email: z.string().trim().min(1, "請輸入電子郵件").email("電子郵件格式不正確"),
@@ -26,6 +27,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 export const Route = createFileRoute("/admin/login")({
   head: () => ({
     meta: [{ title: "管理員登入｜小時光書店後台" }],
+    styles: backOfficeTypeScaleStyles(),
   }),
   component: AdminLoginPage,
 });

@@ -28,6 +28,7 @@ import { ShieldQuestion } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { vendorSignOut } from "@/lib/admin/fns/vendor-portal";
+import { backOfficeTypeScaleStyles } from "@/lib/admin/type-scale";
 
 export const Route = createFileRoute("/vendor/pending")({
   beforeLoad: async () => {
@@ -38,7 +39,10 @@ export const Route = createFileRoute("/vendor/pending")({
     if (result.state === "ok") throw redirect({ to: "/vendor" });
     return { email: result.email };
   },
-  head: () => ({ meta: [{ title: "帳號尚未開通｜小時光書店廠商入口" }] }),
+  head: () => ({
+    meta: [{ title: "帳號尚未開通｜小時光書店廠商入口" }],
+    styles: backOfficeTypeScaleStyles(),
+  }),
   component: VendorPendingPage,
 });
 

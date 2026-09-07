@@ -35,6 +35,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { vendorSignIn } from "@/lib/admin/fns/vendor-portal";
+import { backOfficeTypeScaleStyles } from "@/lib/admin/type-scale";
 
 /**
  * 與 schemas.ts 的 vendorSignInSchema 同一組規則，但這一份多了「請輸入電子郵件」
@@ -49,7 +50,10 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 
 export const Route = createFileRoute("/vendor/login")({
-  head: () => ({ meta: [{ title: "廠商登入｜小時光書店" }] }),
+  head: () => ({
+    meta: [{ title: "廠商登入｜小時光書店" }],
+    styles: backOfficeTypeScaleStyles(),
+  }),
   component: VendorLoginPage,
 });
 

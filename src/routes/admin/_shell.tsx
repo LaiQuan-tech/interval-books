@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/sidebar";
 import { signOut } from "@/lib/admin/fns/auth";
 import { isNavItemActive } from "@/lib/admin/nav-active";
+import { backOfficeTypeScaleStyles } from "@/lib/admin/type-scale";
 
 /**
  * Pathless layout for the whole /admin back office (except /admin/login and
@@ -86,6 +87,7 @@ export const Route = createFileRoute("/admin/_shell")({
     // `admin` 這個名字保留給既有的 15 個 route，它們都在讀 context.admin.email。
     return { admin: { userId: user.userId, email: user.email }, user };
   },
+  head: () => ({ styles: backOfficeTypeScaleStyles() }),
   component: AdminShell,
 });
 

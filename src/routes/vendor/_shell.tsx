@@ -57,6 +57,7 @@ import { LayoutDashboard, LogOut, Package, Store } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { vendorSignOut } from "@/lib/admin/fns/vendor-portal";
+import { backOfficeTypeScaleStyles } from "@/lib/admin/type-scale";
 
 /** 廠商只有兩頁，所以是頁首導覽而不是側欄 —— 側欄撐不起兩個連結。 */
 const NAV_ITEMS = [
@@ -81,6 +82,7 @@ export const Route = createFileRoute("/vendor/_shell")({
       },
     };
   },
+  head: () => ({ styles: backOfficeTypeScaleStyles() }),
   component: VendorShell,
 });
 

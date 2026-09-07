@@ -2,6 +2,7 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/admin/fns/auth";
+import { backOfficeTypeScaleStyles } from "@/lib/admin/type-scale";
 
 /**
  * 「等一下，還沒有人放行你」。
@@ -22,7 +23,10 @@ export const Route = createFileRoute("/admin/pending")({
     if (user.role !== "pending") throw redirect({ to: "/admin" });
     return { user };
   },
-  head: () => ({ meta: [{ title: "帳號待開通｜小時光書店後台" }] }),
+  head: () => ({
+    meta: [{ title: "帳號待開通｜小時光書店後台" }],
+    styles: backOfficeTypeScaleStyles(),
+  }),
   component: PendingApprovalPage,
 });
 
