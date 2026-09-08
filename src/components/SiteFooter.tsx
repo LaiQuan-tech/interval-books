@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { Facebook, Instagram } from "lucide-react";
 import { useT } from "@/i18n/LanguageContext";
 import { useSiteContent } from "@/lib/site-content";
 
@@ -48,15 +49,20 @@ export function SiteFooter() {
           >
             {siteUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
           </a>
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+          {/* 社群改成圖示。⚠️ 圖示沒有文字，所以 aria-label 是這些連結**唯一**的無障礙
+              名稱——拿掉的話螢幕閱讀器只會唸出網址。title 是給滑鼠停留看的，兩個都要。
+              LINE 沒有對應的 lucide 圖示，維持文字，這是刻意的不對稱。 */}
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-muted-foreground">
             {social.instagram && (
               <a
                 href={social.instagram}
                 target="_blank"
                 rel="noreferrer"
-                className="hover-underline"
+                aria-label="Instagram"
+                title="Instagram"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/70 transition-colors hover:border-foreground hover:text-foreground"
               >
-                Instagram
+                <Instagram className="h-4 w-4" aria-hidden="true" />
               </a>
             )}
             {social.facebook && (
@@ -64,9 +70,11 @@ export function SiteFooter() {
                 href={social.facebook}
                 target="_blank"
                 rel="noreferrer"
-                className="hover-underline"
+                aria-label="Facebook"
+                title="Facebook"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/70 transition-colors hover:border-foreground hover:text-foreground"
               >
-                Facebook
+                <Facebook className="h-4 w-4" aria-hidden="true" />
               </a>
             )}
             {social.line && (
