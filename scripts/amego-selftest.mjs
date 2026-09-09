@@ -723,7 +723,11 @@ console.log("\n[13] 中繼設定：AMEGO_RELAY_URL + AMEGO_RELAY_SECRET");
   //    名字對不上的症狀：中繼回 401 → 發票開不出來 → 錯誤訊息跟原本的 IP 白名單問題
   //    長得一模一樣，非常難分辨。所以把字面值釘在這裡：**要改這個字串，得先去改中繼
   //    並重新部署，兩邊一起動。**
-  check("🔴 中繼密鑰 header 的字面值與 Railway 中繼一致", AMEGO_RELAY_SECRET_HEADER, "x-relay-secret");
+  check(
+    "🔴 中繼密鑰 header 的字面值與 Railway 中繼一致",
+    AMEGO_RELAY_SECRET_HEADER,
+    "x-relay-secret",
+  );
 
   const RELAY_URL = "https://amego-relay-production.up.railway.app";
   const RELAY_SECRET = "test-relay-secret-do-not-print";
