@@ -28,6 +28,7 @@ import { Route as VendorPendingRouteImport } from './routes/vendor/pending'
 import { Route as VendorLoginRouteImport } from './routes/vendor/login'
 import { Route as VendorShellRouteImport } from './routes/vendor/_shell'
 import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
+import { Route as EventsCitySalon0922RouteImport } from './routes/events.city-salon-0922'
 import { Route as EventsSlugRouteImport } from './routes/events.$slug'
 import { Route as CheckoutCompleteRouteImport } from './routes/checkout.complete'
 import { Route as AuthConfirmRouteImport } from './routes/auth.confirm'
@@ -163,6 +164,11 @@ const VendorShellRoute = VendorShellRouteImport.update({
 const ShopSlugRoute = ShopSlugRouteImport.update({
   id: '/shop/$slug',
   path: '/shop/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EventsCitySalon0922Route = EventsCitySalon0922RouteImport.update({
+  id: '/events/city-salon-0922',
+  path: '/events/city-salon-0922',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsSlugRoute = EventsSlugRouteImport.update({
@@ -402,6 +408,7 @@ export interface FileRoutesByFullPath {
   '/auth/confirm': typeof AuthConfirmRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/events/city-salon-0922': typeof EventsCitySalon0922Route
   '/shop/$slug': typeof ShopSlugRoute
   '/vendor': typeof VendorShellRouteWithChildren
   '/vendor/login': typeof VendorLoginRoute
@@ -463,6 +470,7 @@ export interface FileRoutesByTo {
   '/auth/confirm': typeof AuthConfirmRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/events/city-salon-0922': typeof EventsCitySalon0922Route
   '/shop/$slug': typeof ShopSlugRoute
   '/vendor/login': typeof VendorLoginRoute
   '/vendor/pending': typeof VendorPendingRoute
@@ -525,6 +533,7 @@ export interface FileRoutesById {
   '/auth/confirm': typeof AuthConfirmRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/events/city-salon-0922': typeof EventsCitySalon0922Route
   '/shop/$slug': typeof ShopSlugRoute
   '/vendor/_shell': typeof VendorShellRouteWithChildren
   '/vendor/login': typeof VendorLoginRoute
@@ -589,6 +598,7 @@ export interface FileRouteTypes {
     | '/auth/confirm'
     | '/checkout/complete'
     | '/events/$slug'
+    | '/events/city-salon-0922'
     | '/shop/$slug'
     | '/vendor'
     | '/vendor/login'
@@ -650,6 +660,7 @@ export interface FileRouteTypes {
     | '/auth/confirm'
     | '/checkout/complete'
     | '/events/$slug'
+    | '/events/city-salon-0922'
     | '/shop/$slug'
     | '/vendor/login'
     | '/vendor/pending'
@@ -711,6 +722,7 @@ export interface FileRouteTypes {
     | '/auth/confirm'
     | '/checkout/complete'
     | '/events/$slug'
+    | '/events/city-salon-0922'
     | '/shop/$slug'
     | '/vendor/_shell'
     | '/vendor/login'
@@ -774,6 +786,7 @@ export interface RootRouteChildren {
   AuthConfirmRoute: typeof AuthConfirmRoute
   CheckoutCompleteRoute: typeof CheckoutCompleteRoute
   EventsSlugRoute: typeof EventsSlugRoute
+  EventsCitySalon0922Route: typeof EventsCitySalon0922Route
   ShopSlugRoute: typeof ShopSlugRoute
   VendorShellRoute: typeof VendorShellRouteWithChildren
   VendorLoginRoute: typeof VendorLoginRoute
@@ -916,6 +929,13 @@ declare module '@tanstack/react-router' {
       path: '/shop/$slug'
       fullPath: '/shop/$slug'
       preLoaderRoute: typeof ShopSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/events/city-salon-0922': {
+      id: '/events/city-salon-0922'
+      path: '/events/city-salon-0922'
+      fullPath: '/events/city-salon-0922'
+      preLoaderRoute: typeof EventsCitySalon0922RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events/$slug': {
@@ -1332,6 +1352,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthConfirmRoute: AuthConfirmRoute,
   CheckoutCompleteRoute: CheckoutCompleteRoute,
   EventsSlugRoute: EventsSlugRoute,
+  EventsCitySalon0922Route: EventsCitySalon0922Route,
   ShopSlugRoute: ShopSlugRoute,
   VendorShellRoute: VendorShellRouteWithChildren,
   VendorLoginRoute: VendorLoginRoute,

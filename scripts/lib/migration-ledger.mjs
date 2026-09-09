@@ -236,6 +236,22 @@ export const AREAS = Object.freeze({
     //    斷言籠統覆蓋。
     identifiers: ["event_session_plans", "reserve_plan_units", "release_plan_units", "units_taken"],
   },
+  // 沙龍的席位回覆自成一區，**不**掛進 event_registrations。
+  //
+  // 兩者長得像但不是同一件事：event_registrations 的每一列都掛著 order_id 與
+  // order_item_id，是「這個位子是哪一張訂單買的」，seats_taken 只由 0020 的三支
+  // 加鎖 RPC 維護；salon_rsvps 沒有訂單、沒有金額、沒有名額扣減，它是不收錢的
+  // 審核邀請制回條，連「遺憾不克前往」都要存。
+  //
+  // 掛進去的話，動到 salon_rsvps 的 migration 會把六支盯著訂單／座位不變式的自檢
+  // 全部叫回來重審一次它們根本不在乎的東西；反過來，動到 event_registrations 的
+  // migration 也會誤觸這一區。分開之後兩邊的標籤都說實話——與上面 localized_list
+  // 為什麼不掛進 events_shape 是同一個理由。
+  salon_rsvp: {
+    witness: "0037_salon_rsvp.sql",
+    label: "沙龍席位回覆",
+    identifiers: ["salon_rsvps"],
+  },
 });
 
 /**
@@ -630,6 +646,27 @@ export const MIGRATION_LEDGER = Object.freeze([
       "inventory",
       "localized_list",
     ],
+  },
+  {
+    file: "0037_salon_rsvp.sql",
+    note: "城市思享沙龍的席位回覆：public.salon_rsvps（event_slug 純文字非 FK、attending yes/no、name/email 非空白 CHECK、(event_slug, created_at desc) 索引）。RLS 開著、零 policy、anon/authenticated 權限收回、只 grant service_role——與 event_registrations 同規格，因為整張表都是個資。不碰任何既有表、函式或約束",
+    // ⚠️ touches 是**實際掃過剝掉註解的 SQL 算出來的**（用 AREAS 的識別字逐區跑
+    //    identifierRe()，同 0035 那一列的做法），不是憑印象填的。結果是空的。
+    //
+    //    第一版不是空的：`comment on … is '…'` 裡寫了「與 event_registrations 無關」
+    //    與「沒有對應的 public.events 列」，於是被判定成動到 event_registrations 與
+    //    events_shape 兩區——偵測器剝掉的是 `--` 註解，**字串常值它照掃**。那兩句
+    //    話會把九支依賴那兩區的自檢一起叫回來重審，而這支 migration 一個字都沒動
+    //    那兩張表。解法是把說明搬回 `--` 區塊（migration §0），`comment on` 的字串
+    //    只留不含識別字的敘述。這件事本身值得記著：**COMMENT ON 的內容算程式碼，
+    //    不算註解。**
+    //
+    //    掃出來是空的，但帳本**不接受空的 touches**（那條斷言是對的：一支什麼區域
+    //    都沒碰的 migration，多半是識別字漏了而不是真的無關）。這裡的處理不是去
+    //    放寬那條斷言，而是承認 salon_rsvps 是一個新的區域，把它加進 AREAS ——
+    //    這樣日後任何動到這張表的 migration 都會被路由回宣告依賴它的自檢，
+    //    而不是靜靜地滑過去。
+    touches: ["salon_rsvp"],
   },
 ]);
 

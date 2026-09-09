@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-03T02:39:28.871Z",
+  "generatedAt": "2026-09-09T04:49:41.730Z",
   "summary": {
-    "routesAudited": 23,
+    "routesAudited": 24,
     "redirectRoutes": 4,
     "redirectRouteList": [
       "/contact",
@@ -9,7 +9,7 @@
       "/publications",
       "/visit"
     ],
-    "metaAudited": 19,
+    "metaAudited": 20,
     "languages": [
       "zh",
       "en",
@@ -31,7 +31,7 @@
         "ogTitle",
         "ogDescription"
       ],
-      "approxChecks": 228
+      "approxChecks": 240
     }
   },
   "routes": {
@@ -115,6 +115,12 @@
     },
     "/events.$slug": {
       "file": "src/routes/events.$slug.tsx",
+      "ok": true,
+      "redirect": false,
+      "issues": []
+    },
+    "/events.city-salon-0922": {
+      "file": "src/routes/events.city-salon-0922.tsx",
       "ok": true,
       "redirect": false,
       "issues": []
