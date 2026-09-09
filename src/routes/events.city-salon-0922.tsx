@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CalendarDays, MapPin, Users } from "lucide-react";
+import { CalendarDays, Clock, Map, MapPin } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
 import { SessionPicker, SessionList } from "@/components/shop/SessionPicker";
 import { PlanPicker } from "@/components/shop/PlanPicker";
@@ -12,6 +12,7 @@ import {
   directSeatLimit,
   directSoleSession,
 } from "@/lib/direct-checkout";
+import { imageFor } from "@/lib/images";
 import { fetchActiveProductForEventSlug, type ShopProduct } from "@/lib/shop";
 
 /**
@@ -66,11 +67,24 @@ const SALON = {
   headline: "台東，不只是遠方",
   subheadline: "藝術、地方創生與一種新的商業生活方式",
   quote: "如果一座城市，不再只追求更大、更快、更多，我們還可以如何生活？",
+  // 邀請函上的四列。標籤是兩個字加寬字距，跟印刷品同一個節奏。
   meta: [
-    { icon: CalendarDays, label: "2026.09.22（週二）13:30 – 15:30", sub: "13:00 入場交流" },
-    { icon: MapPin, label: "小時光風土誌書店", sub: "華山1914文化創意產業園區" },
-    { icon: Users, label: "15 席限定", sub: "定向審核邀請制" },
+    { icon: CalendarDays, label: "日　期", value: "2026.9.22（二）" },
+    { icon: Clock, label: "時　間", value: "13:30 – 15:30", note: "13:00 入場交流" },
+    { icon: MapPin, label: "地　點", value: "小時光風土誌書店" },
+    {
+      icon: Map,
+      label: "地　址",
+      value: "台北市中正區八德路一段1號",
+      note: "（紅磚區六合院西 7-3 館）",
+    },
   ],
+  invitationTitle: "空間的文藝復興",
+  invitationSub: "從閒置資產到創生通路的「商道藝術」",
+  lead: ["當空間遇見人，", "當藝術走進生活，", "閒置不再是終點，而是創生的起點。"],
+  invite: ["誠摯邀請您蒞臨本次城市思享沙龍，", "從一間書店出發，一起想像城市與地方的更多可能。"],
+  vertical: "書，土地，與人的小時光",
+  seats: "15 席限定・定向審核邀請制",
 
   curationEyebrow: "策展緣起",
   curationTitle: "商道之藝",
@@ -147,6 +161,20 @@ const SALON = {
 
 const EVENT_SLUG = "city-salon-0922";
 
+/**
+ * 分享預覽圖（Open Graph）。
+ *
+ * 這一頁的英雄區是純文字的，所以 og:image 不是「把畫面上的圖再貼一次」——它是把
+ * 連結貼到 LINE／Facebook／Email 時**唯一**會出現的視覺。沒有它，一場定向邀請的
+ * 沙龍在對話串裡就只是一行藍字。
+ *
+ * 這個 key 與 public.events.image_key 指向同一張（1600×840 webp，放在 site-images
+ * bucket）。刻意寫死而不是從 loader 讀：head() 要在 SSR 的第一時間就吐出 meta，
+ * 而這一頁的 loader 只取商品（報名用），沒有、也不需要為了一張圖再多查一次活動。
+ * 換圖的時候這裡與後台要一起改——只有一張圖，兩個地方，值得用一句註解換掉一次查詢。
+ */
+const OG_IMAGE_KEY = "storage:46b52823-45f2-43ca-b87a-35b9e61743d0.webp";
+
 export const Route = createFileRoute("/events/city-salon-0922")({
   // 報名走站上既有的那一套：商品（product_type='event'）→ 場次 → 直接結帳 →
   // reserve_session_seat() → event_registrations。名單因此直接出現在
@@ -158,6 +186,8 @@ export const Route = createFileRoute("/events/city-salon-0922")({
       { name: "description", content: PAGE.metaDescription.zh },
       { property: "og:title", content: PAGE.metaTitle.zh },
       { property: "og:description", content: PAGE.metaDescription.zh },
+      { property: "og:image", content: imageFor(OG_IMAGE_KEY, "") },
+      { name: "twitter:image", content: imageFor(OG_IMAGE_KEY, "") },
     ],
   }),
   component: CitySalon,
@@ -179,13 +209,28 @@ function CitySalon() {
     description: PAGE.metaDescription,
     ogTitle: PAGE.metaTitle,
     ogDescription: PAGE.metaDescription,
+    // ⚠️ 這裡一定要帶：useDocumentMeta 在沒收到 ogImage 時會**移除**既有的
+    //    og:image／twitter:image（見那支 hook 的檔頭）。head() 放好的標籤會在
+    //    hydrate 之後被清掉，分享預覽就沒圖了。
+    ogImage: imageFor(OG_IMAGE_KEY, ""),
   });
 
   return (
     <PageShell>
       {/* 鼠尾草綠只有徽章與少數重點用得到，不值得進全站 token；用一個頁面層級的
           變數帶著走，這樣整頁只有這裡定義一次顏色。 */}
-      <div style={{ ["--salon-sage" as string]: "oklch(0.55 0.032 155)" }}>
+      <div
+        style={
+          {
+            // 邀請函的兩個主色。墨綠是那張印刷品的識別色，站上的 token 沒有；
+            // 銅棕比 --clay 再深一點，配在細線與標籤上才壓得住。
+            // 只活在這一頁，不進全站 token —— 其他頁面沒有理由變成邀請函。
+            ["--salon-green" as string]: "oklch(0.35 0.045 158)",
+            ["--salon-bronze" as string]: "oklch(0.52 0.052 62)",
+            ["--salon-sage" as string]: "oklch(0.55 0.032 155)",
+          } as React.CSSProperties
+        }
+      >
         <CohostBar />
         <Hero />
         <Curation />
@@ -219,40 +264,189 @@ function CohostBar() {
 
 // ── 英雄區 ────────────────────────────────────────────────────────────────────
 
+/**
+ * 花飾分隔線。邀請函上「邀請函 INVITATION」的上下各一條，中間一個小菱形捲飾。
+ *
+ * 用 SVG 而不是字元（❦ 之類）：那些字元在不同平台會 fallback 到完全不同的字型，
+ * 有的甚至變成彩色 emoji，一張邀請函上出現彩色圖示會很突兀。
+ */
+function Fleuron({ className = "" }: { className?: string }) {
+  return (
+    <div className={`flex items-center justify-center gap-4 ${className}`} aria-hidden>
+      <span className="h-px w-16 bg-[var(--salon-bronze)] opacity-45 sm:w-24" />
+      <svg width="34" height="10" viewBox="0 0 34 10" fill="none">
+        <path
+          d="M17 1.2 20 5l-3 3.8L14 5l3-3.8Z"
+          stroke="var(--salon-bronze)"
+          strokeWidth="0.9"
+          opacity="0.75"
+        />
+        <path
+          d="M13 5c-2.6 0-4-1.5-6-1.5S3.4 5 3.4 5s1.6 1.5 3.6 1.5S10.4 5 13 5Z"
+          stroke="var(--salon-bronze)"
+          strokeWidth="0.9"
+          opacity="0.5"
+        />
+        <path
+          d="M21 5c2.6 0 4-1.5 6-1.5S30.6 5 30.6 5s-1.6 1.5-3.6 1.5S23.6 5 21 5Z"
+          stroke="var(--salon-bronze)"
+          strokeWidth="0.9"
+          opacity="0.5"
+        />
+      </svg>
+      <span className="h-px w-16 bg-[var(--salon-bronze)] opacity-45 sm:w-24" />
+    </div>
+  );
+}
+
+/**
+ * 四角的植物線描。邀請函四角都有，這裡只放左上與右下兩角。
+ *
+ * 只放兩角是刻意的：印刷品是固定尺寸，四角一定對稱；網頁會隨寬度伸縮，四角都放
+ * 在窄螢幕上會擠到內容。對角線兩角保住了「這是一張邀請函」的暗示，又不會在手機上
+ * 變成干擾。`hidden md:block` 讓它在手機上直接不出現。
+ */
+function Botanical({ corner }: { corner: "tl" | "br" }) {
+  const tl = corner === "tl";
+  return (
+    <svg
+      className={`pointer-events-none absolute hidden md:block ${
+        tl ? "left-2 top-4" : "bottom-4 right-2 rotate-180"
+      }`}
+      width="190"
+      height="190"
+      viewBox="0 0 190 190"
+      fill="none"
+      aria-hidden
+    >
+      {/* 一根弧形的莖，兩側各三片葉。第一版只有幾條曲線，遠看像一團污漬——
+          葉片要有閉合的形狀才讀得出是植物。 */}
+      <g stroke="var(--salon-green)" strokeWidth="1.1" opacity="0.2" fill="none">
+        <path d="M6 168C10 96 62 34 150 14" strokeWidth="1.3" />
+        {/* 左上側的葉 */}
+        <path d="M28 128c-14-6-19-20-14-33 14 3 22 15 21 29-2 3-5 5-7 4Z" />
+        <path d="M58 92c-13-8-16-22-9-34 13 5 19 18 16 31-3 3-5 4-7 3Z" />
+        <path d="M96 56c-12-9-13-23-5-34 12 7 17 20 13 32-3 3-6 4-8 2Z" />
+        {/* 右下側的葉 */}
+        <path d="M40 146c9 12 24 15 36 7-6-13-20-18-33-14-3 2-4 5-3 7Z" />
+        <path d="M74 106c10 11 25 12 36 3-7-12-21-16-34-10-3 2-4 5-2 7Z" />
+        <path d="M114 68c11 10 26 9 35-1-8-11-22-14-34-7-3 3-3 6-1 8Z" />
+      </g>
+    </svg>
+  );
+}
+
+/** 邀請函那四列資訊的一列：銅色圓框圖示 ＋ 加寬字距的標籤 ＋ 值。 */
+function MetaRow({ item }: { item: (typeof SALON.meta)[number] }) {
+  const Icon = item.icon;
+  return (
+    <li className="flex items-start gap-4">
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--salon-bronze)]/40">
+        <Icon className="h-4 w-4 text-[var(--salon-bronze)]" strokeWidth={1.4} aria-hidden />
+      </span>
+      <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pt-1.5">
+        <span className="text-sm tracking-[0.3em] text-[var(--salon-bronze)]">{item.label}</span>
+        <span className="hidden h-4 w-px bg-[var(--salon-bronze)]/35 sm:block" aria-hidden />
+        <span className="font-serif text-lg leading-snug [font-variant-numeric:lining-nums] md:text-xl">
+          {item.value}
+        </span>
+        {item.note ? <span className="text-sm text-muted-foreground">{item.note}</span> : null}
+      </span>
+    </li>
+  );
+}
+
+/**
+ * 表頭 —— 照邀請函的版式重做。
+ *
+ * 印刷品是置中對稱的，網頁不是：一張 A4 一眼看完，網頁是往下捲的。所以這裡分成
+ * 兩段 —— 上半（邀請函／主標題）沿用印刷品的置中與花飾，下半（沙龍標籤、副標、
+ * 四列資訊）改成靠左，因為那是要「讀」的資訊，置中的長段落在寬螢幕上每一行的起點
+ * 都不一樣，讀起來很累。
+ */
 function Hero() {
   return (
-    <section className="container-editorial pt-16 md:pt-24 pb-16">
-      <p className="inline-block border border-[var(--salon-sage)] px-3 py-1.5 text-[0.7rem] tracking-widest text-[var(--salon-sage)]">
-        {SALON.badge}
+    <section className="relative overflow-hidden">
+      <Botanical corner="tl" />
+      <Botanical corner="br" />
+
+      {/* 右側直排標語，取自邀請函右緣。窄螢幕放不下就不出現。 */}
+      <p
+        className="pointer-events-none absolute right-6 top-32 hidden font-serif text-sm tracking-[0.45em] text-[var(--salon-green)]/55 lg:block"
+        style={{ writingMode: "vertical-rl" }}
+        aria-hidden
+      >
+        {SALON.vertical}
       </p>
 
-      <h1 className="display mt-8 text-5xl md:text-7xl leading-[1.1]">{SALON.headline}</h1>
-      <p className="mt-6 text-lg md:text-xl text-muted-foreground">{SALON.subheadline}</p>
+      <div className="container-editorial relative pt-14 md:pt-20">
+        {/* ── 上半：置中的邀請函頭 ── */}
+        <Fleuron />
+        <div className="mt-7 text-center">
+          <p className="font-serif text-3xl tracking-[0.5em] text-[var(--salon-green)] md:text-4xl">
+            邀請函
+          </p>
+          <p className="mt-3 text-[0.7rem] tracking-[0.55em] text-[var(--salon-bronze)]">
+            INVITATION
+          </p>
+        </div>
+        <Fleuron className="mt-7" />
 
-      <blockquote className="mt-12 border-l-2 border-clay pl-6 md:pl-8 max-w-2xl">
-        <p className="font-serif text-2xl md:text-3xl leading-relaxed text-foreground/85">
-          「{SALON.quote}」
+        <h1 className="mt-12 text-center font-serif text-5xl leading-tight text-[var(--salon-green)] md:text-7xl">
+          {SALON.invitationTitle}
+        </h1>
+        <p className="mt-5 text-center font-serif text-xl leading-snug text-[var(--salon-green)]/85 md:text-2xl">
+          {SALON.invitationSub}
         </p>
-      </blockquote>
 
-      {/* 三個關鍵資訊。細線格線是全站列表共用的語彙，這裡沿用讓它不像外掛的一頁。 */}
-      <div className="mt-14 grid gap-px bg-border border border-border sm:grid-cols-3">
-        {SALON.meta.map((m) => (
-          <div key={m.label} className="bg-background p-6 md:p-7">
-            <m.icon className="h-4 w-4 text-clay" strokeWidth={1.5} aria-hidden />
-            <p className="mt-4 text-base leading-snug">{m.label}</p>
-            <p className="mt-1.5 text-sm text-muted-foreground">{m.sub}</p>
+        <Fleuron className="mt-12" />
+
+        {/* ── 下半：靠左的內容 ── */}
+        <div className="mt-14 max-w-3xl">
+          {/* 深綠實心標籤，右邊那一豎是邀請函上就有的收尾 */}
+          <p className="inline-flex items-center gap-4 bg-[var(--salon-green)] px-5 py-2.5 text-primary-foreground">
+            <span className="font-serif text-lg tracking-[0.28em] md:text-xl">城市思享沙龍</span>
+            <span className="h-5 w-px bg-primary-foreground/50" aria-hidden />
+          </p>
+
+          <h2 className="mt-7 font-serif text-4xl leading-tight text-[var(--salon-green)] md:text-6xl">
+            {SALON.headline}
+          </h2>
+          <p className="mt-4 font-serif text-lg leading-snug md:text-2xl">{SALON.subheadline}</p>
+
+          <div className="mt-10 space-y-1 text-base leading-relaxed text-foreground/80 md:text-lg">
+            {SALON.lead.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <div className="mt-10">
-        <a
-          href="#rsvp"
-          className="inline-block border border-foreground px-7 py-4 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
-        >
-          確認出席 / 預約席位
-        </a>
+          <span className="my-9 block h-px w-14 bg-[var(--salon-bronze)]/50" aria-hidden />
+
+          <div className="space-y-1 text-base leading-relaxed text-foreground/80 md:text-lg">
+            {SALON.invite.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
+
+          <ul className="mt-12 space-y-5">
+            {SALON.meta.map((m) => (
+              <MetaRow key={m.label} item={m} />
+            ))}
+          </ul>
+
+          <p className="mt-8 text-sm tracking-[0.2em] text-[var(--salon-bronze)]">{SALON.seats}</p>
+
+          <div className="mt-10">
+            <a
+              href="#rsvp"
+              className="inline-block border border-[var(--salon-green)] px-8 py-4 tracking-widest text-[var(--salon-green)] transition-colors hover:bg-[var(--salon-green)] hover:text-primary-foreground"
+            >
+              確認出席 / 預約席位
+            </a>
+          </div>
+        </div>
+
+        <Fleuron className="mt-16" />
       </div>
     </section>
   );
