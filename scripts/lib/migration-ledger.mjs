@@ -668,6 +668,14 @@ export const MIGRATION_LEDGER = Object.freeze([
     //    而不是靜靜地滑過去。
     touches: ["salon_rsvp"],
   },
+  {
+    file: "0038_drop_salon_rsvp.sql",
+    note: "收掉 0037 建的 salon_rsvps。沙龍改走既有報名流程（price=0 的 event 商品 + 15 席場次 → 結帳 → event_registrations），名單直接進 /admin/registrations；那張自製的回條表沒有後台，只能下 SQL 看。表內從來沒有正式資料（上線只做過一次端到端驗證，當下就刪了），drop 之前 count=0，不做備份表",
+    // 掃描結果就是 salon_rsvp 一個區域（識別字 salon_rsvps 出現在 drop 那一句）。
+    // 這一區的 witness 仍然是 0037——witness 要的是「毫無疑問屬於這一區」的檔案，
+    // 建表那一支比刪表這一支更適合當守門人，而且它還在磁碟上。
+    touches: ["salon_rsvp"],
+  },
 ]);
 
 /** 磁碟上的 migration 檔名，排序過。空目錄 = 丟例外（那不是「沒有違規」）。 */

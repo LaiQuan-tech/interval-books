@@ -1,23 +1,18 @@
 import { useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import { CalendarDays, MapPin, Users, Check } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { CalendarDays, MapPin, Users } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { SessionPicker, SessionList } from "@/components/shop/SessionPicker";
+import { PlanPicker } from "@/components/shop/PlanPicker";
+import { QuantityStepper } from "@/components/shop/ShopBits";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
-import { salonRsvpFormSchema, submitSalonRsvp, type SalonRsvpValues } from "@/lib/salon-rsvp";
+import {
+  directAnySeatsLeft,
+  directCheckoutSearch,
+  directSeatLimit,
+  directSoleSession,
+} from "@/lib/direct-checkout";
+import { fetchActiveProductForEventSlug, type ShopProduct } from "@/lib/shop";
 
 /**
  * 城市思享沙龍 #01 的獨立著陸頁。
@@ -153,6 +148,10 @@ const SALON = {
 const EVENT_SLUG = "city-salon-0922";
 
 export const Route = createFileRoute("/events/city-salon-0922")({
+  // 報名走站上既有的那一套：商品（product_type='event'）→ 場次 → 直接結帳 →
+  // reserve_session_seat() → event_registrations。名單因此直接出現在
+  // /admin/registrations，不需要為這一場另外做一個後台。
+  loader: async () => fetchActiveProductForEventSlug(EVENT_SLUG),
   head: () => ({
     meta: [
       { title: PAGE.metaTitle.zh },
@@ -193,7 +192,7 @@ function CitySalon() {
         <Speakers />
         <Agenda />
         <Paths />
-        <Rsvp />
+        <Registration />
         <Venue />
       </div>
     </PageShell>
@@ -367,37 +366,52 @@ function Paths() {
 
 // ── 受邀出席回覆 ──────────────────────────────────────────────────────────────
 
-function Rsvp() {
-  const [sent, setSent] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+/**
+ * 報名區。
+ *
+ * 🔴 這裡**不自己算任何座位數字**。數量上限一律問 directSeatLimit()（它轉給
+ *    cartInputFor()，與購物車、活動詳情頁走同一行程式），剩餘席次由 SessionPicker
+ *    自己顯示。這一頁只負責問「選了哪一場、幾位」，然後把答案交給 /checkout。
+ *
+ *    這條規矩與 src/routes/events.$slug.tsx 的 RegistrationPanel 相同，理由也相同：
+ *    活動頁自己算一次上限，就會出現「頁面說可以買 5、場次只剩 1」這種對不起來的
+ *    畫面。共用的是**演算法**（那幾支 helper），不是複製一份面板——那支面板被
+ *    scripts/event-detail-page-selftest.mjs 用字面值釘在它自己的檔案裡，抽出來會
+ *    讓那條守衛失效。
+ *
+ * 沒有選場次時上限鎖 1、按鈕是 <button disabled> 而不是 <Link>——「沒選場次就去
+ * 結帳」在 DOM 裡不存在任何一條路徑。
+ */
+function Registration() {
+  const { product, unavailable } = Route.useLoaderData();
 
-  const form = useForm<SalonRsvpValues>({
-    resolver: zodResolver(salonRsvpFormSchema),
-    defaultValues: {
-      eventSlug: EVENT_SLUG,
-      name: "",
-      organisation: "",
-      jobTitle: "",
-      phone: "",
-      email: "",
-      attending: "yes",
-      message: "",
-    },
-  });
-
-  async function onSubmit(values: SalonRsvpValues) {
-    setSubmitting(true);
-    try {
-      const res = await submitSalonRsvp({ data: values });
-      if (res.ok) setSent(true);
-      else toast.error("送出失敗，請稍後再試，或直接來電 " + SALON.phone);
-    } catch {
-      toast.error("送出失敗，請稍後再試，或直接來電 " + SALON.phone);
-    } finally {
-      setSubmitting(false);
-    }
+  if (unavailable) {
+    return (
+      <RsvpShell>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          報名資料暫時無法載入，請稍後再試，或直接來電 {SALON.phone}。
+        </p>
+      </RsvpShell>
+    );
   }
+  if (!product) {
+    return (
+      <RsvpShell>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          報名尚未開放。開放之後會在這裡放上報名連結。
+        </p>
+      </RsvpShell>
+    );
+  }
+  return (
+    <RsvpShell>
+      <SeatBooking product={product} />
+    </RsvpShell>
+  );
+}
 
+/** 報名區的外框。三種狀態共用，免得標題與說明在每個分支各寫一次。 */
+function RsvpShell({ children }: { children: React.ReactNode }) {
   return (
     <section id="rsvp" className="border-t border-border bg-oat/50">
       <div className="container-editorial py-16 md:py-24">
@@ -405,162 +419,98 @@ function Rsvp() {
         <p className="mt-6 max-w-2xl text-sm leading-relaxed text-muted-foreground">
           {SALON.rsvpNote}
         </p>
-
-        {sent ? (
-          // 送出成功之後**不要**再把表單留在畫面上——留著只會讓人不確定到底送出去
-          // 了沒有，然後再按一次。
-          <div className="mt-10 max-w-2xl border border-border bg-background p-8 md:p-10">
-            <Check className="h-5 w-5 text-[var(--salon-sage)]" strokeWidth={1.5} aria-hidden />
-            <p className="mt-4 font-serif text-xl">已收到您的回覆</p>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              我們會在確認席位後寄出行前專屬入場通知。若需修改回覆，歡迎直接來電 {SALON.phone}。
-            </p>
-          </div>
-        ) : (
-          <div className="mt-10 max-w-2xl border border-border bg-background p-8 md:p-10">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <div className="grid gap-6 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>姓名</FormLabel>
-                        <FormControl>
-                          <Input {...field} autoComplete="name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="organisation"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          服務單位 / 品牌
-                          <span className="ml-2 text-xs text-muted-foreground">選填</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} autoComplete="organization" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="jobTitle"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          職稱
-                          <span className="ml-2 text-xs text-muted-foreground">選填</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} autoComplete="organization-title" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          聯絡電話
-                          <span className="ml-2 text-xs text-muted-foreground">選填</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input {...field} autoComplete="tel" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="email" autoComplete="email" />
-                      </FormControl>
-                      {/* 行前通知只從這裡寄，所以它是必填——說清楚比事後解釋好。 */}
-                      <p className="text-xs text-muted-foreground">
-                        行前專屬入場通知將寄至此信箱。
-                      </p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="attending"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>出席意願</FormLabel>
-                      {/* 用原生 radio 而不是 RadioGroup：這裡只有兩個選項、要能被
-                          鍵盤與螢幕閱讀器原生處理，多包一層沒有換到任何東西。 */}
-                      <div className="flex flex-wrap gap-6 pt-1">
-                        {[
-                          { value: "yes", label: "確認出席" },
-                          { value: "no", label: "遺憾不克前往" },
-                        ].map((opt) => (
-                          <label
-                            key={opt.value}
-                            className="flex items-center gap-2.5 text-sm cursor-pointer"
-                          >
-                            <input
-                              type="radio"
-                              className="accent-foreground"
-                              value={opt.value}
-                              checked={field.value === opt.value}
-                              onChange={() => field.onChange(opt.value)}
-                            />
-                            {opt.label}
-                          </label>
-                        ))}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="message"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        最期待探討的題目，或可提供的合作資源
-                        <span className="ml-2 text-xs text-muted-foreground">選填</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Textarea {...field} rows={4} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <Button type="submit" disabled={submitting} className="tracking-widest">
-                  {submitting ? "送出中…" : "送出回覆"}
-                </Button>
-              </form>
-            </Form>
-          </div>
-        )}
+        <div className="mt-10 max-w-2xl border border-border bg-background p-8 md:p-10">
+          {children}
+        </div>
       </div>
     </section>
+  );
+}
+
+function SeatBooking({ product }: { product: ShopProduct }) {
+  const [sessionId, setSessionId] = useState<string | null>(
+    () => directSoleSession(product)?.id ?? null,
+  );
+  const [planId, setPlanId] = useState<string | null>(null);
+  const [qty, setQty] = useState(1);
+
+  const selectedSession = product.sessions.find((s) => s.id === sessionId) ?? null;
+  // 這一場現在沒有票種，但後台隨時可以加（/admin/registrations 的方案編輯器）。
+  // 加了之後這一段就會自動出現，不用再回來改這個檔案。
+  const needsPlan = selectedSession !== null && selectedSession.plans.length > 0;
+  const selectedPlan = selectedSession?.plans.find((p) => p.id === planId) ?? null;
+  const readyToBook = selectedSession !== null && (!needsPlan || selectedPlan !== null);
+  const seatLimit = selectedSession ? directSeatLimit(product, selectedSession, selectedPlan) : 1;
+  const anySeats = directAnySeatsLeft(product);
+
+  if (!anySeats) {
+    return (
+      <>
+        <SessionList sessions={product.sessions} showSeatsRemaining={product.showSeatsRemaining} />
+        <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
+          本場次席位已滿。若仍希望出席，歡迎來電 {SALON.phone} 由我們為您安排候補。
+        </p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <SessionPicker
+        sessions={product.sessions}
+        showSeatsRemaining={product.showSeatsRemaining}
+        selectedId={sessionId}
+        onSelect={(id) => {
+          setSessionId(id);
+          setPlanId(null);
+          setQty(1);
+        }}
+      />
+
+      {selectedSession && needsPlan ? (
+        <PlanPicker
+          plans={selectedSession.plans}
+          showSeatsRemaining={product.showSeatsRemaining}
+          selectedId={planId}
+          onSelect={(id) => {
+            setPlanId(id);
+            setQty(1);
+          }}
+        />
+      ) : null}
+
+      <div className="mt-8 flex flex-wrap items-center gap-4">
+        <QuantityStepper
+          value={qty}
+          max={seatLimit}
+          onChange={(next) => setQty(Math.max(1, next))}
+          label="出席人數"
+          disabled={!readyToBook}
+        />
+        {readyToBook && selectedSession ? (
+          <Link
+            to="/checkout"
+            search={directCheckoutSearch(product, selectedSession, qty, selectedPlan)}
+            className="inline-block border border-foreground px-7 py-4 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors"
+          >
+            確認出席 / 填寫資料
+          </Link>
+        ) : (
+          // 🔴 不是 <Link>。沒選場次的時候「去結帳」這條路在 DOM 裡不該存在。
+          <button
+            type="button"
+            disabled
+            className="inline-block border border-border px-7 py-4 tracking-widest text-muted-foreground"
+          >
+            確認出席 / 填寫資料
+          </button>
+        )}
+      </div>
+
+      <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
+        下一步會請您填寫出席者的姓名與聯絡方式。本場次免費，不會向您收取任何費用。
+      </p>
+    </>
   );
 }
 
