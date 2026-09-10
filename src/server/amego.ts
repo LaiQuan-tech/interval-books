@@ -456,12 +456,46 @@ async function fetchWithTimeout(
   timeoutMs: number,
 ): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // ⚠️ abort() 要帶 reason。不帶的話 fetch 丟出來的是訊息空白的 AbortError，
+  // 錯誤紀錄裡「逾時」與「連不上」長得一模一樣。
+  const timer = setTimeout(
+    () => controller.abort(new Error(`timeout_after_${timeoutMs}ms`)),
+    timeoutMs,
+  );
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * 把 fetch 的失敗攤成看得懂的一行。
+ *
+ * ⚠️ Node 的 fetch 失敗時 `err.message` 只有 "fetch failed" 這幾個字——真正的原因
+ * （ECONNREFUSED、ENOTFOUND、憑證錯誤、連線逾時）藏在 `err.cause` 裡，而且常常再包
+ * 一層（TypeError → AggregateError → 帶 errno 的 Error）。只讀 message 的話，正式站上
+ * 的紀錄會是一句沒有內容的字串，查不出任何東西。
+ */
+export function describeFetchFailure(err: unknown, depth = 0): string {
+  if (err == null) return "unknown_error";
+  if (!(err instanceof Error)) return String(err);
+
+  const name = err.name || "Error";
+  let line = err.message ? `${name}: ${err.message}` : name;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === "string" || typeof code === "number") line += ` code=${code}`;
+
+  if (depth >= 3) return line;
+  // AggregateError（IPv4／IPv6 都連不上時 undici 會丟這個）真正的原因在 errors 裡，
+  // 不在 cause 裡——只看 cause 會拿到 undefined。
+  const errors = (err as { errors?: unknown }).errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    return `${line} [${errors.map((e) => describeFetchFailure(e, depth + 1)).join(" | ")}]`;
+  }
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause != null) return `${line} <- ${describeFetchFailure(cause, depth + 1)}`;
+  return line;
 }
 
 /**
@@ -513,14 +547,14 @@ export async function amegoRequest(
         ok: false,
         kind: "transport",
         code: null,
-        msg: err instanceof Error ? err.message : String(err),
+        msg: describeFetchFailure(err),
       };
     }
 
     const text = await res.text();
-    let body: AmegoResponse;
+    let parsed: unknown;
     try {
-      body = JSON.parse(text) as AmegoResponse;
+      parsed = JSON.parse(text);
     } catch {
       // HTTP 200 但不是 JSON（維護頁、WAF 擋頁）也算傳輸層失敗，重試有意義。
       return {
@@ -531,8 +565,26 @@ export async function amegoRequest(
       };
     }
 
-    if (body.code === AMEGO_OK) return { ok: true, data: body };
-    return { ok: false, kind: "business", code: body.code, msg: body.msg ?? "", data: body };
+    // 🔴 JSON 解得開 ≠ 這是 Amego 的回應。中繼自己的錯誤（path_not_allowed、
+    // unauthorized）也是合法 JSON，只是沒有 code 欄位。這裡以前直接 `as AmegoResponse`
+    // 就去讀 body.code，undefined 一路往下傳：訊息變成 `code=transport msg=`（連一個字
+    // 都沒有），而且 isPermanentAmegoError(undefined) 會回 true——因為它只擋 null——
+    // 於是被判成永久失敗、不再重試。2026-09 有 5 張發票就是這樣卡住，而且從紀錄上完全
+    // 看不出中繼回的是 404。沒有 number 型別的 code 一律當傳輸層失敗，並把 HTTP 狀態碼
+    // 與回應內容原樣帶出去。
+    const body = parsed as Partial<AmegoResponse> | null;
+    if (typeof body?.code !== "number") {
+      return {
+        ok: false,
+        kind: "transport",
+        code: null,
+        msg: `unexpected_response http=${res.status} body=${text.slice(0, 200)}`,
+      };
+    }
+
+    const full = body as AmegoResponse;
+    if (full.code === AMEGO_OK) return { ok: true, data: full };
+    return { ok: false, kind: "business", code: full.code, msg: full.msg ?? "", data: full };
   };
 
   const first = await send(amegoNow());

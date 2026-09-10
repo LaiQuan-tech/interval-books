@@ -1,0 +1,13 @@
+{
+  "name": "amego-relay",
+  "private": true,
+  "version": "1.1.0",
+  "description": "Fixed-IP relay for Amego invoice API (Railway)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

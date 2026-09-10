@@ -73,6 +73,7 @@ const {
   buildAmegoBody,
   buildIssuePayload,
   computeInvoiceAmounts,
+  describeFetchFailure,
   findInvoiceByOrderId,
   isCarrierRejection,
   isPermanentAmegoError,
@@ -543,6 +544,123 @@ console.log("\n[8] HTTP 200 但業務錯誤碼");
   });
   check("成功時解析出發票號碼", okIssue.invoice.invoiceNumber, "ZA10034112");
   check("成功時解析出隨機碼", okIssue.invoice.randomNumber, "1618");
+}
+
+// ── 8b. 回應解得開 JSON，但那不是 Amego 的回應 ─────────────────────────────
+// 🔴 2026-09 的真實事故：中繼的白名單少了 /json/f0401，每次開發票都收到
+//    404 {"error":"path_not_allowed"}。那是合法 JSON，所以舊的程式碼直接
+//    `as AmegoResponse` 去讀 body.code，拿到 undefined 之後：
+//      • 錯誤訊息變成 `amego code=transport msg=`（連一個字都沒有）
+//      • isPermanentAmegoError(undefined) 回 true（它只擋 null）→ 判為永久失敗
+//    結果是 5 張發票開不出來、不再重試，而且從紀錄上完全看不出中繼回了 404。
+//    這一節釘住的就是「沒有 number 型別的 code 一律當傳輸層失敗，而且訊息要說得出
+//    HTTP 狀態碼與回應內容」。
+console.log("\n[8b] 解得開 JSON 但不是 Amego 回應（中繼／WAF 自己的錯誤）");
+{
+  installFetch();
+  resetAmegoClockOffset();
+
+  const cases = [
+    ["中繼 404 path_not_allowed", 404, { error: "path_not_allowed" }],
+    ["中繼 401 unauthorized", 401, { error: "unauthorized" }],
+    ["中繼 503 relay_not_configured", 503, { error: "relay_not_configured" }],
+    ["中繼 502 upstream_failed", 502, { error: "upstream_failed", detail: "fetch failed" }],
+    ["回了 JSON 陣列", 200, []],
+    ["回了 JSON null", 200, null],
+    ["code 是字串而不是數字", 200, { code: "0", msg: "" }],
+  ];
+
+  for (const [label, status, body] of cases) {
+    script = [() => new Response(JSON.stringify(body), { status })];
+    const r = await amegoRequest("/json/f0401", { OrderId: "X" });
+    checkFalse(`${label} → 不算成功`, r.ok);
+    check(`${label} → kind transport（可重試，不是永久業務錯誤）`, r.kind, "transport");
+    check(`${label} → code 為 null`, r.code, null);
+    // 這一條是事故本身：訊息不可以是空的。
+    checkTrue(`🔴 ${label} → 訊息不是空字串`, typeof r.msg === "string" && r.msg.length > 0);
+    checkTrue(`🔴 ${label} → 訊息裡看得到 HTTP 狀態碼 ${status}`, r.msg.includes(`http=${status}`));
+    checkFalse(`🔴 ${label} → 不被判成永久失敗`, isPermanentAmegoError(r.code));
+  }
+
+  // 回應內容要原樣帶出來——沒有它就只知道「404」，不知道 404 的是哪一件事。
+  script = [() => new Response(JSON.stringify({ error: "path_not_allowed" }), { status: 404 })];
+  const r404 = await amegoRequest("/json/f0401", { OrderId: "X" });
+  checkTrue(
+    "🔴 404 的訊息裡帶得出回應內容（path_not_allowed）",
+    r404.msg.includes("path_not_allowed"),
+  );
+
+  // 反面對照：正常的 Amego 回應**不可以**被這道新檢查誤殺。
+  script = [{ code: 3040178, msg: "TotalAmount 計算錯誤" }];
+  const biz = await amegoRequest("/json/f0401", { OrderId: "X" });
+  check("對照組：有 number code 的回應仍然是 business", biz.kind, "business");
+  check("對照組：code 原樣保留", biz.code, 3040178);
+  script = [{ code: 0, msg: "", invoice_number: "ZA1" }];
+  const okr = await amegoRequest("/json/f0401", { OrderId: "X" });
+  checkTrue("對照組：code 0 仍然是成功", okr.ok);
+}
+
+// ── 8c. describeFetchFailure：把 fetch 的失敗攤開 ──────────────────────────
+// Node 的 fetch 失敗時 err.message 只有 "fetch failed"，真正的原因在 err.cause／
+// err.errors 裡。只讀 message 的話正式站上的紀錄等於沒有內容。
+console.log("\n[8c] describeFetchFailure");
+{
+  const plain = new Error("boom");
+  check("一般 Error", describeFetchFailure(plain), "Error: boom");
+
+  const withCode = new Error("connect ECONNREFUSED 1.2.3.4:443");
+  withCode.code = "ECONNREFUSED";
+  checkTrue(
+    "errno 型的 code 會被帶出來",
+    describeFetchFailure(withCode).includes("code=ECONNREFUSED"),
+  );
+
+  const wrapped = new TypeError("fetch failed");
+  wrapped.cause = withCode;
+  const desc = describeFetchFailure(wrapped);
+  checkTrue("🔴 cause 裡的真正原因會被攤出來", desc.includes("ECONNREFUSED"));
+  checkTrue("外層的 fetch failed 也還在", desc.includes("fetch failed"));
+
+  // undici 在 IPv4／IPv6 都連不上時丟 AggregateError，原因在 .errors 不在 .cause
+  const agg = new AggregateError(
+    [new Error("ENETUNREACH"), new Error("ECONNREFUSED")],
+    "all failed",
+  );
+  const aggWrapped = new TypeError("fetch failed");
+  aggWrapped.cause = agg;
+  const aggDesc = describeFetchFailure(aggWrapped);
+  checkTrue(
+    "🔴 AggregateError 的每一個原因都攤得出來",
+    aggDesc.includes("ENETUNREACH") && aggDesc.includes("ECONNREFUSED"),
+  );
+
+  // 無限深的 cause 鏈不可以把訊息撐爆
+  let deep = new Error("root");
+  for (let i = 0; i < 20; i += 1) {
+    const outer = new Error(`layer${i}`);
+    outer.cause = deep;
+    deep = outer;
+  }
+  checkTrue("cause 鏈有深度上限（不會無限展開）", describeFetchFailure(deep).length < 300);
+
+  check("非 Error 也有輸出", describeFetchFailure("just a string"), "just a string");
+  check("null 也有輸出", describeFetchFailure(null), "unknown_error");
+  checkTrue("空訊息的 Error 至少留下 name", describeFetchFailure(new Error("")).length > 0);
+
+  // 真的丟一個帶 cause 的錯誤進 amegoRequest，訊息必須看得到原因。
+  installFetch();
+  script = [
+    () => {
+      const e = new TypeError("fetch failed");
+      const inner = new Error("connect ETIMEDOUT");
+      inner.code = "ETIMEDOUT";
+      e.cause = inner;
+      throw e;
+    },
+  ];
+  const t = await amegoRequest("/json/f0401", { OrderId: "X" });
+  check("傳輸層失敗仍然是 kind transport", t.kind, "transport");
+  checkTrue("🔴 傳輸層失敗的訊息看得到 ETIMEDOUT", t.msg.includes("ETIMEDOUT"));
 }
 
 // ── 9. 請求格式 ───────────────────────────────────────────────────────────
