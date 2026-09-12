@@ -5,6 +5,7 @@ import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { fetchJourneys, fetchPage, pageText, eyebrowOf } from "@/lib/cms";
 import { useSiteContent } from "@/lib/site-content";
 import { imageFor } from "@/lib/images";
+import { journeyLinkProps } from "@/lib/journey-link";
 import journeyImg from "@/assets/journey-mist.jpg";
 
 /** Fallback copy — used only when the Supabase read fails. */
@@ -95,14 +96,17 @@ function Journeys() {
             </p>
             <h3 className="display mt-3 text-2xl leading-snug whitespace-pre-line">{t(j.title)}</h3>
             <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">{t(j.summary)}</p>
-            <a
-              href={j.externalUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 inline-block self-start tracking-widest text-clay hover-underline text-base"
-            >
-              {t(ui.buttons.toJourney)} →
-            </a>
+            {(() => {
+              const link = journeyLinkProps(j.externalUrl);
+              return link ? (
+                <a
+                  {...link}
+                  className="mt-6 inline-block self-start tracking-widest text-clay hover-underline text-base"
+                >
+                  {t(ui.buttons.toJourney)} →
+                </a>
+              ) : null;
+            })()}
           </article>
         ))}
       </section>

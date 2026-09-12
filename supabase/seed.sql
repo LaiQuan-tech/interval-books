@@ -125,13 +125,8 @@ values
   ('ex-2', 'quiet-objects', '{"zh":"安靜的物件","en":"Quiet Objects","ja":"静かな物たち"}'::jsonb, '{"zh":"選物與作品，在留白之中各自發聲。","en":"Curated objects and works, each speaking softly within white space.","ja":"選び抜かれた品々が、余白のなかで静かに語りはじめる。"}'::jsonb, '{"zh":"策展團隊與三位設計師合作，挑選日用之器、文具與紙品。展期間每週末舉辦器物導讀，邀請觀者放慢腳步。","en":"In collaboration with three designers, selecting daily wares, stationery, and paper goods. Weekend object-readings throughout the run.","ja":"三人のデザイナーと協働し、日用の器、文具、紙ものを選びました。会期中は週末ごとに「物の読み聞かせ」を開催します。"}'::jsonb, '2025.07.05 – 2025.08.31', '{"zh":"小時光書店．東側書房","en":"Interval Books — East Reading Room","ja":"小時光書店 東側ブックルーム"}'::jsonb, 'storefront.jpg', 2);
 
 -- journeys --------------------------------------------------------------------
--- src/data/content.ts:264-346. The home page features journeys[0] (index.tsx:189).
-insert into public.journeys
-  (id, title, summary, description, days, theme, external_url, registration_type, payment_enabled, sort_order)
-values
-  ('jo-1', '{"zh":"如果可以慢下來｜\n風土策旅","en":"Misty Trails | Three Days in Alishan","ja":"霧の山道｜阿里山風土 三日"}'::jsonb, '{"zh":"以一本山林之書為地圖，走進雲海與茶園的縫隙。","en":"A book of mountains as our map, into the seams of cloud and tea.","ja":"一冊の山の本を地図に、雲海と茶畑のあわいへ。"}'::jsonb, '{"zh":"與在地茶人、書寫者一同走訪山徑，住宿於老茶廠改建的旅宿。","en":"Walking the trails with local tea makers and writers; lodging in a converted old tea factory.","ja":"地元の茶人や書き手とともに山道を歩き、古い製茶工場を改装した宿に泊まります。"}'::jsonb, '{"zh":"3 天 2 夜","en":"3 days · 2 nights","ja":"2泊3日"}'::jsonb, '{"zh":"山、海、人情","en":"Tea, mist, mountain paths","ja":"茶、霧、山道"}'::jsonb, 'https://example.com/journey-1', 'external', false, 1),
-  ('jo-2', '{"zh":"島南慢讀｜恆春半島的風與書","en":"Slow South | Wind & Books in Hengchun","ja":"島の南でゆっくり読む｜恒春半島の風と本"}'::jsonb, '{"zh":"拜訪南方的書店與廚房，讓海風翻動我們的書頁。","en":"Bookshops, kitchens, and a southern wind that turns our pages.","ja":"南の書店と厨房を訪ね、海風がページをめくる旅。"}'::jsonb, '{"zh":"由主理人帶隊，串連恆春半島的獨立書店、地方廚房與海岸散步。","en":"Led by our owner: independent bookshops, local kitchens, and coastal walks.","ja":"店主が引率し、独立書店、ローカル・キッチン、海辺の散策をつなぎます。"}'::jsonb, '{"zh":"2 天 1 夜","en":"2 days · 1 night","ja":"1泊2日"}'::jsonb, '{"zh":"海風、獨立書店、地方廚房","en":"Sea breeze, indie bookshops, local kitchens","ja":"海風、独立書店、ローカル厨房"}'::jsonb, 'https://example.com/journey-2', 'external', false, 2),
-  ('jo-3', '{"zh":"陶土之路｜苗栗手作工藝旅","en":"The Clay Road | Craft Days in Miaoli","ja":"陶土の道｜苗栗 手しごとの旅"}'::jsonb, '{"zh":"踏訪窯場與工作室，親手帶回一只屬於自己的器。","en":"Visit kilns and studios, and bring back a vessel of your own.","ja":"窯元と工房を訪ね、自分だけの器を持ち帰る。"}'::jsonb, '{"zh":"拜訪三位苗栗陶藝家，於工作室現場手作一只茶碗或小皿。","en":"Three ceramicists in Miaoli; make a tea bowl or small dish in studio.","ja":"苗栗の陶芸家三名を訪ね、工房で茶碗か小皿を制作します。"}'::jsonb, '{"zh":"2 天 1 夜","en":"2 days · 1 night","ja":"1泊2日"}'::jsonb, '{"zh":"陶土、職人、地方料理","en":"Clay, craftspeople, local cuisine","ja":"陶土、職人、地のごはん"}'::jsonb, 'https://example.com/journey-3', 'external', false, 3);
+-- 策旅一律由 /admin/journeys 後台建立（站內報名填 /events/… 路徑、外部策旅填完整網址）。
+-- 這裡不 seed 示範資料——舊的 jo-1/2/3 是 example.com 假資料，已於 2026-09-12 移除。
 
 -- news -----------------------------------------------------------------------
 -- src/data/content.ts:348-406.

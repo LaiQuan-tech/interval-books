@@ -236,7 +236,10 @@ const registrationFields = {
   external_url: z
     .string()
     .trim()
-    .refine((v) => v === "" || /^https?:\/\//.test(v), "請輸入完整網址（含 https://）或留空"),
+    .refine(
+      (v) => v === "" || v.startsWith("/") || /^https?:\/\//.test(v),
+      "請輸入完整網址（含 https://）、站內路徑（/ 開頭），或留空",
+    ),
   registration_type: z.enum(["external", "internal"]),
   payment_enabled: z.boolean(),
 };

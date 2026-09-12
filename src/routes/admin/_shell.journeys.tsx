@@ -313,9 +313,12 @@ function JourneyForm({ defaultValues, onSubmit, submitting, submitLabel }: Journ
             <FormItem>
               <FormLabel>報名網址</FormLabel>
               <FormControl>
-                <Input placeholder="https://" {...field} />
+                <Input placeholder="https:// 或 /events/…" {...field} />
               </FormControl>
-              <FormDescription>需為完整網址（含 https://）。</FormDescription>
+              <FormDescription>
+                外部策旅填完整網址（含 https://）；站內報名的策旅填站內路徑，例如
+                /events/InntervalChishang.1023。
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}

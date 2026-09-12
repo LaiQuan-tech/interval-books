@@ -10,6 +10,7 @@ import heroImg from "@/assets/hero-mountain.jpg";
 import storefrontImg from "@/assets/storefront.jpg";
 import curatedImg from "@/assets/curated-objects.jpg";
 import journeyImg from "@/assets/journey-mist.jpg";
+import { journeyLinkProps } from "@/lib/journey-link";
 
 /** Fallback copy — used only when the Supabase read fails. */
 const PAGE_META = {
@@ -238,14 +239,17 @@ function Index() {
               </p>
               <h3 className="display mt-4 text-4xl whitespace-pre-line">{t(j.title)}</h3>
               <p className="mt-5 text-base leading-relaxed text-foreground/75">{t(j.summary)}</p>
-              <a
-                href={j.externalUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-8 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
-              >
-                {t(ui.buttons.toJourney)}
-              </a>
+              {(() => {
+                const link = journeyLinkProps(j.externalUrl);
+                return link ? (
+                  <a
+                    {...link}
+                    className="mt-8 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
+                  >
+                    {t(ui.buttons.toJourney)}
+                  </a>
+                ) : null;
+              })()}
             </div>
           </article>
         ))}
