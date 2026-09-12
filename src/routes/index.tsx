@@ -120,12 +120,28 @@ function Index() {
   const t = useT();
   const { page, events, journeys, news } = Route.useLoaderData();
 
-  // 首頁不放已結束的活動 —— 「本月精選」印一場去年辦完的講座沒有意義。
-  // 已結束的活動只在 /events 的「已結束」那一格找得到。
-  const featuredEvents = events.filter((e) => !isPastEvent(e.isoDate)).slice(0, 3);
   // 策旅與活動用同一種卡片、同一套版面規則（見 cardGridClass），所以這裡也
   // 取到三筆，而不是像以前那樣只挑一筆做成橫幅。
   const featuredJourneys = journeys.slice(0, 3);
+  // 🔴 一趟策旅在資料上是**兩列**：events 那一列負責內頁與報名（走活動那一套），
+  //    journeys 那一列負責策旅區的卡片。兩區各自取資料，同一趟旅程就會在首頁出現
+  //    兩次 —— 自從策旅也改成卡片之後，那兩張還長得一模一樣。
+  //
+  //    策旅卡片的連結指的就是它自己的活動頁（journeys.external_url 存站內路徑，
+  //    見 src/lib/journey-link.ts），所以用那條連結把活動區裡的同一場濾掉。只比對
+  //    真的會出現在策旅區的那幾筆：沒被 slice 到的策旅並不佔版面，對應的活動自然
+  //    還是該照常出現在活動區。
+  const journeyEventSlugs = new Set(
+    featuredJourneys
+      .map((j) => j.externalUrl.trim())
+      .filter((url) => url.startsWith("/events/"))
+      .map((url) => url.slice("/events/".length)),
+  );
+  // 首頁不放已結束的活動 —— 「本月精選」印一場去年辦完的講座沒有意義。
+  // 已結束的活動只在 /events 的「已結束」那一格找得到。
+  const featuredEvents = events
+    .filter((e) => !isPastEvent(e.isoDate) && !journeyEventSlugs.has(e.slug))
+    .slice(0, 3);
   const p = pageText(page);
   const { ui, site, map } = useSiteContent();
   const heroSrc = imageFor(page?.ogImageKey, heroImg);
