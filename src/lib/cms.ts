@@ -15,6 +15,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import type { Localized } from "@/i18n/types";
+import { EVENT_LIST_FIELDS, type EventListField } from "@/lib/event-blocks";
 import {
   UI,
   SITE_INFO,
@@ -35,6 +36,12 @@ import {
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
+
+/**
+ * 「一行一項」清單欄位（0027）的三語值。與 Localized 的差別只在值是字串陣列。
+ * 缺語系一律給空陣列，呼叫端不必再判斷 undefined。
+ */
+export type LocalizedList = { zh: string[]; en: string[]; ja: string[] };
 
 export type UiStrings = {
   brand: Localized;
@@ -172,6 +179,15 @@ export type EventDetailEntry = EventEntry & {
   galleryKeys: string[];
   /** null＝沒有講者，這一頁不畫講者區。見 EventSpeaker 的欄位對應說明。 */
   speaker: EventSpeaker | null;
+  /**
+   * 活動頁的「一行一項」清單區塊（0027）。名單與順序的唯一真相是
+   * src/lib/event-blocks.ts 的 EVENT_LIST_FIELDS —— 那個陣列的順序就是前台由上
+   * 到下的順序，想調換區塊順序改那裡，不要改這裡或 events.$slug.tsx。
+   *
+   * ⚠️ 空陣列＝那一塊**不印**，而不是印一個只有標題的空區塊。bundled fallback
+   *    沒有這些欄位，一律退回空陣列。
+   */
+  lists: Record<EventListField, LocalizedList>;
 };
 
 /**
@@ -768,6 +784,34 @@ export async function fetchEvents(): Promise<EventEntry[]> {
  * 也刻意**不**退回 FALLBACK_EVENTS：那份 bundled 資料是 0001 當初的種子，拿它
  * 頂替一個讀不到的即時活動，等於把過期的日期與名額當成現況印給客人看。
  */
+/**
+ * 把一列 events 的七個清單欄位（0027）讀成詳情頁要的形狀。
+ *
+ * 欄位名與順序都來自 EVENT_LIST_FIELDS，這裡不另外抄一份。任何一欄缺值、形狀
+ * 不對、或陣列裡混進非字串，一律退成空陣列——空陣列的意思是「這一塊不印」，
+ * 而這一層本來就不該丟例外（見檔頭：nothing here throws）。
+ */
+function readEventLists(row: unknown): Record<EventListField, LocalizedList> {
+  const r = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+  const out = {} as Record<EventListField, LocalizedList>;
+  for (const field of EVENT_LIST_FIELDS) {
+    const value: LocalizedList = { zh: [], en: [], ja: [] };
+    const raw = r[field];
+    if (raw && typeof raw === "object") {
+      for (const lang of ["zh", "en", "ja"] as const) {
+        const arr = (raw as Record<string, unknown>)[lang];
+        if (Array.isArray(arr)) {
+          value[lang] = arr.filter(
+            (item): item is string => typeof item === "string" && item.trim() !== "",
+          );
+        }
+      }
+    }
+    out[field] = value;
+  }
+  return out;
+}
+
 export async function fetchEventBySlug(slug: string): Promise<EventDetailResult> {
   const db = supabase;
   if (!db) {
@@ -789,7 +833,16 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
       // 一直刻意不選；gallery_keys 是 0031 新加的欄位，同一條「先套 migration
       // 再推程式碼」規則對它也成立。
       .select(
-        "id,slug,title,summary,description,display_date,category,external_url,registration_type,image_key,speaker_id,gallery_keys",
+        // 🔴 這裡必須是**一整條字串字面值**，不可以用模板字串去串 EVENT_LIST_FIELDS。
+        //    scripts/event-detail-page-selftest.mjs 是靜態解析這一行、逐欄核對
+        //    「select 的每一欄 public.events 真的有」——串起來它就讀不到欄位，那道
+        //    防線會安靜地失效，而它擋的正是把後台弄壞過三次的「select 了還沒
+        //    migrate 的欄位」（見 CLAUDE.md 的 Migration 那一節）。
+        //
+        //    後七欄是 0027 的清單欄位，與 src/lib/event-blocks.ts 的
+        //    EVENT_LIST_FIELDS 是同一份名單；同一支自檢有一條會逐欄比對兩邊，
+        //    在那份名單加欄位卻忘了加到這裡，測試就會紅。
+        "id,slug,title,summary,description,display_date,category,external_url,registration_type,image_key,speaker_id,gallery_keys,highlights,suitable_for,not_suitable_for,takeaways,outline,includes,notes",
       )
       .eq("slug", slug)
       .maybeSingle();
@@ -865,6 +918,7 @@ export async function fetchEventBySlug(slug: string): Promise<EventDetailResult>
         registrationType: r.registration_type === "internal" ? "internal" : "external",
         galleryKeys,
         speaker,
+        lists: readEventLists(r),
       },
       unavailable: false,
     };

@@ -5,7 +5,7 @@ import { PageShell } from "@/components/PageShell";
 import { PlanPicker } from "@/components/shop/PlanPicker";
 import { SessionList, SessionPicker } from "@/components/shop/SessionPicker";
 import { QuantityStepper } from "@/components/shop/ShopBits";
-import { useT } from "@/i18n/LanguageContext";
+import { useLang, useT } from "@/i18n/LanguageContext";
 import type { Localized } from "@/i18n/types";
 import { useDocumentMeta } from "@/i18n/useDocumentMeta";
 import { fetchEventBySlug, fetchEventCategories } from "@/lib/cms";
@@ -15,6 +15,7 @@ import {
   directSeatLimit,
   directSoleSession,
 } from "@/lib/direct-checkout";
+import { EVENT_LIST_FIELDS } from "@/lib/event-blocks";
 import { imageFor } from "@/lib/images";
 import { fetchActiveProductForEventSlug, type ShopProduct } from "@/lib/shop";
 import { useSiteContent } from "@/lib/site-content";
@@ -125,6 +126,23 @@ const PAGE = {
     ja: "申し込み情報を読み込めませんでした。しばらくしてからお試しください。",
   },
   aboutSpeaker: { zh: "關於講者", en: "About the speaker", ja: "講師について" },
+  /**
+   * 七個「一行一項」清單區塊的標題（0027）。鍵就是 EVENT_LIST_FIELDS 的欄位名，
+   * 由 TypeScript 保證七個都有——日後在那份名單加一欄，這裡漏填會編譯失敗，
+   * 而不是前台默默印出一個沒有標題的區塊。
+   *
+   * 用字要同時罩得住講座與策旅（同一個欄位，兩小時的講座與三天兩夜的旅程共用），
+   * 所以是「流程」而不是「行程」或「課程大綱」。
+   */
+  listBlocks: {
+    highlights: { zh: "活動亮點", en: "Highlights", ja: "ハイライト" },
+    suitable_for: { zh: "適合這樣的你", en: "Who it's for", ja: "こんな方に" },
+    not_suitable_for: { zh: "可能不適合", en: "Perhaps not for you", ja: "向いていない場合" },
+    takeaways: { zh: "你會帶走什麼", en: "What you'll take away", ja: "持ち帰るもの" },
+    outline: { zh: "流程", en: "Outline", ja: "進行内容" },
+    includes: { zh: "費用包含", en: "What's included", ja: "含まれるもの" },
+    notes: { zh: "注意事項", en: "Notes", ja: "ご注意" },
+  } satisfies Record<(typeof EVENT_LIST_FIELDS)[number], Localized>,
   gallery: { zh: "更多照片", en: "More photos", ja: "その他の写真" },
 };
 
@@ -226,7 +244,9 @@ function registrationCta(
 }
 
 function EventDetail() {
-  const t = useT();
+  // 清單區塊取出來的是字串陣列，而 t() 只吃 Localized 字串，所以這裡要拿 lang
+  // 自己選語系（規則與 t() 一致：當前語系沒東西就退回 zh）。
+  const { t, lang } = useLang();
   const { event, unavailable, categories, booking } = Route.useLoaderData();
   const { ui } = useSiteContent();
 
@@ -316,6 +336,35 @@ function EventDetail() {
           </p>
         </div>
       </section>
+
+      {/* 「一行一項」清單區塊（0027）。0027 建了欄位、後台一直能編，但前台在這一期
+          之前從來沒有讀過它們——填了等於沒填。
+
+          順序由 EVENT_LIST_FIELDS 決定（那份名單就是前台由上到下的順序）；空的那
+          幾塊直接不畫，寧可少一塊，也不要印一個只有標題的空框。 */}
+      {EVENT_LIST_FIELDS.map((field) => {
+        const list = event.lists[field];
+        // 與 t() 同一條規則：當前語系是空的就退回中文，不要讓整塊憑空消失。
+        const items = list[lang].length ? list[lang] : list.zh;
+        if (!items.length) return null;
+        return (
+          <section key={field} className="container-editorial pb-16">
+            <div className="max-w-3xl border-t border-border pt-12">
+              <p className="eyebrow text-2xl">{t(PAGE.listBlocks[field])}</p>
+              <ul className="mt-6 space-y-3">
+                {items.map((item, index) => (
+                  <li
+                    key={`${field}-${index}`}
+                    className="text-base leading-relaxed text-foreground/80"
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        );
+      })}
 
       {/* 講者介紹。event.speaker 非 null 才畫——真相在 public.artists，這一頁
           只是唯讀顯示。照片、頭銜、簡介三者各自再判斷一次非空，因為講者可以

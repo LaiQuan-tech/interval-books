@@ -250,6 +250,18 @@ const EVENT_COLUMNS = new Set([
   "show_seats_remaining",
   // 0031_event_gallery.sql —— 相簿。
   "gallery_keys",
+  // 0027_event_blocks.sql —— 七個「一行一項」清單欄位。
+  //
+  // ⚠️ 上面的檔頭從當初就寫著「+ 0027 的七個清單欄位」，但這份清單裡一直沒有它們。
+  //    沒被抓到是因為 0027 之後**沒有任何路由 select 過它們**（後台能編、前台不讀），
+  //    所以這七欄從來沒有走到這組斷言。這一期詳情頁開始把它們印成區塊，補上。
+  "highlights",
+  "suitable_for",
+  "not_suitable_for",
+  "takeaways",
+  "outline",
+  "includes",
+  "notes",
 ]);
 checkTrue("select 不是空的", selectedCols.length >= 6);
 for (const col of selectedCols) {
@@ -266,6 +278,35 @@ checkTrue("select 有帶到 slug（0026 之後這一頁靠它反查商品）", s
 for (const required of ["image_key", "speaker_id", "gallery_keys"]) {
   checkTrue(`select 有帶到 ${required}（0031 起這一頁真的要讀）`, selectedCols.includes(required));
 }
+// 0027 的七個清單欄位：後台從那時候就能編，但前台一直沒有讀過，填了等於沒填。
+// 這一期前台開始把它們印成區塊（events.$slug.tsx），所以每一欄都必須在 select 裡。
+//
+// 🔴 名單是從 src/lib/event-blocks.ts **解析**出來的，不在這裡再抄一份 —— 抄一份
+//    的話這條斷言只是對著自己的副本點頭，那份名單日後加一欄，照樣沒有人會發現
+//    cms.ts 的 select 漏了它。切不出來一律 throw：回一個空陣列會讓底下整個迴圈
+//    一條都不跑，而「一條都不跑」在畫面上跟全部通過長得一模一樣。
+const blocksSrc = readFileSync(join(ROOT, "src/lib/event-blocks.ts"), "utf8");
+const listFieldsBlock = /export const EVENT_LIST_FIELDS = \[([\s\S]*?)\] as const;/.exec(blocksSrc);
+if (!listFieldsBlock) {
+  throw new Error(
+    "切不出 EVENT_LIST_FIELDS —— event-blocks.ts 換了寫法就要一起改這支自檢，不可以讓它安靜地回空陣列",
+  );
+}
+const listFields = [...listFieldsBlock[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+checkTrue("EVENT_LIST_FIELDS 真的解析出欄位（不是空陣列）", listFields.length > 0);
+for (const field of listFields) {
+  checkTrue(
+    `select 有帶到清單欄位 "${field}"（0027，這一頁要印成區塊）`,
+    selectedCols.includes(field),
+  );
+}
+// 光是 select 進來還不夠 —— 0027 那七欄在這一期之前就是「查得到、沒人印」。
+// 這一條守的是前台真的把它們畫出來：少了這條，日後有人把區塊刪掉，上面每一條
+// select 斷言還是全綠。
+checkTrue(
+  "詳情頁真的渲染清單區塊（有 import 並走訪 EVENT_LIST_FIELDS）",
+  /from "@\/lib\/event-blocks"/.test(detailCode) && /EVENT_LIST_FIELDS\.map\(/.test(detailCode),
+);
 // payment_enabled 從 0001 就存在而五期以來沒有任何路由讀它，不該被想當然耳選進來。
 // show_seats_remaining（0029）也在這一組：這一頁畫的是 SessionList，而那個旗標是
 // 從**商品**那一側讀進來的（products.show_seats_remaining → ShopProduct）。從 events
