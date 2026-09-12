@@ -179,10 +179,10 @@ function Index() {
         link={{ to: "/events", label: t(ui.buttons.viewAll) }}
       />
       {/* ⚠️ 這裡連的是**站內**的 /events/$slug，不是 e.externalUrl。
-          externalUrl 有 5 筆還是 https://example.com/event-N 的佔位符（0001 的種子
-          資料），所以首頁曾經有三顆按鈕直接把客人送去 example.com。活動詳情頁
-          存在之後，站內那一頁才是正確的目的地；外部售票連結留在詳情頁上，由那一頁
-          自己決定要不要顯示。 */}
+          0001 的種子資料把 externalUrl 填成 https://example.com/event-N，首頁曾經
+          有三顆按鈕直接把客人送去 example.com（那批 ev-1~ev-6 已於 2026-09-12 連同
+          content.ts 與 seed.sql 裡的副本一起清掉）。規則不變：活動詳情頁才是正確的
+          目的地，外部售票連結留在詳情頁上，由那一頁自己決定要不要顯示。 */}
       <div className={`container-editorial pb-20 ${cardGridClass(featuredEvents.length)}`}>
         {featuredEvents.map((e) => (
           <Link
