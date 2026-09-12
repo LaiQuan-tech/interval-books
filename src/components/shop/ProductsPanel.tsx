@@ -59,7 +59,20 @@ export function ProductsPanel({
   const { ui } = useSiteContent();
   const heroSrc = imageFor(page?.ogImageKey, curatedImg);
 
-  const { products, unavailable } = catalogue;
+  // 活動與策旅不在 /shop 的商品清單出現 —— 它們各自有 /events 與 /journeys 當
+  // 入口，在這裡再列一次，同一場活動就有兩個長得不一樣的門。
+  //
+  // 🔴 過濾放在這裡，而不是在 shop.index.tsx 傳進來之前先濾掉：loader 讀到的
+  //    那一份 catalogue 必須原封不動同時餵給 ProductsPanel 與 PublicationsPanel
+  //    （後者要拿它核對哪幾本刊物能買），nav-consolidation 與 shop-list-payload
+  //    兩支自檢都在守「兩個面板吃的是同一份 catalogue」這條線。
+  //
+  //    下面的 presentTypes 是照 products 現有的型別算出來的，所以這兩種一被濾掉，
+  //    「活動」「策旅」那兩顆篩選 pill 也跟著消失，不需要另外處理。
+  const { unavailable } = catalogue;
+  const products = catalogue.products.filter(
+    (prod) => prod.productType !== "event" && prod.productType !== "journey",
+  );
 
   // Only offer a filter for types that actually have something to show, so the
   // shop never presents a pill that leads to an empty grid.

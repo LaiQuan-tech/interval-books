@@ -103,17 +103,8 @@ values
   ('好書交流', '{"zh":"好書交流","en":"Book Exchange","ja":"本の交流"}'::jsonb, 6);
 
 -- events ----------------------------------------------------------------------
--- src/data/content.ts:70-209. sort_order preserves array order: the home page
--- slices events[0..2] (index.tsx:150).
-insert into public.events
-  (id, title, summary, description, display_date, iso_date, category, external_url, registration_type, payment_enabled, sort_order)
-values
-  ('ev-1', '{"zh":"風土誌讀書會｜土地與餐桌","en":"Terroir Reading Circle | Land & Table","ja":"風土誌読書会｜土地と食卓"}'::jsonb, '{"zh":"從一本書、一道菜，回望腳下的土地。","en":"A book, a dish, and the soil beneath our feet.","ja":"一冊の本と一皿の料理から、足元の大地を見つめ直す。"}'::jsonb, '{"zh":"由風土書寫者帶讀，配一席在地餐桌，緩慢開啟對土地的感受。","en":"Guided by a terroir essayist, paired with a small local table.","ja":"風土エッセイストが導く読書と、ささやかな地のテーブル。"}'::jsonb, '即將公告', null, '讀書會', 'https://example.com/event-1', 'external', false, 1),
-  ('ev-2', '{"zh":"靜走．呼吸與書頁之間","en":"Quiet Walk: Between Breath and Page","ja":"静かな歩み｜呼吸と頁のあいだ"}'::jsonb, '{"zh":"以閱讀為引，在身體裡安一個安靜的位置。\n本場次舉辦地點在Boven Cafe\n\n","en":"Reading as a doorway into the body''s quiet room.","ja":"読書を糸口に、身体のなかに静けさの席をひとつ。"}'::jsonb, '{"zh":"結合身體覺察與緩讀，適合初次接觸者。","en":"A gentle blend of body awareness and slow reading.","ja":"身体感覚とスローリーディングを組み合わせた、はじめての方にも優しい時間。"}'::jsonb, '2026.5.30~5.31', null, '身心靈工作坊', 'https://gogo.mygoodday.com.tw/', 'external', false, 2),
-  ('ev-3', '{"zh":"編輯講座｜如何閱讀一本地方誌","en":"Editor Talk: Reading a Place-Based Journal","ja":"編集者トーク｜地方誌の読み方"}'::jsonb, '{"zh":"與獨立出版人對談，解構在地書寫的層次。","en":"An evening with an independent publisher on layered place writing.","ja":"独立系編集者との対話で、ローカル・ライティングの層を読み解く。"}'::jsonb, '{"zh":"現場帶來數本台灣地方誌，講者與讀者一同翻閱拆解。","en":"Several Taiwanese local journals on hand, opened together.","ja":"数冊の台湾地方誌を持ち寄り、参加者と一緒にページを開きます。"}'::jsonb, '2025.05.24  Sat  19:30', null, '好書交流', 'https://example.com/event-3', 'external', false, 3),
-  ('ev-4', '{"zh":"陶土工作坊｜手感器物的第一次","en":"Clay Workshop: Your First Vessel","ja":"陶土ワークショップ｜はじめての器"}'::jsonb, '{"zh":"從一團土開始，捏出屬於自己的一只杯。","en":"From a lump of earth, shape a cup of your own.","ja":"ひとかたまりの土から、自分だけの一碗を。"}'::jsonb, '{"zh":"由駐店陶藝家帶領，以手捏方式完成第一件作品。","en":"Hand-built guidance from our resident ceramicist.","ja":"店内陶芸家が手びねりで第一作の制作をご案内します。"}'::jsonb, '2025.06.07  Sat  13:30', null, '陶藝家展售', 'https://example.com/event-4', 'external', false, 4),
-  ('ev-5', '{"zh":"深夜讀書會｜詩與微光","en":"Late-Night Reading: Poetry & Faint Light","ja":"深夜読書会｜詩と微光"}'::jsonb, '{"zh":"在書店熄燈前的兩小時，留給詩。","en":"Two hours before lights-out, given to poetry.","ja":"閉店前の二時間を、詩のために。"}'::jsonb, '{"zh":"選讀華語詩人作品，輪流朗讀、低聲交談。","en":"Selected Sinophone poetry, read aloud and softly discussed.","ja":"中国語圏の詩を選び、朗読と静かな会話で過ごします。"}'::jsonb, '2025.06.14  Sat  20:00', null, '讀書會', 'https://example.com/event-5', 'external', false, 5),
-  ('ev-6', '{"zh":"聲音療癒｜頌缽之夜","en":"Sound Healing: A Singing Bowl Evening","ja":"サウンドヒーリング｜シンギングボウルの夜"}'::jsonb, '{"zh":"以聲波鬆開肩頸，也鬆開一週的緊。","en":"Let the bowls loosen the shoulders and the week.","ja":"響きで肩のこわばりも、一週間の緊張も、ほどいてゆく。"}'::jsonb, '{"zh":"由認證頌缽老師帶領，建議帶上薄毯。","en":"Led by a certified practitioner. A light blanket is recommended.","ja":"認定講師による進行。薄手のブランケットをお持ちください。"}'::jsonb, '2025.06.21  Sat  19:00', null, '療癒生活節', 'https://example.com/event-6', 'external', false, 6);
+-- 活動一律由 /admin/events 後台建立（存檔時會連帶投影出 products 與場次，見 0026）。
+-- 這裡不 seed 示範資料——舊的 ev-1/3/4/5/6 是 example.com 假資料，已於 2026-09-12 移除。
 
 -- exhibitions -----------------------------------------------------------------
 -- src/data/content.ts:211-262. image_key resolves the IMAGES map that currently

@@ -119,6 +119,13 @@ export const Route = createFileRoute("/")({
 function Index() {
   const t = useT();
   const { page, events, journeys, news } = Route.useLoaderData();
+
+  // 首頁不放已結束的活動 —— 「本月精選」印一場去年辦完的講座沒有意義。
+  // 已結束的活動只在 /events 的「已結束」那一格找得到。
+  const featuredEvents = events.filter((e) => !isPastEvent(e.isoDate)).slice(0, 3);
+  // 策旅與活動用同一種卡片、同一套版面規則（見 cardGridClass），所以這裡也
+  // 取到三筆，而不是像以前那樣只挑一筆做成橫幅。
+  const featuredJourneys = journeys.slice(0, 3);
   const p = pageText(page);
   const { ui, site, map } = useSiteContent();
   const heroSrc = imageFor(page?.ogImageKey, heroImg);
@@ -176,44 +183,39 @@ function Index() {
           資料），所以首頁曾經有三顆按鈕直接把客人送去 example.com。活動詳情頁
           存在之後，站內那一頁才是正確的目的地；外部售票連結留在詳情頁上，由那一頁
           自己決定要不要顯示。 */}
-      <div className="container-editorial pb-20 grid gap-8 md:grid-cols-3">
-        {/* 首頁不放已結束的活動 —— 「本月精選」印一場去年辦完的講座沒有意義。
-            已結束的活動只在 /events 的「已結束」那一格找得到。 */}
-        {events
-          .filter((e) => !isPastEvent(e.isoDate))
-          .slice(0, 3)
-          .map((e) => (
-            <Link
-              key={e.id}
-              to="/events/$slug"
-              params={{ slug: e.slug }}
-              className="group flex flex-col border border-border bg-background/40 hover:border-foreground/40 transition-colors"
-            >
-              {/* ⚠️ 先判斷 imageKey 非空**再**呼叫 imageFor()。imageFor(key, fallback)
+      <div className={`container-editorial pb-20 ${cardGridClass(featuredEvents.length)}`}>
+        {featuredEvents.map((e) => (
+          <Link
+            key={e.id}
+            to="/events/$slug"
+            params={{ slug: e.slug }}
+            className="group flex flex-col border border-border bg-background/40 hover:border-foreground/40 transition-colors"
+          >
+            {/* ⚠️ 先判斷 imageKey 非空**再**呼叫 imageFor()。imageFor(key, fallback)
                 永遠會回一張圖，順序反過來就是每一張卡片都長同一張不相干的照片。 */}
-              {e.imageKey ? (
-                <div className="aspect-[4/3] overflow-hidden">
-                  <img
-                    src={imageFor(e.imageKey, storefrontImg)}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                  />
-                </div>
-              ) : null}
-              <div className="flex flex-1 flex-col p-6">
-                <p className="eyebrow text-2xl">{e.category}</p>
-                <h3 className="display mt-3 text-2xl leading-snug">{t(e.title)}</h3>
-                <p className="mt-3 text-sm text-muted-foreground">{e.date}</p>
-                <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">
-                  {t(e.summary)}
-                </p>
-                <span className="mt-6 inline-block tracking-widest text-clay group-hover:underline self-start text-base">
-                  {t(ui.buttons.viewEvent)} →
-                </span>
+            {e.imageKey ? (
+              <div className="aspect-[4/3] overflow-hidden">
+                <img
+                  src={imageFor(e.imageKey, storefrontImg)}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                />
               </div>
-            </Link>
-          ))}
+            ) : null}
+            <div className="flex flex-1 flex-col p-6">
+              <p className="eyebrow text-2xl">{e.category}</p>
+              <h3 className="display mt-3 text-2xl leading-snug">{t(e.title)}</h3>
+              <p className="mt-3 text-sm text-muted-foreground">{e.date}</p>
+              <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">
+                {t(e.summary)}
+              </p>
+              <span className="mt-6 inline-block tracking-widest text-clay group-hover:underline self-start text-base">
+                {t(ui.buttons.viewEvent)} →
+              </span>
+            </div>
+          </Link>
+        ))}
       </div>
 
       {/* 精選策旅 */}
@@ -222,37 +224,53 @@ function Index() {
         title={t(ui.sections.featuredJourney)}
         link={{ to: "/journeys", label: t(ui.buttons.viewAll) }}
       />
-      <div className="container-editorial pb-24">
-        {journeys.slice(0, 1).map((j) => (
-          <article key={j.id} className="grid md:grid-cols-2 gap-12 items-center">
-            <div className="aspect-[4/3] overflow-hidden bg-muted">
-              <img
-                src={journeyImg}
-                alt={t(j.title)}
-                loading="lazy"
-                className="h-full w-full object-cover"
-              />
+      <div className={`container-editorial pb-24 ${cardGridClass(featuredJourneys.length)}`}>
+        {featuredJourneys.map((j) => {
+          // 策旅的連結可能是站內路徑、也可能是外部網站（見 journeyLinkProps）。
+          // 還沒設連結的策旅仍然要看得到卡片，只是整張卡不可點——不要讓它消失。
+          const link = journeyLinkProps(j.externalUrl);
+          const body = (
+            <>
+              {/* journeys 表沒有 image_key（見 cms.ts#fetchJourneys 選的欄位），
+                  所以這裡用固定的策旅意象圖，而不是活動卡那種 imageFor()。 */}
+              <div className="aspect-[4/3] overflow-hidden">
+                <img
+                  src={journeyImg}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                />
+              </div>
+              <div className="flex flex-1 flex-col p-6">
+                <p className="eyebrow text-2xl">
+                  {t(j.days)} ／ {t(j.theme)}
+                </p>
+                <h3 className="display mt-3 text-2xl leading-snug whitespace-pre-line">
+                  {t(j.title)}
+                </h3>
+                <p className="mt-4 text-sm leading-relaxed text-foreground/75 flex-1">
+                  {t(j.summary)}
+                </p>
+                {link ? (
+                  <span className="mt-6 inline-block tracking-widest text-clay group-hover:underline self-start text-base">
+                    {t(ui.buttons.toJourney)} →
+                  </span>
+                ) : null}
+              </div>
+            </>
+          );
+          const cardClass =
+            "group flex flex-col border border-border bg-background/40 transition-colors";
+          return link ? (
+            <a key={j.id} {...link} className={`${cardClass} hover:border-foreground/40`}>
+              {body}
+            </a>
+          ) : (
+            <div key={j.id} className={cardClass}>
+              {body}
             </div>
-            <div>
-              <p className="eyebrow text-2xl">
-                {t(j.days)} ／ {t(j.theme)}
-              </p>
-              <h3 className="display mt-4 text-4xl whitespace-pre-line">{t(j.title)}</h3>
-              <p className="mt-5 text-base leading-relaxed text-foreground/75">{t(j.summary)}</p>
-              {(() => {
-                const link = journeyLinkProps(j.externalUrl);
-                return link ? (
-                  <a
-                    {...link}
-                    className="mt-8 inline-block border border-foreground px-6 py-3 tracking-widest hover:bg-foreground hover:text-primary-foreground transition-colors text-base"
-                  >
-                    {t(ui.buttons.toJourney)}
-                  </a>
-                ) : null;
-              })()}
-            </div>
-          </article>
-        ))}
+          );
+        })}
       </div>
 
       {/* 主理人選品預告 */}
@@ -337,6 +355,21 @@ function Index() {
       </div>
     </PageShell>
   );
+}
+
+/**
+ * 首頁卡片區塊的 grid class —— 活動與策旅共用，兩區才不會各長一套版面。
+ *
+ * 重點是「卡片少的時候不要硬撐三欄」：正式站現在常常只有一場未來活動、一趟
+ * 策旅，硬套 md:grid-cols-3 會讓那張卡孤零零貼在左邊、右邊空掉三分之二。
+ *   1 張 → 單欄、限寬置中（也不會被拉成整個版面寬的巨無霸）
+ *   2 張 → 兩欄
+ *   3 張以上 → 三欄
+ */
+function cardGridClass(count: number): string {
+  if (count <= 1) return "grid gap-8 md:max-w-xl md:mx-auto";
+  if (count === 2) return "grid gap-8 md:grid-cols-2";
+  return "grid gap-8 md:grid-cols-3";
 }
 
 function SectionHeader({
