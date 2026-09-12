@@ -694,6 +694,39 @@ checkTrue(
   "品項走共用的 resolveDirectCheckout",
   /resolveDirectCheckout\(catalogue\.products/.test(checkoutCode),
 );
+// 🔴 上面那一條只看得到「有呼叫」，看不到**傳了什麼**。0036 加了 plan，而結帳頁的
+//    解構與傳入各漏了一個，這條照樣全綠 —— 代價是正式庫只要有任何一個場次開了票種，
+//    站內的「我要報名」就會撞 plan_required 錯誤頁。所以這裡改成逐欄比對。
+//
+//    欄位名單是從 DirectCheckoutSearch 的**型別本體**解出來的，不在這裡抄第二份：
+//    日後型別多一個參數而呼叫端沒接上，這一組會自己轉紅。切不出來一律 throw ——
+//    回一個空陣列會讓底下的迴圈一條都不跑，而「一條都不跑」跟「全部通過」在畫面上
+//    長得一模一樣。
+//    （解構漏欄位不必另外守：那會讓傳入的變數變成未定義，tsc 會先擋下來。）
+const searchTypeBlock = /type DirectCheckoutSearch = \{([\s\S]*?)\n\};/.exec(directCode);
+if (!searchTypeBlock) {
+  throw new Error(
+    "切不出 DirectCheckoutSearch 的型別本體 —— direct-checkout.ts 換了寫法就要一起改這支自檢",
+  );
+}
+const searchFields = [...searchTypeBlock[1].matchAll(/^\s*(\w+)\??:/gm)].map((m) => m[1]).sort();
+// 對照組：確認解出來的真的是那四個，免得哪天 regex 改壞了還一路綠。
+check("DirectCheckoutSearch 的欄位", searchFields.join(","), "plan,product,qty,session");
+
+const directCallArg = /resolveDirectCheckout\(catalogue\.products,\s*\{([\s\S]*?)\}\s*\)/.exec(
+  checkoutCode,
+);
+if (!directCallArg) {
+  throw new Error(
+    "切不出 resolveDirectCheckout 的第二個參數 —— checkout.index.tsx 換了寫法就要一起改這支自檢",
+  );
+}
+for (const field of searchFields) {
+  checkTrue(
+    `resolveDirectCheckout 真的把 ${field} 傳下去（0036 漏掉的就是 plan）`,
+    new RegExp(`(^|[\\s{,])${field}\\s*:`).test(directCallArg[1]),
+  );
+}
 checkFalse("結帳頁沒有自己算名額", /\bremainingForSession\b|\bremainingFor\(/.test(checkoutCode));
 // 🔴 直接結帳的訂單要留下「不要清購物車」的旗標，而且是在拿得到 token 的那一刻。
 checkTrue(

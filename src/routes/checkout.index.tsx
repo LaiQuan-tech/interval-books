@@ -373,18 +373,27 @@ function Checkout() {
    * 不讀它的內容、不 syncFromCatalogue（那會寫回 localStorage）、成立訂單之後也不清它。
    * 最後那一條見 onSubmit 裡的 rememberCartKept()。
    *
-   * 依賴列刻意攤成三個原始值而不是整個 search 物件：search 的參照是否穩定是 router 的
+   * 依賴列刻意攤成四個原始值而不是整個 search 物件：search 的參照是否穩定是 router 的
    * 實作細節，而這個 memo 的下游（participantSlots → zod schema）每一次換參照都要重建。
    */
-  const { product: directProduct, session: directSession, qty: directQty } = Route.useSearch();
+  const {
+    product: directProduct,
+    session: directSession,
+    qty: directQty,
+    plan: directPlan,
+  } = Route.useSearch();
   const direct = useMemo(
     () =>
       resolveDirectCheckout(catalogue.products, {
         product: directProduct,
         session: directSession,
         qty: directQty,
+        // 🔴 0036 漏掉的那一個。少了它，只要場次開了票種，resolveDirectCheckout()
+        //    就會以 plan_required 拒絕——站內「我要報名」按鈕直接撞錯誤頁。之所以
+        //    一直沒人踩到，是因為在此之前正式庫沒有任何場次開過方案。
+        plan: directPlan,
       }),
-    [catalogue.products, directProduct, directSession, directQty],
+    [catalogue.products, directProduct, directSession, directQty, directPlan],
   );
   const directMode = direct !== null;
   const directItems = useMemo<CartLine[]>(() => (direct?.ok ? [direct.line] : NO_ITEMS), [direct]);
