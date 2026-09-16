@@ -168,12 +168,13 @@ const EVENT_SLUG = "city-salon-0922";
  * 連結貼到 LINE／Facebook／Email 時**唯一**會出現的視覺。沒有它，一場定向邀請的
  * 沙龍在對話串裡就只是一行藍字。
  *
- * 這個 key 與 public.events.image_key 指向同一張（1600×840 webp，放在 site-images
- * bucket）。刻意寫死而不是從 loader 讀：head() 要在 SSR 的第一時間就吐出 meta，
+ * 這個 key 與 public.events.image_key 指向同一張（台東的風景照，1200×900 webp，放在
+ * site-images bucket）。第一版是一張排版式的文字橫幅（1.9:1），在首頁 4:3 的卡片框裡
+ * 被切掉一半的標題，使用者說醜——換成照片之後兩邊比例剛好一致，不再被裁。刻意寫死而不是從 loader 讀：head() 要在 SSR 的第一時間就吐出 meta，
  * 而這一頁的 loader 只取商品（報名用），沒有、也不需要為了一張圖再多查一次活動。
  * 換圖的時候這裡與後台要一起改——只有一張圖，兩個地方，值得用一句註解換掉一次查詢。
  */
-const OG_IMAGE_KEY = "storage:46b52823-45f2-43ca-b87a-35b9e61743d0.webp";
+const OG_IMAGE_KEY = "storage:03f5d1e1-58c7-43be-a96a-4478269c2e4d.webp";
 
 export const Route = createFileRoute("/events/city-salon-0922")({
   // 報名走站上既有的那一套：商品（product_type='event'）→ 場次 → 直接結帳 →
